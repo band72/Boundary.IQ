@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BoundaryIQ.Api</RootNamespace>
+    <AssemblyName>BoundaryIQ.Api</AssemblyName>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="OpenCvSharp4" Version="4.9.0.20240103" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.9.0.20240103"
+                      Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+  </ItemGroup>
+
+  <!-- RCS COGO Engine — source references (cross-platform net8.0 libs) -->
+  <ItemGroup>
+    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Cogo.Core\RCS.Cogo.Core.csproj" />
+    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Cogo.App\RCS.Cogo.App.csproj" />
+    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Alignments.Core\RCS.Alignments.Core.csproj" />
+    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Geo.Abstractions\RCS.Geo.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

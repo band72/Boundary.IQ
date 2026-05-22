@@ -1,0 +1,277 @@
+import { useState } from 'react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+
+const API = 'http://localhost:5050/api';
+
+const BLANK = { type: 'Line', bearing: '', distance: '', chordBearing: '', chordDistance: '', arcLength: '', delta: '', radius: '', curveDirection: 'Right' };
+const EXAMPLE = [
+  { ...BLANK, bearing: 'N89-50-00E', distance: '669.80' },
+  { ...BLANK, bearing: 'S00-35-00E', distance: '669.80' },
+  { ...BLANK, bearing: 'S89-50-00W', distance: '669.80' },
+  { ...BLANK, bearing: 'N00-35-00W', distance: '669.80' },
+];
+
+export default function WriterTab() {
+  const [courses, setCourses]     = useLocalStorage('boundaryiq_writer_courses', EXAMPLE);
+  const [pobN, setPobN]           = useLocalStorage('boundaryiq_writer_pobN', '5000.00');
+  const [pobE, setPobE]           = useLocalStorage('boundaryiq_writer_pobE', '5000.00');
+  const [parcel, setParcel]       = useLocalStorage('boundaryiq_writer_parcel', '');
+  const [county, setCounty]       = useLocalStorage('boundaryiq_writer_county', '');
+  const [stateVal, setStateVal]   = useLocalStorage('boundaryiq_writer_state', '');
+  const [units, setUnits]         = useLocalStorage('boundaryiq_writer_units', 'feet');
+  const [basisBrg, setBasisBrg]   = useLocalStorage('boundaryiq_writer_basisBrg', '');
+  const [areaAcres, setAreaAcres] = useLocalStorage('boundaryiq_writer_area', '');
+  const [perimeter, setPerimeter] = useLocalStorage('boundaryiq_writer_perimeter', '');
+  const [pasteJson, setPasteJson] = useLocalStorage('boundaryiq_writer_paste', '');
+  const [inputMode, setInputMode] = useLocalStorage('boundaryiq_writer_mode', 'form');
+
+  const [result, setResult]   = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+  const [copied, setCopied]   = useState(false);
+
+  // ── Course editor helpers ────────────────────────────────────────────────────
+  const addCourse = () => setCourses(c => [...c, { ...BLANK }]);
+  const removeCourse = i => setCourses(c => c.filter((_, idx) => idx !== i));
+  const update = (i, field, val) => setCourses(c => c.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
+
+  // ── Generate ────────────────────────────────────────────────────────────────
+  const generate = async () => {
+    setLoading(true); setError(''); setResult('');
+    let finalCourses = courses;
+    if (inputMode === 'paste') {
+      if (!pasteJson.trim()) { setError('Paste a JSON array of courses first.'); setLoading(false); return; }
+      try { finalCourses = JSON.parse(pasteJson); }
+      catch { setError('Invalid JSON — check format and try again.'); setLoading(false); return; }
+    }
+    if (!finalCourses.length) { setError('Add at least one course.'); setLoading(false); return; }
+
+    try {
+      const body = {
+        courses: finalCourses.map(c => ({
+          type: c.type ?? 'Line',
+          bearing: c.bearing || null,
+          distance: c.distance ? parseFloat(c.distance) : null,
+          chordBearing: c.chordBearing || null,
+          chordDistance: c.chordDistance ? parseFloat(c.chordDistance) : null,
+          arcLength: c.arcLength ? parseFloat(c.arcLength) : null,
+          delta: c.delta ? parseFloat(c.delta) : null,
+          radius: c.radius ? parseFloat(c.radius) : null,
+          curveDirection: c.curveDirection || null,
+        })),
+        pobNorthing: parseFloat(pobN) || 5000,
+        pobEasting:  parseFloat(pobE) || 5000,
+        parcelDescription: parcel  || null,
+        county:   county    || null,
+        state:    stateVal  || null,
+        units,
+        basisOfBearings: basisBrg || null,
+        bearingSystem: 'grid bearings',
+        areaAcres:  areaAcres  ? parseFloat(areaAcres)  : null,
+        perimeter:  perimeter  ? parseFloat(perimeter)  : null,
+      };
+
+      const res  = await fetch(`${API}/writer/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `Server error ${res.status}`);
+      setResult(data.legalDescription ?? data.LegalDescription ?? JSON.stringify(data));
+    } catch (e) {
+      setError(String(e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = () => { navigator.clipboard.writeText(result); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+  const download = () => {
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(new Blob([result], { type: 'text/plain' })),
+      download: 'legal-description.txt',
+    });
+    a.click();
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* ── Main card ─────────────────────────────────────────────────────────── */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">✍️ Legal Description Writer</div>
+          <div className="flex-row">
+            <div style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 2 }}>
+              {[['form', '📋 Form Input'], ['paste', '📌 Paste JSON']].map(([v, label]) => (
+                <button key={v} onClick={() => setInputMode(v)} style={{
+                  padding: '0.35rem 0.9rem', border: 'none', fontFamily: 'inherit', fontSize: '0.8rem',
+                  fontWeight: 500, cursor: 'pointer', borderRadius: 'calc(var(--radius-sm) - 2px)',
+                  background: inputMode === v ? 'var(--accent)' : 'transparent',
+                  color: inputMode === v ? '#fff' : 'var(--text-secondary)', transition: 'all 0.15s',
+                }}>{label}</button>
+              ))}
+            </div>
+            <select value={units} onChange={e => setUnits(e.target.value)} style={{ width: 90 }}>
+              <option value="feet">Feet</option>
+              <option value="meters">Meters</option>
+            </select>
+          </div>
+        </div>
+
+        {/* POB */}
+        <div className="grid-2" style={{ marginBottom: '1rem' }}>
+          <div className="form-group">
+            <label className="form-label">POB Northing</label>
+            <input type="number" value={pobN} onChange={e => setPobN(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">POB Easting</label>
+            <input type="number" value={pobE} onChange={e => setPobE(e.target.value)} />
+          </div>
+        </div>
+
+        {/* ── FORM MODE: editable course list ───────────────────────────────── */}
+        {inputMode === 'form' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <h3>Courses ({courses.length})</h3>
+              <div className="flex-row">
+                <button className="btn btn-ghost btn-sm" onClick={() => setCourses(EXAMPLE)}>Load Example</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => {
+                  if(window.confirm('Clear all courses?')) setCourses([]);
+                }}>Clear All</button>
+                <button className="btn btn-primary btn-sm" onClick={addCourse}>+ Add</button>
+              </div>
+            </div>
+
+            {/* Column headers */}
+            <div style={{ display: 'grid', gridTemplateColumns: '28px 80px 1fr 120px 32px', gap: '0.5rem', padding: '0 0.5rem 0.4rem', fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <span>#</span><span>Type</span><span>Bearing / Chord Bearing</span><span>Distance / Arc Len</span><span></span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+              {courses.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.85rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border)' }}>
+                  No courses yet — click <strong>+ Add</strong> or <strong>Load Example</strong>
+                </div>
+              )}
+              {courses.map((c, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '28px 80px 1fr 120px 32px', gap: '0.5rem', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.45rem 0.6rem' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>{i + 1}</span>
+                  <select value={c.type} onChange={e => update(i, 'type', e.target.value)}>
+                    <option>Line</option><option>Curve</option>
+                  </select>
+                  {c.type === 'Line' ? (
+                    <>
+                      <input type="text" placeholder="N45°30'00&quot;E" value={c.bearing} onChange={e => update(i, 'bearing', e.target.value)} />
+                      <input type="number" placeholder="Distance" value={c.distance} onChange={e => update(i, 'distance', e.target.value)} />
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
+                        <input type="text" placeholder="Chord Bearing" value={c.chordBearing} onChange={e => update(i, 'chordBearing', e.target.value)} />
+                        <input type="number" placeholder="Delta (DMS)" value={c.delta} onChange={e => update(i, 'delta', e.target.value)} />
+                        <input type="number" placeholder="Radius" value={c.radius} onChange={e => update(i, 'radius', e.target.value)} />
+                      </div>
+                      <input type="number" placeholder="Chord Dist" value={c.chordDistance} onChange={e => update(i, 'chordDistance', e.target.value)} />
+                    </>
+                  )}
+                  <button onClick={() => removeCourse(i)} style={{ background: 'rgba(255,77,109,0.15)', border: '1px solid rgba(255,77,109,0.3)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.75rem' }}>✕</button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── PASTE JSON MODE ────────────────────────────────────────────────── */}
+        {inputMode === 'paste' && (
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label className="form-label">Paste Courses JSON Array</label>
+            <textarea
+              value={pasteJson}
+              onChange={e => setPasteJson(e.target.value)}
+              placeholder='[ { "type": "Line", "bearing": "N89-50-00E", "distance": 669.80 }, ... ]'
+              style={{ minHeight: 130, resize: 'vertical', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem' }}
+            />
+            <div className="alert alert-info" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
+              💡 Run <strong>Traverse Compute</strong> or <strong>Plat Extraction</strong>, copy the raw JSON from the station table, and paste it here.
+            </div>
+          </div>
+        )}
+
+        {/* ── Deed Metadata ──────────────────────────────────────────────────── */}
+        <div className="divider" />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 style={{ margin: 0 }}>Deed Metadata (Optional)</h3>
+          <button className="btn btn-ghost btn-sm" onClick={() => {
+            if(window.confirm('Clear all metadata fields?')) {
+              setCounty(''); setStateVal(''); setParcel('');
+              setBasisBrg(''); setAreaAcres(''); setPerimeter('');
+            }
+          }}>Clear Metadata</button>
+        </div>
+        <div className="grid-3" style={{ marginBottom: '0.75rem' }}>
+          <div className="form-group">
+            <label className="form-label">County</label>
+            <input type="text" placeholder="Duval County" value={county} onChange={e => setCounty(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">State</label>
+            <input type="text" placeholder="Florida" value={stateVal} onChange={e => setStateVal(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Parcel Description</label>
+            <input type="text" placeholder="Lot 12, Block 4…" value={parcel} onChange={e => setParcel(e.target.value)} />
+          </div>
+        </div>
+        <div className="grid-3" style={{ marginBottom: '1rem' }}>
+          <div className="form-group">
+            <label className="form-label">Basis of Bearings</label>
+            <input type="text" placeholder="State Plane Grid" value={basisBrg} onChange={e => setBasisBrg(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Area (acres)</label>
+            <input type="number" placeholder="10.298" value={areaAcres} onChange={e => setAreaAcres(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Perimeter (ft)</label>
+            <input type="number" placeholder="2679.20" value={perimeter} onChange={e => setPerimeter(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex-row" style={{ justifyContent: 'flex-end' }}>
+          <button className="btn btn-primary" onClick={generate} disabled={loading}>
+            {loading ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Generating…</> : '✍️ Generate Legal Description'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Error ─────────────────────────────────────────────────────────────── */}
+      {error && <div className="alert alert-error">⚠ {error}</div>}
+
+      {/* ── Output ────────────────────────────────────────────────────────────── */}
+      {result && (
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">📄 Legal Description</div>
+            <div className="flex-row">
+              <button className="btn btn-ghost btn-sm" onClick={copy}>{copied ? '✅ Copied!' : '📋 Copy'}</button>
+              <button className="btn btn-success btn-sm" onClick={download}>⬇ Download .txt</button>
+            </div>
+          </div>
+          <pre style={{
+            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)', padding: '1.25rem',
+            fontFamily: 'Georgia, "Times New Roman", serif',
+            fontSize: '0.9rem', lineHeight: 2.0, color: 'var(--text-primary)',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          }}>
+            {result}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}

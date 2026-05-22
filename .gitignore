@@ -1,0 +1,30 @@
+# ── Secrets — NEVER commit these ──────────────────────────────────────────────
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Local.json
+*.secrets.json
+.env
+.env.*
+!.env.example
+
+# ── .NET build outputs ─────────────────────────────────────────────────────────
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+*.DotSettings.user
+
+# ── Node / client ──────────────────────────────────────────────────────────────
+client/node_modules/
+client/dist/
+client/.vite/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
