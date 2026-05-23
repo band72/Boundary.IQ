@@ -1,0 +1,253 @@
+using System;
+using System.IO;
+using System.Collections.Generic;
+using Microsoft.Data.Sqlite;
+using BoundaryIQ.Api.Models;
+
+namespace BoundaryIQ.Api.Services;
+
+public class DiagnosticsDatabaseService
+{
+    private readonly string _dbPath;
+
+    public DiagnosticsDatabaseService()
+    {
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string folder = Path.Combine(appData, "BoundaryQC");
+        Directory.CreateDirectory(folder);
+        _dbPath = Path.Combine(folder, "BoundaryQCDiagnostics.db");
+
+        InitializeDatabase();
+    }
+
+    private void InitializeDatabase()
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            CREATE TABLE IF NOT EXISTS BatchRuns (
+                BatchId TEXT PRIMARY KEY,
+                Timestamp TEXT NOT NULL,
+                TotalFiles INTEGER NOT NULL,
+                PassRate REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS DeedLogs (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                BatchId TEXT NOT NULL,
+                FileName TEXT NOT NULL,
+                ParcelName TEXT,
+                GeoCallCount INTEGER NOT NULL,
+                LinearError REAL NOT NULL,
+                PrecisionRatio REAL NOT NULL,
+                Status TEXT NOT NULL,
+                RepairStageUsed TEXT,
+                Timestamp TEXT NOT NULL,
+                FOREIGN KEY (BatchId) REFERENCES BatchRuns(BatchId)
+            );
+
+            CREATE TABLE IF NOT EXISTS HeuristicTracking (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ProblemName TEXT NOT NULL,
+                SolutionApplied TEXT NOT NULL,
+                SuccessCount INTEGER NOT NULL DEFAULT 0
+            );
+        ";
+        cmd.ExecuteNonQuery();
+
+        // Seed Heuristics if empty
+        using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT COUNT(*) FROM HeuristicTracking";
+        long count = (long)(checkCmd.ExecuteScalar() ?? 0L);
+        if (count == 0)
+        {
+            var seedData = new[]
+            {
+                ("Sequence Out of Order", "Moore-Neighbor Rearrange"),
+                ("Intersecting Boundary", "Bowtie Inversion Auto-Fix"),
+                ("Ambiguous Arc Concavity", "Convexity Right Turn Rule"),
+                ("Shoreline Centerline Meanders", "Shoreline Gap Solver"),
+                ("Pixel Dimension guessing", "Explicit Chord Parsing")
+            };
+            foreach (var (p, s) in seedData)
+            {
+                using var insertCmd = conn.CreateCommand();
+                insertCmd.CommandText = "INSERT INTO HeuristicTracking (ProblemName, SolutionApplied, SuccessCount) VALUES (@p, @s, 0)";
+                insertCmd.Parameters.AddWithValue("@p", p);
+                insertCmd.Parameters.AddWithValue("@s", s);
+                insertCmd.ExecuteNonQuery();
+            }
+        }
+    }
+
+    public void SaveBatchRun(string batchId, int totalFiles, double passRate)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT OR REPLACE INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate)
+            VALUES (@batchId, @timestamp, @totalFiles, @passRate)
+        ";
+        cmd.Parameters.AddWithValue("@batchId", batchId);
+        cmd.Parameters.AddWithValue("@timestamp", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.Parameters.AddWithValue("@totalFiles", totalFiles);
+        cmd.Parameters.AddWithValue("@passRate", passRate);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void SaveDeedLog(
+        string batchId,
+        string fileName,
+        string? parcelName,
+        int geoCallCount,
+        double linearError,
+        double precisionRatio,
+        string status,
+        string? repairStageUsed)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO DeedLogs (BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp)
+            VALUES (@batchId, @fileName, @parcelName, @geoCallCount, @linearError, @precisionRatio, @status, @repairStageUsed, @timestamp)
+        ";
+        cmd.Parameters.AddWithValue("@batchId", batchId);
+        cmd.Parameters.AddWithValue("@fileName", fileName);
+        cmd.Parameters.AddWithValue("@parcelName", (object?)parcelName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@geoCallCount", geoCallCount);
+        cmd.Parameters.AddWithValue("@linearError", linearError);
+        cmd.Parameters.AddWithValue("@precisionRatio", precisionRatio);
+        cmd.Parameters.AddWithValue("@status", status);
+        cmd.Parameters.AddWithValue("@repairStageUsed", (object?)repairStageUsed ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@timestamp", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.ExecuteNonQuery();
+    }
+
+    public List<DeedLogDto> SearchDeedLogs(string? query, string? status, double? maxError)
+    {
+        var logs = new List<DeedLogDto>();
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        var sql = "SELECT * FROM DeedLogs WHERE 1=1";
+
+        if (!string.IsNullOrEmpty(query))
+        {
+            sql += " AND (FileName LIKE @query OR ParcelName LIKE @query)";
+            cmd.Parameters.AddWithValue("@query", $"%{query}%");
+        }
+        if (!string.IsNullOrEmpty(status))
+        {
+            sql += " AND Status = @status";
+            cmd.Parameters.AddWithValue("@status", status);
+        }
+        if (maxError.HasValue)
+        {
+            sql += " AND LinearError <= @maxError";
+            cmd.Parameters.AddWithValue("@maxError", maxError.Value);
+        }
+
+        sql += " ORDER BY Timestamp DESC LIMIT 100";
+        cmd.CommandText = sql;
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            logs.Add(new DeedLogDto(
+                Id: reader.GetInt32(0),
+                BatchId: reader.GetString(1),
+                FileName: reader.GetString(2),
+                ParcelName: reader.IsDBNull(3) ? null : reader.GetString(3),
+                GeoCallCount: reader.GetInt32(4),
+                LinearError: reader.GetDouble(5),
+                PrecisionRatio: reader.GetDouble(6),
+                Status: reader.GetString(7),
+                RepairStageUsed: reader.IsDBNull(8) ? null : reader.GetString(8),
+                Timestamp: reader.GetString(9)
+            ));
+        }
+
+        return logs;
+    }
+
+    public List<BatchRunDto> GetRecentBatchRuns()
+    {
+        var runs = new List<BatchRunDto>();
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT * FROM BatchRuns ORDER BY Timestamp DESC LIMIT 20";
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            runs.Add(new BatchRunDto(
+                BatchId: reader.GetString(0),
+                Timestamp: reader.GetString(1),
+                TotalFiles: reader.GetInt32(2),
+                PassRate: reader.GetDouble(3)
+            ));
+        }
+
+        return runs;
+    }
+
+    public List<HeuristicTrackerDto> GetHeuristicTracking()
+    {
+        var tracking = new List<HeuristicTrackerDto>();
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT * FROM HeuristicTracking ORDER BY SuccessCount DESC";
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            tracking.Add(new HeuristicTrackerDto(
+                Id: reader.GetInt32(0),
+                ProblemName: reader.GetString(1),
+                SolutionApplied: reader.GetString(2),
+                SuccessCount: reader.GetInt32(3)
+            ));
+        }
+
+        return tracking;
+    }
+
+    public void IncrementHeuristic(string problemName, string solutionApplied)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT Id FROM HeuristicTracking WHERE ProblemName = @p AND SolutionApplied = @s";
+        checkCmd.Parameters.AddWithValue("@p", problemName);
+        checkCmd.Parameters.AddWithValue("@s", solutionApplied);
+        var id = checkCmd.ExecuteScalar();
+
+        if (id != null)
+        {
+            using var updateCmd = conn.CreateCommand();
+            updateCmd.CommandText = "UPDATE HeuristicTracking SET SuccessCount = SuccessCount + 1 WHERE Id = @id";
+            updateCmd.Parameters.AddWithValue("@id", id);
+            updateCmd.ExecuteNonQuery();
+        }
+        else
+        {
+            using var insertCmd = conn.CreateCommand();
+            insertCmd.CommandText = "INSERT INTO HeuristicTracking (ProblemName, SolutionApplied, SuccessCount) VALUES (@p, @s, 1)";
+            insertCmd.Parameters.AddWithValue("@p", problemName);
+            insertCmd.Parameters.AddWithValue("@s", solutionApplied);
+            insertCmd.ExecuteNonQuery();
+        }
+    }
+}

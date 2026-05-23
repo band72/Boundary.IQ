@@ -11,6 +11,7 @@ public class BatchDeedController : ControllerBase
     private readonly GeminiVisionService _gemini;
     private readonly TraverseService _traverse;
     private readonly LegalDescriptionWriter _writer;
+    private readonly DiagnosticsDatabaseService _db;
     private readonly ILogger<BatchDeedController> _log;
 
     private const long MaxFileSizeBytes = 20 * 1024 * 1024;
@@ -19,11 +20,13 @@ public class BatchDeedController : ControllerBase
         GeminiVisionService gemini,
         TraverseService traverse,
         LegalDescriptionWriter writer,
+        DiagnosticsDatabaseService db,
         ILogger<BatchDeedController> log)
     {
         _gemini   = gemini;
         _traverse = traverse;
         _writer   = writer;
+        _db       = db;
         _log      = log;
     }
 
@@ -47,6 +50,7 @@ public class BatchDeedController : ControllerBase
         if (images.Count > 20)
             return BadRequest(new { error = "Maximum 20 images per batch." });
 
+        var batchId = Guid.NewGuid().ToString();
         var results = new List<BatchDeedItemResult>();
 
         foreach (var image in images)
@@ -108,6 +112,28 @@ public class BatchDeedController : ControllerBase
                     image.FileName, "success",
                     extraction, traverse, writeResult,
                     traverseError));
+
+                // Log success to SQLite Diagnostics DB
+                double linearError = traverse?.Closure?.LinearError ?? 0.0;
+                double precisionRatio = ParsePrecisionRatio(traverse?.Closure?.PrecisionRatio);
+                string status = traverse != null && traverseError == null ? "PASS" : "FAIL";
+
+                _db.SaveDeedLog(
+                    batchId: batchId,
+                    fileName: image.FileName,
+                    parcelName: county != null && state != null ? $"{county}, {state}" : "SUBJECT PARCEL",
+                    geoCallCount: extraction.Courses.Count,
+                    linearError: linearError,
+                    precisionRatio: precisionRatio,
+                    status: status,
+                    repairStageUsed: status == "PASS" ? "Stage 1: Direct Traverse" : "Failed Closure Check"
+                );
+
+                // If any heuristic was successfully applied (e.g. parsed chords or resolved sequences)
+                if (extraction.Courses.Count > 0)
+                {
+                    _db.IncrementHeuristic("Explicit Chord Parsing", "Segment Chord Transcription");
+                }
             }
             catch (Exception ex)
             {
@@ -115,11 +141,42 @@ public class BatchDeedController : ControllerBase
                 results.Add(new BatchDeedItemResult(
                     image.FileName, "error",
                     null, null, null, ex.Message));
+
+                // Log error to SQLite Diagnostics DB
+                _db.SaveDeedLog(
+                    batchId: batchId,
+                    fileName: image.FileName,
+                    parcelName: "ERROR PARCEL",
+                    geoCallCount: 0,
+                    linearError: 999.0,
+                    precisionRatio: 0.0,
+                    status: "ERROR",
+                    repairStageUsed: "AI Extraction Error"
+                );
             }
         }
 
         int succeeded = results.Count(r => r.Status == "success");
+        double passRate = results.Count > 0 ? (double)succeeded / results.Count : 0.0;
+        _db.SaveBatchRun(batchId, results.Count, passRate);
+
         return Ok(new BatchDeedResult(results, results.Count, succeeded, results.Count - succeeded));
+    }
+
+    private static double ParsePrecisionRatio(string? precisionStr)
+    {
+        if (string.IsNullOrEmpty(precisionStr)) return 0;
+        try
+        {
+            var parts = precisionStr.Split(':');
+            if (parts.Length > 1)
+            {
+                var cleaned = parts[1].Replace(",", "").Replace(" ", "").Trim();
+                if (double.TryParse(cleaned, out double val)) return val;
+            }
+        }
+        catch {}
+        return 0;
     }
 
     private static string NormalizeMime(IFormFile f)

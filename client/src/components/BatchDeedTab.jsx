@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -18,6 +18,48 @@ export default function BatchDeedTab() {
   const [expanded, setExpanded] = useState({});
   const [activeIdx, setActiveIdx] = useState(0);
   const [showPrint, setShowPrint] = useState(false);
+  
+  // Diagnostics Database state
+  const [dbQuery, setDbQuery]       = useState('');
+  const [dbStatus, setDbStatus]     = useState('');
+  const [dbMaxError, setDbMaxError] = useState('');
+  const [dbLogs, setDbLogs]         = useState([]);
+  const [dbLoading, setDbLoading]   = useState(false);
+  const [heuristics, setHeuristics] = useState([]);
+
+  const fetchHeuristics = async () => {
+    try {
+      const res = await fetch(`${API}/diagnostics/heuristics`);
+      if (res.ok) {
+        const data = await res.json();
+        setHeuristics(data);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const searchDatabase = async () => {
+    setDbLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (dbQuery) params.append('query', dbQuery);
+      if (dbStatus) params.append('status', dbStatus);
+      if (dbMaxError) params.append('maxError', dbMaxError);
+
+      const res = await fetch(`${API}/diagnostics/search?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDbLogs(data);
+      }
+    } catch (e) { console.error(e); }
+    finally { setDbLoading(false); }
+  };
+
+  // Initial load
+  useEffect(() => {
+    fetchHeuristics();
+    searchDatabase();
+  }, []);
+
   const fileRef = useRef();
 
   const addFiles = newFiles => {
@@ -371,6 +413,144 @@ export default function BatchDeedTab() {
           })()}
         </div>
       )}
+      {/* ── Diagnostics Database Case Finder & Heuristics Telemetry ─────────── */}
+      <div className="card" style={{ marginTop: '1.5rem' }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+          <div className="card-title">🔍 Heuristics & Diagnostics Case Finder</div>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            Search historical surveyor deeds & monitor AI-driven correction telemetry (SQLite Sync)
+          </span>
+        </div>
+
+        {/* 1. Heuristics Telemetry Counters */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+          gap: '1rem',
+          marginBottom: '1.5rem'
+        }}>
+          {heuristics.map(h => (
+            <div key={h.id} style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0.75rem 1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              gap: '0.2rem'
+            }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                {h.problemName}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                {h.solutionApplied}
+              </div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent2)', marginTop: '0.25rem' }}>
+                {h.successCount} Solved Cases
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="divider" style={{ margin: '1rem 0' }} />
+
+        {/* 2. Advanced Search Form Filters */}
+        <div style={{
+          display: 'flex',
+          gap: '1rem',
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+          marginBottom: '1.25rem'
+        }}>
+          <div style={{ flex: 2, minWidth: 200 }}>
+            <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Search Case File or Region</label>
+            <input 
+              type="text" 
+              placeholder="e.g. Cook County or plat_image.png..."
+              value={dbQuery}
+              onChange={e => setDbQuery(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 120 }}>
+            <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status</label>
+            <select 
+              value={dbStatus} 
+              onChange={e => setDbStatus(e.target.value)}
+              style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem', color: 'var(--text-primary)' }}
+            >
+              <option value="">All Statuses</option>
+              <option value="PASS">PASS (Closed)</option>
+              <option value="FAIL">FAIL (Unclosed)</option>
+              <option value="ERROR">ERROR</option>
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Max Error Limit (ft)</label>
+            <input 
+              type="number" 
+              step="0.01"
+              placeholder="e.g. 0.30"
+              value={dbMaxError}
+              onChange={e => setDbMaxError(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }}
+            />
+          </div>
+          <button className="btn btn-primary" onClick={searchDatabase} style={{ height: '38px', padding: '0 1.25rem' }}>
+            {dbLoading ? 'Searching...' : '🔍 Find Cases'}
+          </button>
+        </div>
+
+        {/* 3. Results Table Grid */}
+        <div className="data-table-wrap" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>File Name</th>
+                <th>Region / Parcel</th>
+                <th>Calls</th>
+                <th>Closure Error</th>
+                <th>Precision Ratio</th>
+                <th>Status</th>
+                <th>Heuristic Repair Stage</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dbLogs.length > 0 ? (
+                dbLogs.map(log => (
+                  <tr key={log.id}>
+                    <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.78rem' }}>{log.fileName}</td>
+                    <td>{log.parcelName || '—'}</td>
+                    <td>{log.geoCallCount}</td>
+                    <td style={{ fontFamily: 'JetBrains Mono' }}>
+                      {log.linearError > 900 ? '—' : `${log.linearError.toFixed(4)}'`}
+                    </td>
+                    <td style={{ fontFamily: 'JetBrains Mono' }}>
+                      {log.precisionRatio > 0 ? `1:${log.precisionRatio.toLocaleString()}` : '—'}
+                    </td>
+                    <td>
+                      <span className={`status-badge ${log.status === 'PASS' ? 'pass' : 'fail'}`} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
+                        {log.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{log.repairStageUsed || '—'}</td>
+                    <td style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{log.timestamp}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    No matching cases found in the diagnostics database. Run new batch extractions to save records.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {showPrint && results && (
         (() => {
           const r = results.results[activeIdx];

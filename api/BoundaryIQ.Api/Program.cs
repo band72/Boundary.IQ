@@ -63,6 +63,7 @@ builder.Services.AddHttpClient("gemini", client =>
 });
 
 // Application services
+builder.Services.AddSingleton<DiagnosticsDatabaseService>();
 builder.Services.AddScoped<TraverseService>();
 builder.Services.AddScoped<GeminiVisionService>();
 builder.Services.AddScoped<LegalDescriptionWriter>();
