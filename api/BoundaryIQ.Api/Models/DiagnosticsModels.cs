@@ -10,7 +10,9 @@ public record DeedLogDto(
     double PrecisionRatio,
     string Status,
     string? RepairStageUsed,
-    string Timestamp
+    string Timestamp,
+    string? ExtractionJson = null,
+    string? TraverseJson = null
 );
 
 public record BatchRunDto(

@@ -64,6 +64,67 @@ public class BatchDeedController : ControllerBase
                 if (image.Length > MaxFileSizeBytes)
                     throw new Exception($"File exceeds 20 MB ({image.Length / 1024 / 1024:F1} MB).");
 
+                // Check Case Finder SQLite Database first for a solved PASS run
+                var solvedCase = _db.FindSolvedCase(image.FileName);
+                if (solvedCase != null && !string.IsNullOrEmpty(solvedCase.ExtractionJson) && !string.IsNullOrEmpty(solvedCase.TraverseJson))
+                {
+                    _log.LogInformation("SQLite Case Finder: Found previously solved PASS run for {name}. Re-using cached geometry.", image.FileName);
+                    
+                    var cachedExtraction = System.Text.Json.JsonSerializer.Deserialize<PlatExtractResult>(solvedCase.ExtractionJson);
+                    var cachedTraverse = System.Text.Json.JsonSerializer.Deserialize<TraverseResult>(solvedCase.TraverseJson);
+
+                    if (cachedExtraction != null && cachedTraverse != null)
+                    {
+                        // Write legal description
+                        WriteResult? cachedWriteResult = null;
+                        if (cachedExtraction.Courses.Count > 0)
+                        {
+                            try
+                            {
+                                var writeReq = new WriteRequest(
+                                    Courses: cachedExtraction.Courses,
+                                    PobNorthing: pobN,
+                                    PobEasting: pobE,
+                                    ParcelDescription: null,
+                                    County: county,
+                                    State: state,
+                                    Units: units.ToLower(),
+                                    BasisOfBearings: null,
+                                    BearingSystem: null,
+                                    AreaAcres: cachedTraverse.AreaAcres,
+                                    Perimeter: cachedTraverse.Perimeter);
+                                string text = _writer.Write(writeReq);
+                                cachedWriteResult = new WriteResult(text, cachedExtraction.Courses.Count);
+                            }
+                            catch { /* write failure is non-fatal */ }
+                        }
+
+                        results.Add(new BatchDeedItemResult(
+                            image.FileName, "success",
+                            cachedExtraction, cachedTraverse, cachedWriteResult,
+                            null));
+
+                        // Log success to SQLite Diagnostics DB under "Stage 5: SQLite Case Finder Solved"
+                        _db.SaveDeedLog(
+                            batchId: batchId,
+                            fileName: image.FileName,
+                            parcelName: county != null && state != null ? $"{county}, {state}" : (solvedCase.ParcelName ?? "REUSED PARCEL"),
+                            geoCallCount: cachedExtraction.Courses.Count,
+                            linearError: cachedTraverse.Closure?.LinearError ?? 0.0,
+                            precisionRatio: ParsePrecisionRatio(cachedTraverse.Closure?.PrecisionRatio),
+                            status: "PASS",
+                            repairStageUsed: "Stage 5: SQLite Case Finder Solved",
+                            extractionJson: solvedCase.ExtractionJson,
+                            traverseJson: solvedCase.TraverseJson
+                        );
+
+                        // Increment Case Finder solved count in heuristic telemetry
+                        _db.IncrementHeuristic("SQLite Case Finder Solved", "Auto-retrieve Solved Boundary");
+
+                        continue;
+                    }
+                }
+
                 // 1. Extract
                 await using var stream = image.OpenReadStream();
                 string mime = NormalizeMime(image);
@@ -118,19 +179,24 @@ public class BatchDeedController : ControllerBase
                 double precisionRatio = ParsePrecisionRatio(traverse?.Closure?.PrecisionRatio);
                 string status = traverse != null && traverseError == null ? "PASS" : "FAIL";
 
+                string? extractionJson = extraction != null ? System.Text.Json.JsonSerializer.Serialize(extraction) : null;
+                string? traverseJson = traverse != null ? System.Text.Json.JsonSerializer.Serialize(traverse) : null;
+
                 _db.SaveDeedLog(
                     batchId: batchId,
                     fileName: image.FileName,
                     parcelName: county != null && state != null ? $"{county}, {state}" : "SUBJECT PARCEL",
-                    geoCallCount: extraction.Courses.Count,
+                    geoCallCount: extraction?.Courses?.Count ?? 0,
                     linearError: linearError,
                     precisionRatio: precisionRatio,
                     status: status,
-                    repairStageUsed: status == "PASS" ? "Stage 1: Direct Traverse" : "Failed Closure Check"
+                    repairStageUsed: status == "PASS" ? "Stage 1: Direct Traverse" : "Failed Closure Check",
+                    extractionJson: extractionJson,
+                    traverseJson: traverseJson
                 );
 
                 // If any heuristic was successfully applied (e.g. parsed chords or resolved sequences)
-                if (extraction.Courses.Count > 0)
+                if (extraction?.Courses?.Count > 0)
                 {
                     _db.IncrementHeuristic("Explicit Chord Parsing", "Segment Chord Transcription");
                 }
@@ -151,7 +217,9 @@ public class BatchDeedController : ControllerBase
                     linearError: 999.0,
                     precisionRatio: 0.0,
                     status: "ERROR",
-                    repairStageUsed: "AI Extraction Error"
+                    repairStageUsed: "AI Extraction Error",
+                    extractionJson: null,
+                    traverseJson: null
                 );
             }
         }

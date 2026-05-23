@@ -45,6 +45,8 @@ public class DiagnosticsDatabaseService
                 Status TEXT NOT NULL,
                 RepairStageUsed TEXT,
                 Timestamp TEXT NOT NULL,
+                ExtractionJson TEXT,
+                TraverseJson TEXT,
                 FOREIGN KEY (BatchId) REFERENCES BatchRuns(BatchId)
             );
 
@@ -56,6 +58,23 @@ public class DiagnosticsDatabaseService
             );
         ";
         cmd.ExecuteNonQuery();
+
+        // Run migrations for existing database schemas to support auto-solve lookup
+        try
+        {
+            using var alterCmd1 = conn.CreateCommand();
+            alterCmd1.CommandText = "ALTER TABLE DeedLogs ADD COLUMN ExtractionJson TEXT";
+            alterCmd1.ExecuteNonQuery();
+        }
+        catch (SqliteException) { /* Already exists */ }
+
+        try
+        {
+            using var alterCmd2 = conn.CreateCommand();
+            alterCmd2.CommandText = "ALTER TABLE DeedLogs ADD COLUMN TraverseJson TEXT";
+            alterCmd2.ExecuteNonQuery();
+        }
+        catch (SqliteException) { /* Already exists */ }
 
         // Seed Heuristics if empty
         using var checkCmd = conn.CreateCommand();
@@ -107,15 +126,17 @@ public class DiagnosticsDatabaseService
         double linearError,
         double precisionRatio,
         string status,
-        string? repairStageUsed)
+        string? repairStageUsed,
+        string? extractionJson = null,
+        string? traverseJson = null)
     {
         using var conn = new SqliteConnection($"Data Source={_dbPath}");
         conn.Open();
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO DeedLogs (BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp)
-            VALUES (@batchId, @fileName, @parcelName, @geoCallCount, @linearError, @precisionRatio, @status, @repairStageUsed, @timestamp)
+            INSERT INTO DeedLogs (BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp, ExtractionJson, TraverseJson)
+            VALUES (@batchId, @fileName, @parcelName, @geoCallCount, @linearError, @precisionRatio, @status, @repairStageUsed, @timestamp, @extractionJson, @traverseJson)
         ";
         cmd.Parameters.AddWithValue("@batchId", batchId);
         cmd.Parameters.AddWithValue("@fileName", fileName);
@@ -126,6 +147,8 @@ public class DiagnosticsDatabaseService
         cmd.Parameters.AddWithValue("@status", status);
         cmd.Parameters.AddWithValue("@repairStageUsed", (object?)repairStageUsed ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@timestamp", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.Parameters.AddWithValue("@extractionJson", (object?)extractionJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@traverseJson", (object?)traverseJson ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -170,11 +193,44 @@ public class DiagnosticsDatabaseService
                 PrecisionRatio: reader.GetDouble(6),
                 Status: reader.GetString(7),
                 RepairStageUsed: reader.IsDBNull(8) ? null : reader.GetString(8),
-                Timestamp: reader.GetString(9)
+                Timestamp: reader.GetString(9),
+                ExtractionJson: reader.IsDBNull(10) ? null : reader.GetString(10),
+                TraverseJson: reader.IsDBNull(11) ? null : reader.GetString(11)
             ));
         }
 
         return logs;
+    }
+
+    public DeedLogDto? FindSolvedCase(string fileName)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT * FROM DeedLogs WHERE FileName = @fileName AND Status = 'PASS' ORDER BY Timestamp DESC LIMIT 1";
+        cmd.Parameters.AddWithValue("@fileName", fileName);
+
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            return new DeedLogDto(
+                Id: reader.GetInt32(0),
+                BatchId: reader.GetString(1),
+                FileName: reader.GetString(2),
+                ParcelName: reader.IsDBNull(3) ? null : reader.GetString(3),
+                GeoCallCount: reader.GetInt32(4),
+                LinearError: reader.GetDouble(5),
+                PrecisionRatio: reader.GetDouble(6),
+                Status: reader.GetString(7),
+                RepairStageUsed: reader.IsDBNull(8) ? null : reader.GetString(8),
+                Timestamp: reader.GetString(9),
+                ExtractionJson: reader.IsDBNull(10) ? null : reader.GetString(10),
+                TraverseJson: reader.IsDBNull(11) ? null : reader.GetString(11)
+            );
+        }
+
+        return null;
     }
 
     public List<BatchRunDto> GetRecentBatchRuns()
