@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import TraverseMap from './TraverseMap';
+import PrintBlueprint from './PrintBlueprint';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 const API = 'http://localhost:5050/api';
@@ -19,6 +20,7 @@ export default function TraverseTab() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPrint, setShowPrint] = useState(false);
 
   const addCourse = () => setCourses(c => [...c, { ...BLANK_COURSE }]);
   const removeCourse = i => setCourses(c => c.filter((_, idx) => idx !== i));
@@ -195,7 +197,12 @@ export default function TraverseTab() {
 
           {/* Map */}
           <div className="card">
-            <div className="card-header"><div className="card-title">🗺 Traverse Map</div></div>
+            <div className="card-header">
+              <div className="card-title">🗺 Traverse Map</div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowPrint(true)}>
+                🖨 Print Blueprint
+              </button>
+            </div>
             <TraverseMap stations={result.stations} adjusted={result.adjustedStations} />
           </div>
 
@@ -233,6 +240,19 @@ export default function TraverseTab() {
             </div>
           </div>
         </>
+      )}
+      {showPrint && result && (
+        <PrintBlueprint
+          courses={courses}
+          stations={result.stations}
+          adjusted={result.adjustedStations}
+          units={units}
+          area={result.areaAcres}
+          perimeter={result.perimeter}
+          pob={{ northing: parseFloat(pob.northing), easting: parseFloat(pob.easting) }}
+          initialLegalDescription={''}
+          onClose={() => setShowPrint(false)}
+        />
       )}
     </div>
   );

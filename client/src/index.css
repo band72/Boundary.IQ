@@ -432,3 +432,428 @@ select option { background: var(--bg-elevated); }
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
 .divider { height: 1px; background: var(--border); margin: 1rem 0; }
+
+/* ── Printable Blueprint Styles ───────────────────────────────────────── */
+.print-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  z-index: 1500;
+  background: #070b19;
+  font-family: 'Inter', sans-serif;
+  overflow: hidden;
+}
+
+.print-sidebar {
+  width: 330px;
+  background: #0f1526;
+  border-right: 1px solid #1e2942;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem;
+  flex-shrink: 0;
+  height: 100%;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+}
+
+.sidebar-scrollable {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding-right: 0.25rem;
+}
+
+.sidebar-section {
+  border-bottom: 1px solid #1d283d;
+  padding-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.section-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #8899bb;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.25rem 0;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  color: #e8eeff;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 400;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.sidebar-actions {
+  flex-shrink: 0;
+}
+
+.print-canvas-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  overflow: auto;
+  background: #070b19;
+}
+
+/* 11" x 8.5" landscape sheet layout */
+.blueprint-sheet {
+  width: 1056px;
+  height: 816px;
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.blueprint-border-outer {
+  border: 2px solid #000000;
+  margin: 12px;
+  height: calc(100% - 24px);
+  width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 3px;
+}
+
+.blueprint-border-inner {
+  border: 0.75px solid #000000;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.blueprint-grid {
+  display: grid;
+  grid-template-columns: 699px 1fr;
+  gap: 12px;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.blueprint-map-column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-right: 0.5px solid #000000;
+  padding-right: 12px;
+  box-sizing: border-box;
+}
+
+.blueprint-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1.5px solid #000000;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  text-align: left;
+  font-family: 'Inter', sans-serif;
+  color: #000000;
+}
+
+.blueprint-canvas-element {
+  width: 686px;
+  height: 457px;
+  background: #ffffff;
+  display: block;
+}
+
+.blueprint-info-column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  gap: 12px;
+}
+
+.blueprint-desc-panel {
+  border: 1px solid #000000;
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  box-sizing: border-box;
+}
+
+.panel-header {
+  background: #000000;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.panel-body {
+  padding: 8px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-y: auto;
+  flex: 1;
+  word-break: break-word;
+  text-align: justify;
+  color: #000000;
+}
+.panel-body .no-description {
+  color: #666666;
+  font-style: italic;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.font-serif {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.blueprint-tables-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border: 1.5px solid #000000;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.table-block {
+  width: 100%;
+}
+
+.survey-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.62rem;
+}
+.survey-table th {
+  border-bottom: 1.25px solid #000000;
+  font-weight: 700;
+  font-size: 0.56rem;
+  background: #f5f5f5;
+  color: #000000;
+  padding: 3px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.survey-table td {
+  padding: 3px 6px;
+  border-bottom: 0.5px solid #dddddd;
+  font-family: 'JetBrains Mono', monospace;
+  color: #000000;
+}
+.survey-table td.bold {
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+}
+.survey-table tr:last-child td {
+  border-bottom: none;
+}
+
+.blueprint-title-block {
+  border: 2px solid #000000;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  box-sizing: border-box;
+}
+
+.tb-row {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+.tb-row.border-bottom {
+  border-bottom: 1px solid #000000;
+}
+
+.tb-cell {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  justify-content: center;
+}
+.tb-cell.border-left {
+  border-left: 1px solid #000000;
+}
+.tb-cell.col-12 { width: 100%; }
+.tb-cell.col-6 { width: 50%; }
+.tb-cell.col-4 { width: 33.33%; }
+.tb-cell.center { text-align: center; }
+.tb-cell.bold { font-weight: 700; }
+.tb-cell.font-sans { font-family: 'Inter', sans-serif; }
+
+.tb-label {
+  font-size: 0.48rem;
+  text-transform: uppercase;
+  color: #555555;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 1px;
+  display: block;
+}
+
+.tb-val {
+  font-size: 0.65rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  color: #000000;
+  display: block;
+}
+.tb-val.bold {
+  font-weight: 700;
+}
+.tb-val.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Screen-Specific Printable Container Overrides ───────────────────── */
+.only-print {
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.blueprint-multi-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* ── Print Stylesheet Rules ───────────────────────────────────────────── */
+@media print {
+  /* 1. Hide the React app's top-level shell wrapper. Since PrintBlueprint is rendered inside a React Portal
+     under document.body (a sibling of #root), it remains fully visible. This isolates printing perfectly
+     and prevents browser layout engines from pausing portal paints when #root itself is display: none. */
+  .app-shell {
+    display: none !important;
+  }
+
+  /* 2. Unconditionally allow the body/html to expand and page-break naturally */
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* 3. Hide screen-specific layouts */
+  .no-print, 
+  .print-sidebar {
+    display: none !important;
+  }
+
+  /* 4. Configure print-overlay to overlay everything absolute and expand naturally */
+  .print-overlay {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: #ffffff !important;
+    display: block !important;
+    overflow: visible !important;
+    z-index: 99999 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  .print-canvas-wrapper {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    background: #ffffff !important;
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  /* 5. Center and configure sheets */
+  .blueprint-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+    width: 1056px !important;
+    height: 816px !important;
+    transform: scale(1.0) !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* 6. Force landscape page sizing */
+  @page {
+    size: letter landscape;
+    margin: 0;
+  }
+
+  /* 7. Unconditionally position the print multi-container and clear offscreen screen positioning */
+  .blueprint-multi-container {
+    gap: 0 !important;
+    display: block !important;
+  }
+
+  .blueprint-sheet.page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  .only-print {
+    display: block !important;
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    transform: none !important;
+  }
+}

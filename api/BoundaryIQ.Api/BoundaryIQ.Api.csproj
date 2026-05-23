@@ -19,10 +19,10 @@
 
   <!-- RCS COGO Engine — source references (cross-platform net8.0 libs) -->
   <ItemGroup>
-    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Cogo.Core\RCS.Cogo.Core.csproj" />
-    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Cogo.App\RCS.Cogo.App.csproj" />
-    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Alignments.Core\RCS.Alignments.Core.csproj" />
-    <ProjectReference Include="C:\Users\band01\source\repos\AsBuilt-Bro\src\RCS.Geo.Abstractions\RCS.Geo.Abstractions.csproj" />
+    <ProjectReference Include="../../../AsBuilt-Bro/src/RCS.Cogo.Core/RCS.Cogo.Core.csproj" />
+    <ProjectReference Include="../../../AsBuilt-Bro/src/RCS.Cogo.App/RCS.Cogo.App.csproj" />
+    <ProjectReference Include="../../../AsBuilt-Bro/src/RCS.Alignments.Core/RCS.Alignments.Core.csproj" />
+    <ProjectReference Include="../../../AsBuilt-Bro/src/RCS.Geo.Abstractions/RCS.Geo.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

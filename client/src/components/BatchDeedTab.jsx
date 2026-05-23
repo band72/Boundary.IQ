@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import TraverseMap from './TraverseMap';
+import PrintBlueprint from './PrintBlueprint';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 const API = 'http://localhost:5050/api';
@@ -15,10 +16,12 @@ export default function BatchDeedTab() {
   const [results, setResults]   = useState(null);   // BatchDeedResult | null
   const [error, setError]       = useState('');
   const [expanded, setExpanded] = useState({});
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [showPrint, setShowPrint] = useState(false);
   const fileRef = useRef();
 
   const addFiles = newFiles => {
-    const arr = Array.from(newFiles).filter(f => f.type.startsWith('image/'));
+    const arr = Array.from(newFiles).filter(f => f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
     setFiles(prev => {
       const names = new Set(prev.map(f => f.name));
       return [...prev, ...arr.filter(f => !names.has(f.name))].slice(0, 20);
@@ -36,7 +39,7 @@ export default function BatchDeedTab() {
 
   const runBatch = async () => {
     if (!files.length) return;
-    setLoading(true); setError(''); setResults(null); setExpanded({});
+    setLoading(true); setError(''); setResults(null); setExpanded({}); setActiveIdx(0);
     try {
       const fd = new FormData();
       files.forEach(f => fd.append('images', f));
@@ -101,27 +104,6 @@ export default function BatchDeedTab() {
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Up to 20 plat images · Extract → Compute → Legal Description</span>
         </div>
 
-        <div className="grid-3" style={{ marginBottom: '1rem' }}>
-          <div className="form-group">
-            <label className="form-label">Default POB Northing</label>
-            <input type="number" value={pobN} onChange={e => setPobN(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Default POB Easting</label>
-            <input type="number" value={pobE} onChange={e => setPobE(e.target.value)} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-            <div className="form-group">
-              <label className="form-label">County</label>
-              <input type="text" placeholder="Duval" value={county} onChange={e => setCounty(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">State</label>
-              <input type="text" placeholder="FL" value={stateVal} onChange={e => setStateVal(e.target.value)} />
-            </div>
-          </div>
-        </div>
-
         {/* Drop zone */}
         <div
           className={`drop-zone ${drag ? 'drag-over' : ''}`}
@@ -132,9 +114,9 @@ export default function BatchDeedTab() {
           onDrop={e => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }}
         >
           <div className="drop-icon">🗂</div>
-          <p>Drop plat images here or <strong>click to browse</strong><br />
-            <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP — up to 20 files</span></p>
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={e => addFiles(e.target.files)} />
+          <p>Drop plat files or PDFs here or <strong>click to browse</strong><br />
+            <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF — up to 20 files</span></p>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple hidden onChange={e => addFiles(e.target.files)} />
         </div>
 
         {/* File queue — always visible once files are added */}
@@ -198,9 +180,12 @@ export default function BatchDeedTab() {
 
       {/* ── Results summary + download ─────────────────────────────────────────── */}
       {results && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">📊 Results — {results.totalProcessed} processed</div>
+        <div className="card" style={{ maxWidth: '100%' }}>
+          <div className="card-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <div className="card-title">📊 Results — {results.totalProcessed} processed</div>
+              <span className="text-muted" style={{ fontSize: '0.72rem' }}>Click any file tab below to inspect its detailed split-view</span>
+            </div>
             <div className="flex-row">
               <span className="status-badge pass">✓ {results.succeeded} OK</span>
               {results.failed > 0 && <span className="status-badge fail">✗ {results.failed} failed</span>}
@@ -209,108 +194,201 @@ export default function BatchDeedTab() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {results.results.map((r, i) => (
-              <div key={i} style={{ border: `1px solid ${r.status === 'success' ? 'rgba(0,212,168,0.25)' : 'rgba(255,77,109,0.25)'}`, borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          {/* Horizontal file selector tabs */}
+          <div style={{
+            display: 'flex',
+            gap: '0.5rem',
+            overflowX: 'auto',
+            paddingBottom: '0.75rem',
+            borderBottom: '1px solid var(--border)',
+            marginBottom: '1.25rem'
+          }}>
+            {results.results.map((r, i) => {
+              const success = r.status === 'success';
+              return (
+                <button
+                  key={i}
+                  className={`btn ${activeIdx === i ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setActiveIdx(i)}
+                  style={{
+                    whiteSpace: 'nowrap',
+                    padding: '0.4rem 0.8rem',
+                    fontSize: '0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    border: activeIdx === i ? '1px solid var(--accent)' : '1px solid transparent',
+                    background: activeIdx === i ? 'var(--accent)' : 'var(--bg-elevated)',
+                    color: activeIdx === i ? '#fff' : 'var(--text-secondary)',
+                    borderRadius: 'var(--radius-sm)'
+                  }}
+                >
+                  <span>{success ? '✅' : '❌'}</span>
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{r.fileName}</span>
+                </button>
+              );
+            })}
+          </div>
 
-                {/* Accordion header */}
-                <div onClick={() => toggle(i)} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  padding: '0.75rem 1rem', cursor: 'pointer',
-                  background: 'var(--bg-elevated)', userSelect: 'none',
-                }}>
-                  <span>{r.status === 'success' ? '✅' : '✗'}</span>
-                  <span style={{ flex: 1, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.fileName}</span>
-                  {r.extraction && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{r.extraction.courses.length} courses</span>}
-                  {r.traverse && (
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap', color: r.traverse.closure.status.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>
-                      {r.traverse.closure.precisionRatio}
-                    </span>
-                  )}
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{expanded[i] ? '▲' : '▼'}</span>
-                </div>
+          {/* Active Result Split Window */}
+          {(() => {
+            const r = results.results[activeIdx];
+            if (!r) return null;
 
-                {/* Accordion body */}
-                {expanded[i] && (
-                  <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderTop: '1px solid var(--border)' }}>
-
+            return (
+              <div className="grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
+                
+                {/* Left Panel: OCR Output */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  <div style={{
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '1.25rem'
+                  }}>
+                    <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
+                      <span>🔤</span> OCR & Boundary Extraction
+                    </h3>
+                    
                     {r.status === 'error' && (
                       <div className="alert alert-error">⚠ {r.error}</div>
                     )}
 
-                    {/* Closure stats */}
-                    {r.traverse && (
-                      <div className="closure-grid">
+                    {r.extraction?.courses?.length > 0 ? (
+                      <div className="data-table-wrap" style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Type</th>
+                              <th>Bearing / Chord</th>
+                              <th>Dist / Arc</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {r.extraction.courses.map((c, j) => (
+                              <tr key={j}>
+                                <td>{j + 1}</td>
+                                <td style={{ color: c.type === 'Curve' ? 'var(--warning)' : 'var(--accent)', fontWeight: 500 }}>
+                                  {c.type}
+                                </td>
+                                <td>{c.bearing || c.chordBearing || '—'}</td>
+                                <td>{c.distance ?? c.arcLength ?? c.chordDistance ?? '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      r.status === 'success' && <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No boundary courses extracted.</div>
+                    )}
+                  </div>
+
+                  {r.legalDescription?.legalDescription && (
+                    <div style={{
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '1.25rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                        <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '0.95rem' }}>
+                          <span>✍️</span> Generated Legal Description
+                        </h3>
+                        <button className="btn btn-ghost btn-sm"
+                          onClick={() => navigator.clipboard.writeText(r.legalDescription.legalDescription)}>
+                          📋 Copy
+                        </button>
+                      </div>
+                      <pre style={{
+                        background: 'var(--bg-card)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)', padding: '1rem',
+                        fontFamily: 'Georgia, serif', fontSize: '0.85rem', lineHeight: 1.9,
+                        whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 250, overflowY: 'auto',
+                      }}>
+                        {r.legalDescription.legalDescription}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Panel: Parcel Map & Closure */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  {r.extraction?.courses?.length > 0 && (
+                    <div style={{
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '1.25rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
+                          <span>🗺️</span> Parcel Map
+                        </h3>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setShowPrint(true)}>
+                          🖨 Print Blueprint
+                        </button>
+                      </div>
+                      <div style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        <TraverseMap
+                          stations={r.traverse?.stations}
+                          adjusted={r.traverse?.adjustedStations}
+                          courses={r.extraction?.courses}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {r.traverse && (
+                    <div style={{
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '1.25rem'
+                    }}>
+                      <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
+                        <span>📊</span> Closure Report
+                      </h3>
+                      <div className="closure-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                         {[
                           ['Precision', r.traverse.closure.precisionRatio, r.traverse.closure.status.startsWith('✓') ? 'pass' : 'fail'],
                           ['Linear Error', `${r.traverse.closure.linearError.toFixed(4)}'`, 'neutral'],
                           ['Perimeter',    `${r.traverse.perimeter.toFixed(2)}'`,           'neutral'],
                           ['Area',         `${r.traverse.areaAcres.toFixed(4)} ac`,          'neutral'],
                         ].map(([label, value, cls]) => (
-                          <div className="closure-stat" key={label}>
-                            <div className="label">{label}</div>
-                            <div className={`value ${cls}`}>{value}</div>
+                          <div className="closure-stat" key={label} style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-card)' }}>
+                            <div className="label" style={{ fontSize: '0.7rem' }}>{label}</div>
+                            <div className={`value ${cls}`} style={{ fontSize: '1rem' }}>{value}</div>
                           </div>
                         ))}
                       </div>
-                    )}
+                    </div>
+                  )}
+                </div>
 
-                    {/* Traverse map */}
-                    {r.traverse && (
-                      <TraverseMap
-                        stations={r.traverse.stations}
-                        adjusted={r.traverse.adjustedStations}
-                      />
-                    )}
-
-                    {/* Extracted courses */}
-                    {r.extraction?.courses?.length > 0 && (
-                      <div>
-                        <h3 style={{ marginBottom: '0.5rem' }}>Extracted Courses</h3>
-                        <div className="data-table-wrap">
-                          <table className="data-table">
-                            <thead><tr><th>#</th><th>Type</th><th>Bearing / Chord</th><th>Dist / Arc</th></tr></thead>
-                            <tbody>
-                              {r.extraction.courses.map((c, j) => (
-                                <tr key={j}>
-                                  <td>{j + 1}</td>
-                                  <td style={{ color: c.type === 'Curve' ? 'var(--warning)' : 'var(--accent)', fontWeight: 500 }}>{c.type}</td>
-                                  <td>{c.bearing || c.chordBearing || '—'}</td>
-                                  <td>{c.distance ?? c.arcLength ?? c.chordDistance ?? '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Legal description */}
-                    {r.legalDescription?.legalDescription && (
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                          <h3>Legal Description</h3>
-                          <button className="btn btn-ghost btn-sm"
-                            onClick={() => navigator.clipboard.writeText(r.legalDescription.legalDescription)}>
-                            📋 Copy
-                          </button>
-                        </div>
-                        <pre style={{
-                          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                          borderRadius: 'var(--radius-sm)', padding: '1rem',
-                          fontFamily: 'Georgia, serif', fontSize: '0.85rem', lineHeight: 1.9,
-                          whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto',
-                        }}>
-                          {r.legalDescription.legalDescription}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
+      )}
+      {showPrint && results && (
+        (() => {
+          const r = results.results[activeIdx];
+          if (!r) return null;
+          return (
+            <PrintBlueprint
+              courses={r.extraction?.courses || []}
+              stations={r.traverse?.stations || []}
+              adjusted={r.traverse?.adjustedStations || []}
+              units="Feet"
+              area={r.traverse?.areaAcres || 0}
+              perimeter={r.traverse?.perimeter || 0}
+              pob={{ northing: parseFloat(pobN), easting: parseFloat(pobE) }}
+              initialLegalDescription={r.legalDescription?.legalDescription || ''}
+              onClose={() => setShowPrint(false)}
+            />
+          );
+        })()
       )}
     </div>
   );

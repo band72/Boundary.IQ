@@ -13,7 +13,7 @@ public class GeminiVisionService
     private readonly ILogger<GeminiVisionService> _log;
 
     // Gemini model — flash is fast enough for structured extraction
-    private const string Model = "gemini-2.0-flash";
+    private const string Model = "gemini-3.5-flash";
 
     public GeminiVisionService(IHttpClientFactory factory, IConfiguration config, ILogger<GeminiVisionService> log)
     {

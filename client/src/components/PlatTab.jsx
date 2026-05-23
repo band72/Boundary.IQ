@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import TraverseMap from './TraverseMap';
+import PrintBlueprint from './PrintBlueprint';
 
 const API = 'http://localhost:5050/api';
 
@@ -12,6 +13,7 @@ export default function PlatTab() {
   const [error, setError]       = useState('');
   const [pobN, setPobN]         = useState('5000.00');
   const [pobE, setPobE]         = useState('5000.00');
+  const [showPrint, setShowPrint] = useState(false);
   const [mode, setMode]         = useState('extract'); // 'extract' | 'extract-and-compute'
   const fileRef = useRef();
 
@@ -112,15 +114,23 @@ export default function PlatTab() {
           <div className="drop-icon">📡</div>
           {file
             ? <p><strong>{file.name}</strong> &nbsp;·&nbsp; {(file.size / 1024).toFixed(1)} KB</p>
-            : <p>Drop a plat image here or <strong>click to browse</strong><br />
-                <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · up to 20 MB</span></p>
+            : <p>Drop a plat file or PDF here or <strong>click to browse</strong><br />
+                <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF — up to 20 MB</span></p>
           }
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => handleFile(e.target.files[0])} />
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={e => handleFile(e.target.files[0])} />
         </div>
 
-        {preview && (
+        {preview && file && !file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf') && (
           <div style={{ marginTop: '0.75rem', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <img src={preview} alt="Plat" style={{ width: '100%', maxHeight: 300, objectFit: 'contain', display: 'block', background: 'var(--bg-elevated)' }} />
+          </div>
+        )}
+
+        {file && (file.type.includes('pdf') || file.name.toLowerCase().endsWith('.pdf')) && (
+          <div style={{ marginTop: '0.75rem', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border)', padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+            <span style={{ fontSize: '3rem' }}>📄</span>
+            <div style={{ marginTop: '0.5rem', fontWeight: 600 }}>{file.name}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>PDF Document</div>
           </div>
         )}
 
@@ -183,36 +193,41 @@ export default function PlatTab() {
 
       {/* Traverse Results (extract-and-compute mode) */}
       {trav && (
-        <>
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">📊 Closure Report</div>
-              <span className={`status-badge ${isPassing ? 'pass' : 'fail'}`}>
-                {isPassing ? '✓ Passes' : '✗ Fails'} &nbsp;{trav.closure.precisionRatio}
-              </span>
-            </div>
-            <div className="closure-grid">
-              {[
-                ['Precision', trav.closure.precisionRatio, isPassing ? 'pass' : 'fail'],
-                ['Linear Error', `${trav.closure.linearError.toFixed(4)}'`, 'neutral'],
-                ['Error N', `${trav.closure.errorNorthing.toFixed(4)}'`, 'neutral'],
-                ['Error E', `${trav.closure.errorEasting.toFixed(4)}'`, 'neutral'],
-                ['Perimeter', `${trav.perimeter.toFixed(2)}'`, 'neutral'],
-                ['Area', `${trav.areaAcres.toFixed(4)} ac`, 'neutral'],
-              ].map(([label, value, cls]) => (
-                <div className="closure-stat" key={label}>
-                  <div className="label">{label}</div>
-                  <div className={`value ${cls}`}>{value}</div>
-                </div>
-              ))}
-            </div>
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">📊 Closure Report</div>
+            <span className={`status-badge ${isPassing ? 'pass' : 'fail'}`}>
+              {isPassing ? '✓ Passes' : '✗ Fails'} &nbsp;{trav.closure.precisionRatio}
+            </span>
           </div>
+          <div className="closure-grid">
+            {[
+              ['Precision', trav.closure.precisionRatio, isPassing ? 'pass' : 'fail'],
+              ['Linear Error', `${trav.closure.linearError.toFixed(4)}'`, 'neutral'],
+              ['Error N', `${trav.closure.errorNorthing.toFixed(4)}'`, 'neutral'],
+              ['Error E', `${trav.closure.errorEasting.toFixed(4)}'`, 'neutral'],
+              ['Perimeter', `${trav.perimeter.toFixed(2)}'`, 'neutral'],
+              ['Area', `${trav.areaAcres.toFixed(4)} ac`, 'neutral'],
+            ].map(([label, value, cls]) => (
+              <div className="closure-stat" key={label}>
+                <div className="label">{label}</div>
+                <div className={`value ${cls}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-          <div className="card">
-            <div className="card-header"><div className="card-title">🗺 Traverse Map</div></div>
-            <TraverseMap stations={trav.stations} adjusted={trav.adjustedStations} />
+      {ext?.courses?.length > 0 && (
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">🗺 Traverse Map</div>
+             <button className="btn btn-ghost btn-sm" onClick={() => setShowPrint(true)}>
+               🖨 Print Blueprint
+             </button>
           </div>
-        </>
+          <TraverseMap stations={trav?.stations} adjusted={trav?.adjustedStations} courses={ext?.courses} />
+        </div>
       )}
 
       {/* Raw Gemini JSON (collapsible) */}
@@ -225,6 +240,19 @@ export default function PlatTab() {
             {ext.rawJson}
           </pre>
         </details>
+      )}
+      {showPrint && ext?.courses?.length > 0 && (
+        <PrintBlueprint
+          courses={ext.courses}
+          stations={trav?.stations || []}
+          adjusted={trav?.adjustedStations || []}
+          units="Feet"
+          area={trav?.areaAcres || 0}
+          perimeter={trav?.perimeter || 0}
+          pob={{ northing: parseFloat(pobN), easting: parseFloat(pobE) }}
+          initialLegalDescription={''}
+          onClose={() => setShowPrint(false)}
+        />
       )}
     </div>
   );

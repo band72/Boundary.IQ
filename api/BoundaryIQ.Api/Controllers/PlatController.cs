@@ -14,7 +14,7 @@ public class PlatController : ControllerBase
 
     // 20 MB max — large plat scans can be substantial
     private const long MaxFileSizeBytes = 20 * 1024 * 1024;
-    private static readonly HashSet<string> AllowedMime = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    private static readonly HashSet<string> AllowedMime = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
 
     public PlatController(GeminiVisionService gemini, TraverseService traverse, ILogger<PlatController> log)
     {
@@ -24,7 +24,7 @@ public class PlatController : ControllerBase
     }
 
     /// <summary>
-    /// Upload a plat image → Gemini Vision extracts boundary courses → returns structured data.
+    /// Upload a plat image or PDF → Gemini Vision extracts boundary courses → returns structured data.
     /// </summary>
     [HttpPost("extract")]
     [RequestSizeLimit(25 * 1024 * 1024)]
@@ -33,7 +33,7 @@ public class PlatController : ControllerBase
     public async Task<IActionResult> Extract(IFormFile image, CancellationToken ct)
     {
         if (image is null || image.Length == 0)
-            return BadRequest(new { error = "No image file provided." });
+            return BadRequest(new { error = "No file provided." });
 
         if (image.Length > MaxFileSizeBytes)
             return BadRequest(new { error = $"File exceeds 20 MB limit ({image.Length / 1024 / 1024:F1} MB)." });
@@ -42,9 +42,14 @@ public class PlatController : ControllerBase
         string mime = image.ContentType.ToLowerInvariant();
         if (!AllowedMime.Contains(mime))
         {
-            // Accept .jpg uploaded without proper mime type
             var ext = Path.GetExtension(image.FileName).ToLowerInvariant();
-            mime = ext switch { ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".webp" => "image/webp", _ => mime };
+            mime = ext switch { 
+                ".jpg" or ".jpeg" => "image/jpeg", 
+                ".png" => "image/png", 
+                ".webp" => "image/webp", 
+                ".pdf" => "application/pdf",
+                _ => mime 
+            };
         }
 
         _log.LogInformation("Plat extract — file: {name}, size: {kb} KB, mime: {mime}",
@@ -86,6 +91,17 @@ public class PlatController : ControllerBase
         {
             await using var stream = image.OpenReadStream();
             string mime = image.ContentType.ToLowerInvariant();
+            if (!AllowedMime.Contains(mime))
+            {
+                var ext = Path.GetExtension(image.FileName).ToLowerInvariant();
+                mime = ext switch { 
+                    ".jpg" or ".jpeg" => "image/jpeg", 
+                    ".png" => "image/png", 
+                    ".webp" => "image/webp", 
+                    ".pdf" => "application/pdf",
+                    _ => mime 
+                };
+            }
             var extracted = await _gemini.ExtractBoundaryAsync(stream, mime, ct);
 
             TraverseResult? traverse = null;

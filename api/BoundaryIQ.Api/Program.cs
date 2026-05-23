@@ -1,5 +1,33 @@
 using BoundaryIQ.Api.Services;
 
+// Load .env file if it exists in the current, parent, or grandparent directories
+var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
+string? envPath = null;
+while (currentDir != null)
+{
+    var tempPath = Path.Combine(currentDir.FullName, ".env");
+    if (File.Exists(tempPath))
+    {
+        envPath = tempPath;
+        break;
+    }
+    currentDir = currentDir.Parent;
+}
+
+if (envPath != null)
+{
+    foreach (var line in File.ReadAllLines(envPath))
+    {
+        if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#')) continue;
+        var parts = line.Split('=', 2);
+        if (parts.Length == 2)
+        {
+            Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
+        }
+    }
+}
+
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
@@ -18,6 +46,8 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddCors(opts => opts.AddPolicy("BoundaryIQ", p =>
     p.WithOrigins(
         "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
         "http://localhost:3000",
         "https://thebluemind.com",
         "https://www.thebluemind.com"

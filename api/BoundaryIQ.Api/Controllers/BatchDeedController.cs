@@ -128,7 +128,15 @@ public class BatchDeedController : ControllerBase
         if (mime.Contains("jpeg") || mime.Contains("jpg")) return "image/jpeg";
         if (mime.Contains("png"))  return "image/png";
         if (mime.Contains("webp")) return "image/webp";
+        if (mime.Contains("pdf"))  return "application/pdf";
         var ext = Path.GetExtension(f.FileName).ToLowerInvariant();
-        return ext switch { ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", _ => "image/jpeg" };
+        return ext switch 
+        { 
+            ".jpg" or ".jpeg" => "image/jpeg", 
+            ".png" => "image/png", 
+            ".webp" => "image/webp",
+            ".pdf" => "application/pdf",
+            _ => "image/jpeg" 
+        };
     }
 }
