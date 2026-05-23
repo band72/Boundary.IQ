@@ -53,6 +53,9 @@ public class BatchDeedController : ControllerBase
         var batchId = Guid.NewGuid().ToString();
         var results = new List<BatchDeedItemResult>();
 
+        // Pre-save batch run to satisfy SQLite Foreign Key constraints on DeedLogs
+        _db.SaveBatchRun(batchId, images.Count, 0.0);
+
         foreach (var image in images)
         {
             if (ct.IsCancellationRequested) break;
