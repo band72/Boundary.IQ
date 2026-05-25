@@ -8,6 +8,7 @@ export default function SettingsTab() {
   const [parallelBatches, setParallelBatches]   = useLocalStorage('boundaryiq_parallel_batches', 1);
   const [maxFileSize, setMaxFileSize]           = useLocalStorage('boundaryiq_max_file_size', 51);
   const [retentionDays, setRetentionDays]       = useLocalStorage('boundaryiq_retention_days', 90);
+  const [autoOutput, setAutoOutput]             = useLocalStorage('boundaryiq_auto_output', false);
 
   // Database stats
   const [dbStats, setDbStats]       = useState(null);
@@ -339,7 +340,105 @@ export default function SettingsTab() {
         </div>
       </div>
 
-      {/* ── Database Management ─────────────────────────────────────── */}
+      {/* ── Output Configuration ─────────────────────────────────────── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: `1px solid ${autoOutput ? 'rgba(0, 212, 168, 0.35)' : 'var(--border)'}`,
+        boxShadow: autoOutput ? '0 4px 24px rgba(0, 212, 168, 0.08)' : '0 4px 24px rgba(0, 0, 0, 0.15)',
+        transition: 'border-color 0.3s, box-shadow 0.3s',
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            📤 Output File Configuration
+          </div>
+        </div>
+
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* Auto-Output Toggle */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+            <label style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              marginTop: '2px',
+            }}>
+              <input
+                type="checkbox"
+                checked={autoOutput}
+                onChange={e => setAutoOutput(e.target.checked)}
+                style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+              />
+              <div style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                background: autoOutput
+                  ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)'
+                  : 'rgba(255,255,255,0.1)',
+                border: `1px solid ${autoOutput ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                position: 'relative',
+                transition: 'all 0.3s ease',
+                boxShadow: autoOutput ? '0 0 12px rgba(0, 212, 168, 0.3)' : 'none',
+              }}>
+                <div style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  background: '#fff',
+                  position: 'absolute',
+                  top: '2px',
+                  left: autoOutput ? '22px' : '3px',
+                  transition: 'left 0.3s ease',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </label>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.35rem' }}>
+                Auto-Generate Output Files
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                When enabled, each batch/folder scan run will automatically create a timestamped subfolder
+                inside the source directory and write output files for every processed deed.
+              </p>
+            </div>
+          </div>
+
+          {/* Output Details Info Box */}
+          <div style={{
+            background: autoOutput ? 'rgba(0, 212, 168, 0.04)' : 'var(--bg-elevated)',
+            border: `1px solid ${autoOutput ? 'rgba(0, 212, 168, 0.2)' : 'var(--border)'}`,
+            borderRadius: 'var(--radius-md)',
+            padding: '1rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            fontSize: '0.78rem',
+            color: 'var(--text-muted)',
+            lineHeight: 1.7,
+            transition: 'all 0.3s ease',
+          }}>
+            <div style={{ fontWeight: 600, color: autoOutput ? 'var(--success)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span>{autoOutput ? '✅' : '⏸️'}</span> {autoOutput ? 'Auto-Output ENABLED' : 'Auto-Output Disabled'}
+            </div>
+            <div>
+              • <strong style={{ color: 'var(--text-primary)' }}>Folder Format:</strong>{' '}
+              <code style={{ fontSize: '0.75rem', color: 'var(--accent)', background: 'rgba(61,127,255,0.08)', padding: '1px 5px', borderRadius: '3px' }}>
+                DDMMYYYY.fff
+              </code>{' '}
+              (e.g. <code style={{ fontSize: '0.72rem', color: 'var(--accent)' }}>25052026.142</code>)
+            </div>
+            <div>• <strong style={{ color: 'var(--text-primary)' }}>Per deed:</strong> <code style={{ fontSize: '0.72rem' }}>_corrected.txt</code> + <code style={{ fontSize: '0.72rem' }}>_original.txt</code> + <code style={{ fontSize: '0.72rem' }}>_report.json</code></div>
+            <div>• <strong style={{ color: 'var(--text-primary)' }}>Batch summary:</strong> <code style={{ fontSize: '0.72rem' }}>_BATCH_SUMMARY.json</code> with pass/fail stats</div>
+            <div>• <strong style={{ color: 'var(--text-primary)' }}>Location:</strong> Created inside the scanned source folder</div>
+          </div>
+        </div>
+      </div>
       <div className="card" style={{
         background: 'rgba(9, 14, 26, 0.4)',
         backdropFilter: 'blur(8px)',

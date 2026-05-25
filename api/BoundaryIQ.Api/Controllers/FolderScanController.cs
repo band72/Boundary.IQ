@@ -50,16 +50,19 @@ public class FolderScanController : ControllerBase
         LegalDescriptionWriter writer,
         DiagnosticsDatabaseService db,
         DocConversionService docConvert,
+        OutputService output,
         ILogger<FolderScanController> log)
     {
         _repair     = repair;
         _writer     = writer;
         _db         = db;
         _docConvert = docConvert;
+        _output     = output;
         _log        = log;
     }
 
     private readonly DocConversionService _docConvert;
+    private readonly OutputService _output;
 
     // Supported extensions for scanning
     private static readonly string[] SupportedExtensions = { ".pdf", ".doc", ".docx" };
@@ -229,6 +232,7 @@ public class FolderScanController : ControllerBase
         [FromQuery] string? county = null,
         [FromQuery] string? state  = null,
         [FromQuery] int concurrency = 5,
+        [FromQuery] bool autoOutput = false,
         CancellationToken ct = default)
     {
         if (!Directory.Exists(path))
@@ -398,12 +402,36 @@ public class FolderScanController : ControllerBase
         double passRate = results.Count > 0 ? (double)succeeded / results.Count : 0.0;
         _db.SaveBatchRun(batchId, results.Count, passRate);
 
+        // ── Auto-Output: write files to dated subfolder ──────────────────────
+        string? outputFolder = null;
+        if (autoOutput)
+        {
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                outputFolder = _output.CreateOutputFolder(path);
+                foreach (var r in results)
+                {
+                    if (r == null) continue;
+                    _output.WriteResultFiles(outputFolder, r.FileName, r, r.LegalDescription);
+                }
+                sw.Stop();
+                _output.WriteBatchSummary(outputFolder, path, results, sw.Elapsed);
+                _log.LogInformation("Auto-output: wrote {count} result files to {folder}", results.Count, outputFolder);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Auto-output failed for batch {id}", batchId);
+            }
+        }
+
         return Ok(new
         {
             batchId,
             batchIndex,
             totalBatches,
             filesInBatch = batch.Count,
+            outputFolder,
             results = new BatchDeedResult(results, results.Count, succeeded, results.Count - succeeded)
         });
     }

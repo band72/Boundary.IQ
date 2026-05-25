@@ -254,9 +254,16 @@ export default function BatchDeedTab() {
     setFolderBatchProgress({ current: 0, total, results: [], startTime: Date.now() });
     setFolderError('');
 
+    // Read auto-output setting from localStorage
+    const autoOutputEnabled = (() => {
+      try { return JSON.parse(localStorage.getItem('boundaryiq_auto_output') || 'false'); }
+      catch { return false; }
+    })();
+
     const baseParams = new URLSearchParams({
       path: folderPath.trim(), pobN, pobE, units: 'Feet',
       concurrency: concurrentAgents,
+      ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
       ...(county   ? { county }          : {}),
       ...(stateVal ? { state: stateVal } : {}),
     });

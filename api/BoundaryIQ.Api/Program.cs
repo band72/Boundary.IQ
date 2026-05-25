@@ -69,6 +69,7 @@ builder.Services.AddScoped<GeminiVisionService>();
 builder.Services.AddScoped<LegalDescriptionWriter>();
 builder.Services.AddScoped<RepairService>();
 builder.Services.AddScoped<DocConversionService>();
+builder.Services.AddScoped<OutputService>();
 
 var app = builder.Build();
 
