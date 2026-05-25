@@ -30,7 +30,14 @@ if (envPath != null)
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(opts =>
+    {
+        // All JSON responses use camelCase so the frontend doesn't need to normalize field names
+        opts.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        // Be tolerant when reading stored PascalCase JSON from SQLite
+        opts.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -42,24 +49,17 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// CORS — Vite dev + production domain
+// CORS — allow any origin for local dev flexibility
 builder.Services.AddCors(opts => opts.AddPolicy("BoundaryIQ", p =>
-    p.WithOrigins(
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-        "http://localhost:3000",
-        "https://thebluemind.com",
-        "https://www.thebluemind.com"
-    )
-    .AllowAnyMethod()
-    .AllowAnyHeader()
+    p.AllowAnyOrigin()
+     .AllowAnyMethod()
+     .AllowAnyHeader()
 ));
 
 // HttpClient for Gemini API calls
 builder.Services.AddHttpClient("gemini", client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(120); // Vision calls can be slow on large images
+    client.Timeout = TimeSpan.FromSeconds(300); // Large batches can take 25s+ per file
 });
 
 // Application services
@@ -67,6 +67,8 @@ builder.Services.AddSingleton<DiagnosticsDatabaseService>();
 builder.Services.AddScoped<TraverseService>();
 builder.Services.AddScoped<GeminiVisionService>();
 builder.Services.AddScoped<LegalDescriptionWriter>();
+builder.Services.AddScoped<RepairService>();
+builder.Services.AddScoped<DocConversionService>();
 
 var app = builder.Build();
 
@@ -79,7 +81,10 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseAuthorization();
 app.MapControllers();
 

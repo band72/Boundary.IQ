@@ -12,6 +12,7 @@ export default function BatchDeedTab() {
   const [pobE, setPobE]         = useLocalStorage('boundaryiq_batch_pobe', '5000.00');
   const [county, setCounty]     = useLocalStorage('boundaryiq_batch_county', '');
   const [stateVal, setStateVal] = useLocalStorage('boundaryiq_batch_state', '');
+  const [concurrentAgents]      = useLocalStorage('boundaryiq_concurrent_agents', 5);
   const [loading, setLoading]   = useState(false);
   const [results, setResults]   = useState(null);   // BatchDeedResult | null
   const [error, setError]       = useState('');
@@ -19,13 +20,22 @@ export default function BatchDeedTab() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [showPrint, setShowPrint] = useState(false);
   
-  // Diagnostics Database state
   const [dbQuery, setDbQuery]       = useState('');
   const [dbStatus, setDbStatus]     = useState('');
   const [dbMaxError, setDbMaxError] = useState('');
   const [dbLogs, setDbLogs]         = useState([]);
   const [dbLoading, setDbLoading]   = useState(false);
   const [heuristics, setHeuristics] = useState([]);
+
+  // Folder Scan state
+  const [folderPath, setFolderPath] = useLocalStorage('boundaryiq_folder_path', '/home/friend/Downloads/TrainPDF/Regency-Title');
+  const [folderManifest, setFolderManifest] = useState(null);
+  const [folderScanLoading, setFolderScanLoading] = useState(false);
+  const [folderBatchLoading, setFolderBatchLoading] = useState(false);
+  const [folderBatchProgress, setFolderBatchProgress] = useState(null); // {current, total, results[], startTime}
+  const [batchStatuses, setBatchStatuses] = useState([]); // per-batch: {idx, status, count, error}
+  const [folderError, setFolderError] = useState('');
+  const [parallelBatches] = useLocalStorage('boundaryiq_parallel_batches', 1);
 
   const fetchHeuristics = async () => {
     try {
@@ -60,6 +70,85 @@ export default function BatchDeedTab() {
     searchDatabase();
   }, []);
 
+  // Recursively convert PascalCase keys to camelCase (DB stores PascalCase, UI expects camelCase)
+  const toCamel = (obj) => {
+    if (Array.isArray(obj)) return obj.map(toCamel);
+    if (obj !== null && typeof obj === 'object') {
+      return Object.fromEntries(
+        Object.entries(obj).map(([k, v]) => [
+          k.charAt(0).toLowerCase() + k.slice(1),
+          toCamel(v),
+        ])
+      );
+    }
+    return obj;
+  };
+
+  // Load a historical deed log back into the active results view
+  const loadFromDb = async (log) => {
+    try {
+      const rawExtraction = log.extractionJson ? JSON.parse(log.extractionJson) : null;
+      const rawTraverse   = log.traverseJson   ? JSON.parse(log.traverseJson)   : null;
+      if (!rawExtraction) { alert('No extraction data saved for this entry.'); return; }
+
+      // Convert PascalCase → camelCase so the React views can read them
+      const extraction = toCamel(rawExtraction);
+      const traverse   = rawTraverse ? toCamel(rawTraverse) : null;
+
+      // Regenerate legal description from the stored courses
+      let legalDescription = null;
+      const rawCourses = rawExtraction.Courses || rawExtraction.courses || [];
+      if (rawCourses.length > 0) {
+        try {
+          const writeRes = await fetch(`${API}/writer/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              courses: rawCourses,
+              pobNorthing: parseFloat(pobN),
+              pobEasting: parseFloat(pobE),
+              parcelDescription: null,
+              county: county || null,
+              state: stateVal || null,
+              units: 'feet',
+              basisOfBearings: null,
+              bearingSystem: null,
+              areaAcres: traverse?.areaAcres ?? rawTraverse?.AreaAcres ?? 0,
+              perimeter: traverse?.perimeter ?? rawTraverse?.Perimeter ?? 0,
+            }),
+          });
+          if (writeRes.ok) {
+            const writeData = await writeRes.json();
+            legalDescription = writeData;
+          }
+        } catch (e) {
+          console.warn('Failed to regenerate legal description:', e);
+        }
+      }
+
+      const fakeResult = {
+        fileName: log.fileName,
+        status: 'success',
+        extraction,
+        traverse,
+        legalDescription,
+        traverseError: null,
+      };
+
+      setResults({ results: [fakeResult], total: 1, succeeded: 1, failed: 0 });
+      setActiveIdx(0);
+      setExpanded({ 0: true });
+
+      // Scroll to results
+      setTimeout(() => {
+        const el = document.getElementById('batch-results-card');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
+    } catch (e) {
+      alert('Error loading saved data: ' + e.message);
+    }
+  };
+
   const fileRef = useRef();
 
   const addFiles = newFiles => {
@@ -88,6 +177,7 @@ export default function BatchDeedTab() {
 
       const params = new URLSearchParams({
         pobN, pobE, units: 'Feet',
+        concurrency: concurrentAgents,
         ...(county   ? { county }        : {}),
         ...(stateVal ? { state: stateVal } : {}),
       });
@@ -136,8 +226,256 @@ export default function BatchDeedTab() {
     a.click();
   };
 
+  const scanFolder = async () => {
+    const path = (folderPath ?? '').trim();
+    if (!path) { setFolderError('Please enter a folder path.'); return; }
+    setFolderScanLoading(true); setFolderError(''); setFolderManifest(null);
+    try {
+      const res = await fetch(`${API}/folderscan/scan?path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `Error ${res.status}`);
+      setFolderManifest(data);
+    } catch (e) {
+      setFolderError(String(e.message));
+    } finally {
+      setFolderScanLoading(false);
+    }
+  };
+
+  const runFolderBatches = async () => {
+    if (!folderManifest) return;
+    const total = folderManifest.batchesNeeded;
+    if (total === 0) { setFolderError('No processable deed PDFs in this folder.'); return; }
+
+    // Initialise per-batch status array
+    const initStatuses = Array.from({ length: total }, (_, i) => ({ idx: i, status: 'queued', count: 0, error: null }));
+    setBatchStatuses(initStatuses);
+    setFolderBatchLoading(true);
+    setFolderBatchProgress({ current: 0, total, results: [], startTime: Date.now() });
+    setFolderError('');
+
+    const baseParams = new URLSearchParams({
+      path: folderPath.trim(), pobN, pobE, units: 'Feet',
+      concurrency: concurrentAgents,
+      ...(county   ? { county }          : {}),
+      ...(stateVal ? { state: stateVal } : {}),
+    });
+
+    // Shared mutable accumulator (safe because JS is single-threaded for state)
+    let allResults = [];
+    let completedBatches = 0;
+
+    const runBatchIndex = async (i) => {
+      setBatchStatuses(prev => prev.map(b => b.idx === i ? { ...b, status: 'running' } : b));
+      try {
+        const p = new URLSearchParams(baseParams);
+        p.set('batchIndex', i);
+        const res  = await fetch(`${API}/folderscan/process-batch?${p}`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? `Batch ${i} error ${res.status}`);
+
+        const batchResults = data.results?.results ?? [];
+        allResults = [...allResults, ...batchResults];
+        completedBatches++;
+
+        setBatchStatuses(prev => prev.map(b => b.idx === i ? { ...b, status: 'done', count: batchResults.length } : b));
+        setFolderBatchProgress(prev => ({
+          ...prev,
+          current: completedBatches,
+          results: allResults,
+        }));
+      } catch (e) {
+        completedBatches++;
+        setBatchStatuses(prev => prev.map(b => b.idx === i ? { ...b, status: 'error', error: e.message } : b));
+        setFolderBatchProgress(prev => ({ ...prev, current: completedBatches }));
+        setFolderError(prev => prev ? `${prev} | Batch ${i + 1}: ${e.message}` : `Batch ${i + 1}: ${e.message}`);
+      }
+    };
+
+    // Rolling parallel pool — never more than parallelBatches streams at once
+    const poolSize = Math.max(1, Math.min(parallelBatches, total));
+    const indices  = Array.from({ length: total }, (_, i) => i);
+    const queue    = [...indices];
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        const idx = queue.shift();
+        if (idx === undefined) break;
+        await runBatchIndex(idx);
+      }
+    };
+
+    await Promise.all(Array.from({ length: poolSize }, worker));
+
+    // All done
+    const succeeded = allResults.filter(r => r.status === 'success').length;
+    setResults({ results: allResults, total: allResults.length, succeeded, failed: allResults.length - succeeded });
+    setFolderBatchLoading(false);
+    searchDatabase();
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* ── Folder Scan ─────────────────────────────────────────────────────────── */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">📁 Folder Scan — Process Entire Directory</div>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Point to a server-side folder · Auto-classifies · Skips non-boundary docs</span>
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            placeholder="/home/user/Downloads/TrainPDF/Regency-Title"
+            value={folderPath}
+            onChange={e => { setFolderPath(e.target.value); setFolderManifest(null); }}
+            style={{
+              flex: 1, minWidth: '320px',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.9rem',
+              color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.82rem'
+            }}
+            onKeyDown={e => e.key === 'Enter' && scanFolder()}
+          />
+          <button className="btn btn-ghost" onClick={scanFolder} disabled={folderScanLoading}>
+            {folderScanLoading ? '⏳ Scanning…' : '🔍 Scan Folder'}
+          </button>
+        </div>
+
+        {folderError && <div className="alert alert-error" style={{ marginTop: '0.75rem' }}>⚠ {folderError}</div>}
+
+        {folderManifest && (
+          <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {/* Stats row */}
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span className="status-badge pass">✓ {folderManifest.toProcess} processable</span>
+              <span className="status-badge fail">⊘ {folderManifest.toSkip} skipped</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{folderManifest.batchesNeeded} batch{folderManifest.batchesNeeded !== 1 ? 'es' : ''} of 20</span>
+              {parallelBatches > 1 && !folderBatchLoading && (
+                <span style={{ fontSize: '0.78rem', color: '#c97a00', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  ⚡ Turbo: {parallelBatches} parallel streams × {concurrentAgents} agents
+                </span>
+              )}
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={runFolderBatches}
+                disabled={folderBatchLoading || folderManifest.toProcess === 0}
+                style={{ marginLeft: 'auto', background: parallelBatches > 1 ? 'linear-gradient(135deg,#c97a00,#e8a000)' : undefined }}
+              >
+                {folderBatchLoading
+                  ? `⚙ Processing… (${folderBatchProgress?.current ?? 0}/${folderBatchProgress?.total ?? 0})`
+                  : parallelBatches > 1
+                    ? `⚡ Turbo-Process ${folderManifest.toProcess} Deeds`
+                    : `▶ Process All ${folderManifest.toProcess} Deeds`}
+              </button>
+            </div>
+
+            {/* ── Turbo Progress Panel ─────────────────────────────────── */}
+            {(folderBatchLoading || batchStatuses.length > 0) && folderBatchProgress && (() => {
+              const elapsed   = (Date.now() - (folderBatchProgress.startTime ?? Date.now())) / 1000;
+              const doneCount = folderBatchProgress.results.length;
+              const rate      = elapsed > 2 ? (doneCount / elapsed).toFixed(2) : '…';
+              const remaining = folderBatchProgress.total - folderBatchProgress.current;
+              const etaSec    = elapsed > 2 && doneCount > 0
+                ? Math.round((elapsed / doneCount) * (folderManifest.toProcess - doneCount))
+                : null;
+              const etaStr    = etaSec != null
+                ? etaSec > 60 ? `${Math.floor(etaSec / 60)}m ${etaSec % 60}s` : `${etaSec}s`
+                : '…';
+              const pct       = Math.round((folderBatchProgress.current / folderBatchProgress.total) * 100);
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                  {/* Stat pills */}
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.78rem' }}>
+                    <span style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '99px', padding: '0.15rem 0.65rem', color: 'var(--text-muted)' }}>
+                      📄 <strong style={{ color: 'var(--text-primary)' }}>{doneCount}</strong> deeds done
+                    </span>
+                    <span style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '99px', padding: '0.15rem 0.65rem', color: 'var(--text-muted)' }}>
+                      🚀 <strong style={{ color: 'var(--success)' }}>{rate}</strong> deeds/sec
+                    </span>
+                    <span style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '99px', padding: '0.15rem 0.65rem', color: 'var(--text-muted)' }}>
+                      ⏱ ETA <strong style={{ color: '#c97a00' }}>{etaStr}</strong>
+                    </span>
+                    <span style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '99px', padding: '0.15rem 0.65rem', color: 'var(--text-muted)' }}>
+                      📦 {remaining} batch{remaining !== 1 ? 'es' : ''} remaining
+                    </span>
+                  </div>
+                  {/* Main progress bar */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                      <span>Batch {folderBatchProgress.current} of {folderBatchProgress.total}</span>
+                      <span style={{ fontWeight: 600, color: pct === 100 ? 'var(--success)' : 'var(--text-primary)' }}>{pct}%</span>
+                    </div>
+                    <div style={{ height: '8px', background: 'var(--bg-elevated)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', borderRadius: '4px',
+                        background: parallelBatches > 1
+                          ? 'linear-gradient(90deg, #c97a00, #e8a000, var(--success))'
+                          : 'linear-gradient(90deg, var(--accent), var(--success))',
+                        width: `${pct}%`,
+                        transition: 'width 0.4s ease',
+                        boxShadow: parallelBatches > 1 ? '0 0 8px rgba(201,122,0,0.5)' : undefined,
+                      }} />
+                    </div>
+                  </div>
+                  {/* Per-batch status grid */}
+                  {batchStatuses.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', maxHeight: '120px', overflowY: 'auto' }}>
+                      {batchStatuses.map(b => {
+                        const colors = {
+                          queued:  { bg: 'var(--bg-elevated)',        border: 'var(--border)',              color: 'var(--text-muted)' },
+                          running: { bg: 'rgba(201,122,0,0.12)',       border: 'rgba(201,122,0,0.45)',        color: '#c97a00'           },
+                          done:    { bg: 'rgba(0,212,168,0.1)',        border: 'rgba(0,212,168,0.35)',        color: 'var(--success)'    },
+                          error:   { bg: 'rgba(220,50,50,0.1)',        border: 'rgba(220,50,50,0.35)',        color: '#dc3232'           },
+                        }[b.status] ?? {};
+                        const icon = { queued: '○', running: '⚙', done: '✓', error: '✗' }[b.status] ?? '?';
+                        return (
+                          <div key={b.idx} title={b.error ?? `Batch ${b.idx + 1}: ${b.status}`} style={{
+                            padding: '0.2rem 0.55rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600,
+                            fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap',
+                            background: colors.bg, border: `1px solid ${colors.border}`, color: colors.color,
+                            animation: b.status === 'running' ? 'pulse 1.2s ease-in-out infinite' : undefined,
+                          }}>
+                            {icon} B{b.idx + 1}{b.count > 0 ? ` · ${b.count}` : ''}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* File manifest table */}
+            <div className="data-table-wrap" style={{ maxHeight: '280px', overflowY: 'auto' }}>
+              <table className="data-table">
+                <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Action</th></tr></thead>
+                <tbody>
+                  {folderManifest.files.map((f, i) => (
+                    <tr key={i} style={{ opacity: f.willProcess ? 1 : 0.45 }}>
+                      <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem' }}>{f.fileName}</td>
+                      <td>
+                        <span style={{
+                          padding: '0.1rem 0.45rem', borderRadius: '3px', fontSize: '0.72rem',
+                          background: f.willProcess ? 'var(--accent)22' : 'var(--bg-card)',
+                          color: f.willProcess ? 'var(--accent)' : 'var(--text-muted)',
+                          fontWeight: 600
+                        }}>{f.docType}</span>
+                      </td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{f.sizeMb} MB</td>
+                      <td style={{ fontSize: '0.78rem' }}>
+                        {f.willProcess
+                          ? <span style={{ color: 'var(--success)' }}>✓ Process</span>
+                          : <span style={{ color: 'var(--text-muted)' }}>⊘ {f.skipReason}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── Setup ─────────────────────────────────────────────────────────────── */}
       <div className="card">
@@ -156,9 +494,9 @@ export default function BatchDeedTab() {
           onDrop={e => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }}
         >
           <div className="drop-icon">🗂</div>
-          <p>Drop plat files or PDFs here or <strong>click to browse</strong><br />
-            <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF — up to 20 files</span></p>
-          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple hidden onChange={e => addFiles(e.target.files)} />
+          <p>Drop plat files, PDFs, or Word docs here or <strong>click to browse</strong><br />
+            <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF · DOC · DOCX — up to 20 files</span></p>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden onChange={e => addFiles(e.target.files)} />
         </div>
 
         {/* File queue — always visible once files are added */}
@@ -222,7 +560,7 @@ export default function BatchDeedTab() {
 
       {/* ── Results summary + download ─────────────────────────────────────────── */}
       {results && (
-        <div className="card" style={{ maxWidth: '100%' }}>
+        <div id="batch-results-card" className="card" style={{ maxWidth: '100%' }}>
           <div className="card-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div>
               <div className="card-title">📊 Results — {results.totalProcessed} processed</div>
@@ -308,16 +646,16 @@ export default function BatchDeedTab() {
                             </tr>
                           </thead>
                           <tbody>
-                            {r.extraction.courses.map((c, j) => (
-                              <tr key={j}>
-                                <td>{j + 1}</td>
-                                <td style={{ color: c.type === 'Curve' ? 'var(--warning)' : 'var(--accent)', fontWeight: 500 }}>
-                                  {c.type}
-                                </td>
-                                <td>{c.bearing || c.chordBearing || '—'}</td>
-                                <td>{c.distance ?? c.arcLength ?? c.chordDistance ?? '—'}</td>
-                              </tr>
-                            ))}
+                          {r.extraction.courses.map((c, j) => (
+                            <tr key={j}>
+                              <td>{j + 1}</td>
+                              <td style={{ color: c.type === 'Curve' ? 'var(--warning)' : 'var(--accent)', fontWeight: 500 }}>
+                                {c.type}
+                              </td>
+                              <td>{c.bearing || c.chordBearing || '—'}</td>
+                              <td>{c.distance ?? c.arcLength ?? c.chordDistance ?? '—'}</td>
+                            </tr>
+                          ))}
                           </tbody>
                         </table>
                       </div>
@@ -367,15 +705,15 @@ export default function BatchDeedTab() {
                         <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
                           <span>🗺️</span> Parcel Map
                         </h3>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setShowPrint(true)}>
-                          🖨 Print Blueprint
+                        <button className="btn btn-primary btn-sm" onClick={() => { setActiveIdx(activeIdx); setShowPrint(true); }}>
+                          📐 Open Survey Map & Print
                         </button>
                       </div>
                       <div style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border)' }}>
                         <TraverseMap
                           stations={r.traverse?.stations}
                           adjusted={r.traverse?.adjustedStations}
-                          courses={r.extraction?.courses}
+                          courses={r.extraction?.courses || []}
                         />
                       </div>
                     </div>
@@ -393,10 +731,10 @@ export default function BatchDeedTab() {
                       </h3>
                       <div className="closure-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                         {[
-                          ['Precision', r.traverse.closure.precisionRatio, r.traverse.closure.status.startsWith('✓') ? 'pass' : 'fail'],
-                          ['Linear Error', `${r.traverse.closure.linearError.toFixed(4)}'`, 'neutral'],
-                          ['Perimeter',    `${r.traverse.perimeter.toFixed(2)}'`,           'neutral'],
-                          ['Area',         `${r.traverse.areaAcres.toFixed(4)} ac`,          'neutral'],
+                          ['Precision', r.traverse.closure?.precisionRatio, r.traverse.closure?.status?.startsWith('✓') ? 'pass' : 'fail'],
+                          ['Linear Error', `${(r.traverse.closure?.linearError ?? 0).toFixed(4)}'`, 'neutral'],
+                          ['Perimeter',    `${(r.traverse.perimeter ?? 0).toFixed(2)}'`,           'neutral'],
+                          ['Area',         `${(r.traverse.areaAcres ?? 0).toFixed(4)} ac`,          'neutral'],
                         ].map(([label, value, cls]) => (
                           <div className="closure-stat" key={label} style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-card)' }}>
                             <div className="label" style={{ fontSize: '0.7rem' }}>{label}</div>
@@ -515,6 +853,7 @@ export default function BatchDeedTab() {
                 <th>Status</th>
                 <th>Heuristic Repair Stage</th>
                 <th>Timestamp</th>
+                <th style={{ textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -537,11 +876,29 @@ export default function BatchDeedTab() {
                     </td>
                     <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{log.repairStageUsed || '—'}</td>
                     <td style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{log.timestamp}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {log.extractionJson ? (
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => loadFromDb(log)}
+                          style={{
+                            padding: '0.15rem 0.55rem', fontSize: '0.7rem', fontWeight: 600,
+                            background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.35)',
+                            color: 'var(--success)', borderRadius: '4px', cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          📐 Load
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                     No matching cases found in the diagnostics database. Run new batch extractions to save records.
                   </td>
                 </tr>
@@ -555,16 +912,22 @@ export default function BatchDeedTab() {
         (() => {
           const r = results.results[activeIdx];
           if (!r) return null;
+          const courses  = (r.extraction?.courses || []);
+          const stations = (r.traverse?.stations || []);
+          const adjusted = (r.traverse?.adjustedStations || []);
           return (
             <PrintBlueprint
-              courses={r.extraction?.courses || []}
-              stations={r.traverse?.stations || []}
-              adjusted={r.traverse?.adjustedStations || []}
+              courses={courses}
+              stations={stations}
+              adjusted={adjusted}
               units="Feet"
-              area={r.traverse?.areaAcres || 0}
-              perimeter={r.traverse?.perimeter || 0}
+              area={r.traverse?.areaAcres ?? 0}
+              perimeter={r.traverse?.perimeter ?? 0}
               pob={{ northing: parseFloat(pobN), easting: parseFloat(pobE) }}
               initialLegalDescription={r.legalDescription?.legalDescription || ''}
+              originalCourses={r.originalExtraction?.courses || null}
+              originalLegalDescription={''}
+              closure={r.traverse?.closure}
               onClose={() => setShowPrint(false)}
             />
           );

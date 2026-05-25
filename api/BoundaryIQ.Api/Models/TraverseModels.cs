@@ -5,7 +5,8 @@ namespace BoundaryIQ.Api.Models;
 public record TraverseRequest(
     CoordDto PointOfBeginning,
     List<CourseDto> Courses,
-    string Units = "Feet"   // "Feet" | "Meters"
+    string Units = "Feet",   // "Feet" | "Meters"
+    bool IsOpenEnded = false
 );
 
 public record CoordDto(double Northing, double Easting);
@@ -21,7 +22,9 @@ public record CourseDto(
     double? ArcLength,
     string? CurveDirection, // "Left" | "Right"
     string? ChordBearing,
-    double? ChordDistance
+    double? ChordDistance,
+    // Meander / Unknown segments (Heuristic #6)
+    bool IsUnknown = false  // true = meander/shoreline; system will solve Straight-Line Tie Vector
 );
 
 // ── Outbound ───────────────────────────────────────────────────────────────────
@@ -64,5 +67,8 @@ public record AdjustedRow(
 public record PlatExtractResult(
     string RawJson,
     List<CourseDto> Courses,
-    string Message
+    string Message,
+    string Classification = "METES_BOUNDS",  // METES_BOUNDS | SECTION_BREAKDOWN | QUALIFIED_PLSS | HYBRID | LOT_BLOCK | PLAT
+    bool PreambleFound = false
 );
+

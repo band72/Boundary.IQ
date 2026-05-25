@@ -9,6 +9,7 @@ namespace BoundaryIQ.Api.Services;
 public class DiagnosticsDatabaseService
 {
     private readonly string _dbPath;
+    private static readonly object _dbLock = new();
 
     public DiagnosticsDatabaseService()
     {
@@ -18,12 +19,17 @@ public class DiagnosticsDatabaseService
         _dbPath = Path.Combine(folder, "BoundaryQCDiagnostics.db");
 
         InitializeDatabase();
+
+        // Auto-purge logs older than 90 days on startup
+        PurgeOldLogs(90);
     }
 
     private void InitializeDatabase()
     {
-        using var conn = new SqliteConnection($"Data Source={_dbPath}");
-        conn.Open();
+        lock (_dbLock)
+        {
+            using var conn = new SqliteConnection($"Data Source={_dbPath}");
+            conn.Open();
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -98,13 +104,16 @@ public class DiagnosticsDatabaseService
                 insertCmd.Parameters.AddWithValue("@s", s);
                 insertCmd.ExecuteNonQuery();
             }
+            }
         }
     }
 
     public void SaveBatchRun(string batchId, int totalFiles, double passRate)
     {
-        using var conn = new SqliteConnection($"Data Source={_dbPath}");
-        conn.Open();
+        lock (_dbLock)
+        {
+            using var conn = new SqliteConnection($"Data Source={_dbPath}");
+            conn.Open();
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -116,6 +125,7 @@ public class DiagnosticsDatabaseService
         cmd.Parameters.AddWithValue("@totalFiles", totalFiles);
         cmd.Parameters.AddWithValue("@passRate", passRate);
         cmd.ExecuteNonQuery();
+        }
     }
 
     public void SaveDeedLog(
@@ -130,8 +140,10 @@ public class DiagnosticsDatabaseService
         string? extractionJson = null,
         string? traverseJson = null)
     {
-        using var conn = new SqliteConnection($"Data Source={_dbPath}");
-        conn.Open();
+        lock (_dbLock)
+        {
+            using var conn = new SqliteConnection($"Data Source={_dbPath}");
+            conn.Open();
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -150,6 +162,7 @@ public class DiagnosticsDatabaseService
         cmd.Parameters.AddWithValue("@extractionJson", (object?)extractionJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@traverseJson", (object?)traverseJson ?? DBNull.Value);
         cmd.ExecuteNonQuery();
+        }
     }
 
     public List<DeedLogDto> SearchDeedLogs(string? query, string? status, double? maxError)
@@ -281,8 +294,10 @@ public class DiagnosticsDatabaseService
 
     public void IncrementHeuristic(string problemName, string solutionApplied)
     {
-        using var conn = new SqliteConnection($"Data Source={_dbPath}");
-        conn.Open();
+        lock (_dbLock)
+        {
+            using var conn = new SqliteConnection($"Data Source={_dbPath}");
+            conn.Open();
 
         using var checkCmd = conn.CreateCommand();
         checkCmd.CommandText = "SELECT Id FROM HeuristicTracking WHERE ProblemName = @p AND SolutionApplied = @s";
@@ -304,6 +319,155 @@ public class DiagnosticsDatabaseService
             insertCmd.Parameters.AddWithValue("@p", problemName);
             insertCmd.Parameters.AddWithValue("@s", solutionApplied);
             insertCmd.ExecuteNonQuery();
+        }
+        }
+    }
+
+    // ── Database Management ──────────────────────────────────────────────────────
+
+    /// <summary>Returns database file size, row counts, and date range for dashboard display.</summary>
+    public object GetDatabaseStats()
+    {
+        var fileInfo = new FileInfo(_dbPath);
+        long fileSizeBytes = fileInfo.Exists ? fileInfo.Length : 0;
+
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+
+        long deedCount = 0, batchCount = 0, heuristicCount = 0;
+        long passCount = 0, failCount = 0;
+        string? oldestLog = null, newestLog = null;
+
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM DeedLogs";
+            deedCount = (long)(cmd.ExecuteScalar() ?? 0L);
+        }
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM DeedLogs WHERE Status = 'PASS'";
+            passCount = (long)(cmd.ExecuteScalar() ?? 0L);
+        }
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM DeedLogs WHERE Status != 'PASS'";
+            failCount = (long)(cmd.ExecuteScalar() ?? 0L);
+        }
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM BatchRuns";
+            batchCount = (long)(cmd.ExecuteScalar() ?? 0L);
+        }
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM HeuristicTracking";
+            heuristicCount = (long)(cmd.ExecuteScalar() ?? 0L);
+        }
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT MIN(Timestamp), MAX(Timestamp) FROM DeedLogs";
+            using var reader = cmd.ExecuteReader();
+            if (reader.Read())
+            {
+                oldestLog = reader.IsDBNull(0) ? null : reader.GetString(0);
+                newestLog = reader.IsDBNull(1) ? null : reader.GetString(1);
+            }
+        }
+
+        return new
+        {
+            dbPath = _dbPath,
+            fileSizeMb = Math.Round(fileSizeBytes / 1048576.0, 2),
+            fileSizeBytes,
+            deedLogCount = deedCount,
+            passCount,
+            failCount,
+            batchRunCount = batchCount,
+            heuristicCount,
+            oldestTimestamp = oldestLog,
+            newestTimestamp = newestLog,
+        };
+    }
+
+    /// <summary>Deletes DeedLogs and BatchRuns older than the specified number of days.</summary>
+    public int PurgeOldLogs(int retentionDays)
+    {
+        var cutoff = DateTime.Now.AddDays(-retentionDays).ToString("yyyy-MM-dd HH:mm:ss");
+        int totalDeleted = 0;
+
+        lock (_dbLock)
+        {
+            using var conn = new SqliteConnection($"Data Source={_dbPath}");
+            conn.Open();
+
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM DeedLogs WHERE Timestamp < @cutoff";
+                cmd.Parameters.AddWithValue("@cutoff", cutoff);
+                totalDeleted += cmd.ExecuteNonQuery();
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM BatchRuns WHERE Timestamp < @cutoff";
+                cmd.Parameters.AddWithValue("@cutoff", cutoff);
+                totalDeleted += cmd.ExecuteNonQuery();
+            }
+            // Reclaim disk space
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "VACUUM";
+                cmd.ExecuteNonQuery();
+            }
+        }
+        return totalDeleted;
+    }
+
+    /// <summary>Clears only failed/non-PASS deed logs so they will be retried on the next run.</summary>
+    public int ClearFailedCache()
+    {
+        lock (_dbLock)
+        {
+            using var conn = new SqliteConnection($"Data Source={_dbPath}");
+            conn.Open();
+            int deleted;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM DeedLogs WHERE Status != 'PASS'";
+                deleted = cmd.ExecuteNonQuery();
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "VACUUM";
+                cmd.ExecuteNonQuery();
+            }
+            return deleted;
+        }
+    }
+
+    /// <summary>Wipes all DeedLogs and BatchRuns. Heuristic counters are preserved.</summary>
+    public int ClearAllCache()
+    {
+        lock (_dbLock)
+        {
+            using var conn = new SqliteConnection($"Data Source={_dbPath}");
+            conn.Open();
+            int deleted = 0;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM DeedLogs";
+                deleted += cmd.ExecuteNonQuery();
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM BatchRuns";
+                deleted += cmd.ExecuteNonQuery();
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "VACUUM";
+                cmd.ExecuteNonQuery();
+            }
+            return deleted;
         }
     }
 }

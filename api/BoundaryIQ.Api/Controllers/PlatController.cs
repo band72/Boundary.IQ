@@ -12,8 +12,8 @@ public class PlatController : ControllerBase
     private readonly TraverseService _traverse;
     private readonly ILogger<PlatController> _log;
 
-    // 20 MB max — large plat scans can be substantial
-    private const long MaxFileSizeBytes = 20 * 1024 * 1024;
+    // 51 MB max — large plat scans can be substantial
+    private const long MaxFileSizeBytes = 51L * 1024 * 1024;
     private static readonly HashSet<string> AllowedMime = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
 
     public PlatController(GeminiVisionService gemini, TraverseService traverse, ILogger<PlatController> log)
@@ -27,7 +27,7 @@ public class PlatController : ControllerBase
     /// Upload a plat image or PDF → Gemini Vision extracts boundary courses → returns structured data.
     /// </summary>
     [HttpPost("extract")]
-    [RequestSizeLimit(25 * 1024 * 1024)]
+    [RequestSizeLimit(60 * 1024 * 1024)]
     [ProducesResponseType(typeof(PlatExtractResult), 200)]
     [ProducesResponseType(typeof(object), 400)]
     public async Task<IActionResult> Extract(IFormFile image, CancellationToken ct)
@@ -36,7 +36,7 @@ public class PlatController : ControllerBase
             return BadRequest(new { error = "No file provided." });
 
         if (image.Length > MaxFileSizeBytes)
-            return BadRequest(new { error = $"File exceeds 20 MB limit ({image.Length / 1024 / 1024:F1} MB)." });
+            return BadRequest(new { error = $"File exceeds 51 MB limit ({image.Length / 1024 / 1024:F1} MB)." });
 
         // Normalize content type
         string mime = image.ContentType.ToLowerInvariant();
@@ -76,7 +76,7 @@ public class PlatController : ControllerBase
     /// Extract boundary AND immediately compute traverse — one-shot endpoint.
     /// </summary>
     [HttpPost("extract-and-compute")]
-    [RequestSizeLimit(25 * 1024 * 1024)]
+    [RequestSizeLimit(60 * 1024 * 1024)]
     public async Task<IActionResult> ExtractAndCompute(
         IFormFile image,
         [FromQuery] double pobN = 5000,

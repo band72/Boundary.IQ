@@ -115,7 +115,7 @@ export default function PlatTab() {
           {file
             ? <p><strong>{file.name}</strong> &nbsp;·&nbsp; {(file.size / 1024).toFixed(1)} KB</p>
             : <p>Drop a plat file or PDF here or <strong>click to browse</strong><br />
-                <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF — up to 20 MB</span></p>
+                <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF — up to 51 MB</span></p>
           }
           <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={e => handleFile(e.target.files[0])} />
         </div>
@@ -251,6 +251,7 @@ export default function PlatTab() {
           perimeter={trav?.perimeter || 0}
           pob={{ northing: parseFloat(pobN), easting: parseFloat(pobE) }}
           initialLegalDescription={''}
+          closure={trav?.closure}
           onClose={() => setShowPrint(false)}
         />
       )}

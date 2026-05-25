@@ -64,10 +64,14 @@ export default function PrintBlueprint({
   perimeter = 0,
   pob = { northing: 5000, easting: 5000 },
   initialLegalDescription = '',
+  originalCourses = null,          // Pre-repair original extraction courses
+  originalLegalDescription = '',   // Pre-repair original legal description
+  closure = null,
   onClose
 }) {
   const [canvasElement, setCanvasElement] = useState(null);
   const [printCanvasElement, setPrintCanvasElement] = useState(null);
+  const [originalCanvasElement, setOriginalCanvasElement] = useState(null);
   
   // Title block metadata state
   const [county, setCounty] = useState('');
@@ -75,6 +79,8 @@ export default function PrintBlueprint({
   const [parcel, setParcel] = useState('');
   const [client, setClient] = useState('');
   const [basisBrg, setBasisBrg] = useState('DEED OF RECORD');
+  const [deedBook, setDeedBook] = useState('');
+  const [deedPage, setDeedPage] = useState('');
   const [legalDesc, setLegalDesc] = useState(initialLegalDescription);
   
   // Customizer options
@@ -156,6 +162,27 @@ export default function PrintBlueprint({
     }
   });
 
+  // Calculate mapcheck/closure statistics if not provided as a prop
+  const computedClosure = (() => {
+    if (closure) return closure;
+    if (!stations || stations.length < 2) return null;
+    const first = stations[0];
+    const last = stations[stations.length - 1];
+    const errN = first.northing - last.northing;
+    const errE = first.easting - last.easting;
+    const linearError = Math.sqrt(errN * errN + errE * errE);
+    const precision = perimeter > 0 && linearError > 0 ? perimeter / linearError : 0;
+    const ratio = precision >= 999999 ? '1:∞ (Perfect)' : `1:${Math.round(precision).toLocaleString()}`;
+    const statusText = precision >= 10000 ? `✓ PASSES ${ratio}` : `✗ FAILS ${ratio} (min 1:10,000)`;
+    return {
+      errorNorthing: errN,
+      errorEasting: errE,
+      linearError,
+      precisionRatio: ratio,
+      status: statusText
+    };
+  })();
+
   // Helper to render the surveyor title block
   const renderTitleBlock = () => (
     <div className="blueprint-title-block">
@@ -172,6 +199,20 @@ export default function PrintBlueprint({
         <div className="tb-cell col-6 border-left">
           <span className="tb-label">CLIENT</span>
           <span className="tb-val truncate">{client || 'DEED HOLDER OF RECORD'}</span>
+        </div>
+      </div>
+      <div className="tb-row border-bottom">
+        <div className="tb-cell col-6">
+          <span className="tb-label">DEED BOOK</span>
+          <span className="tb-val bold truncate" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            {deedBook || '—'}
+          </span>
+        </div>
+        <div className="tb-cell col-6 border-left">
+          <span className="tb-label">DEED PAGE</span>
+          <span className="tb-val bold truncate" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            {deedPage || '—'}
+          </span>
         </div>
       </div>
       <div className="tb-row border-bottom">
@@ -476,8 +517,182 @@ export default function PrintBlueprint({
 
   }, [canvasElement, printCanvasElement, courses, stations, adjusted, units, showGrid, showLabels, showRaw, showAdjusted]);
 
+  // ── Page 5: Original (Uncorrected) Sketch Canvas ───────────────────────────
+  useEffect(() => {
+    const canvas = originalCanvasElement;
+    if (!canvas) return;
+
+    // Use original courses if provided, otherwise fall back to corrected courses
+    const origCourses = originalCourses || courses;
+    const origPts = computePointsFromCourses(origCourses, pob);
+    if (origPts.length < 2) return;
+
+    const ctx = canvas.getContext('2d');
+    const W = 720, H = 480;
+    canvas.width = W * 2;
+    canvas.height = H * 2;
+    ctx.scale(2, 2);
+
+    // White background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    // Compute bounds
+    const ns = origPts.map(p => p.northing), es = origPts.map(p => p.easting);
+    const minN = Math.min(...ns), maxN = Math.max(...ns);
+    const minE = Math.min(...es), maxE = Math.max(...es);
+    const rangeN = maxN - minN || 1, rangeE = maxE - minE || 1;
+    const scaleX = (W - PAD * 2) / rangeE;
+    const scaleY = (H - PAD * 2) / rangeN;
+    const scale = Math.min(scaleX, scaleY);
+    const drawW = rangeE * scale, drawH = rangeN * scale;
+    const offsetX = (W - drawW) / 2, offsetY = (H - drawH) / 2;
+    const tx = e => offsetX + (e - minE) * scale;
+    const ty = n => H - offsetY - (n - minN) * scale;
+
+    // Border frame
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(5, 5, W - 10, H - 10);
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(8, 8, W - 16, H - 16);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    ctx.lineWidth = 0.5;
+    for (let x = 60; x < W; x += 60) {
+      ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, H - 10); ctx.stroke();
+    }
+    for (let y = 60; y < H; y += 60) {
+      ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(W - 10, y); ctx.stroke();
+    }
+
+    // Draw Original Boundary in DASHED BLACK lines
+    ctx.beginPath();
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2.0;
+    ctx.setLineDash([8, 6]);
+    ctx.moveTo(tx(origPts[0].easting), ty(origPts[0].northing));
+    for (let i = 1; i < origPts.length; i++) {
+      ctx.lineTo(tx(origPts[i].easting), ty(origPts[i].northing));
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Node markers
+    origPts.forEach((p, i) => {
+      const x = tx(p.easting), y = ty(p.northing);
+      ctx.beginPath();
+      ctx.arc(x, y, i === 0 ? 5 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = i === 0 ? '#000000' : '#ffffff';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
+
+      if (origPts.length <= 35) {
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        ctx.fillText(i === 0 ? 'POB' : `${i}`, x + 6, y - 4);
+      }
+    });
+
+    // North Arrow
+    ctx.save();
+    ctx.translate(W - 45, 45);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 15px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('N', 0, -22);
+    ctx.fillStyle = '#000000';
+    ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(7, 8); ctx.lineTo(0, 1); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000000'; ctx.lineWidth = 1.25;
+    ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(-7, 8); ctx.lineTo(0, 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(0, 12); ctx.stroke();
+    ctx.restore();
+
+    // "UNCORRECTED" watermark
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(-Math.PI / 6);
+    ctx.font = 'bold 48px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(200, 0, 0, 0.08)';
+    ctx.fillText('UNCORRECTED', 0, 0);
+    ctx.restore();
+
+  }, [originalCanvasElement, originalCourses, courses, pob]);
+
+  // Build a unique filename slug: parcel + deed book/page + timestamp
+  const buildFileName = (ext) => {
+    const parts = [];
+    if (parcel)    parts.push(parcel.trim().replace(/\s+/g, '_'));
+    if (deedBook)  parts.push(`Bk${deedBook.trim()}`);
+    if (deedPage)  parts.push(`Pg${deedPage.trim()}`);
+    if (!parts.length) parts.push('boundary_sketch');
+    // Append YYYYMMDD_HHmmss for uniqueness
+    const now = new Date();
+    const ts  = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
+    parts.push(ts);
+    return `${parts.join('_')}.${ext}`;
+  };
+
   const handlePrint = () => {
+    const prev = document.title;
+    document.title = buildFileName('pdf').replace(/\.pdf$/, '');
     window.print();
+    // Restore title after a tick (print dialog is synchronous on most browsers)
+    setTimeout(() => { document.title = prev; }, 500);
+  };
+
+  const handleDownloadDxf = async () => {
+    try {
+      const body = {
+        stations: stations || [],
+        adjusted: adjusted || [],
+        courses: courses.map(c => ({
+          type: c.type ?? 'Line',
+          bearing: c.bearing || null,
+          distance: c.distance ? parseFloat(c.distance) : null,
+          chordBearing: c.chordBearing || null,
+          chordDistance: c.chordDistance ? parseFloat(c.chordDistance) : null,
+          arcLength: c.arcLength ? parseFloat(c.arcLength) : null,
+          delta: c.delta ? parseFloat(c.delta) : null,
+          radius: c.radius ? parseFloat(c.radius) : null,
+          curveDirection: c.curveDirection || null,
+        })),
+        parcel: parcel || 'SUBJECT PARCEL',
+        county: county || null,
+        state: stateVal || null,
+        units: units || 'Feet',
+        areaAcres: area ? parseFloat(area) : 0,
+        perimeter: perimeter ? parseFloat(perimeter) : 0,
+        basisOfBearings: basisBrg || null,
+      };
+
+      const res = await fetch(`${API}/dxf/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error('Failed to generate DXF');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildFileName('dxf');
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to download DXF:', e);
+      alert('Error generating DXF export: ' + e.message);
+    }
   };
 
   return createPortal(
@@ -512,6 +727,26 @@ export default function PrintBlueprint({
             <div className="form-group">
               <label className="form-label">Basis of Bearings</label>
               <input type="text" placeholder="State Plane Grid" value={basisBrg} onChange={e => setBasisBrg(e.target.value)} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Deed Book</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 1234"
+                  value={deedBook}
+                  onChange={e => setDeedBook(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Deed Page</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 456"
+                  value={deedPage}
+                  onChange={e => setDeedPage(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
@@ -560,9 +795,12 @@ export default function PrintBlueprint({
           </div>
         </div>
 
-        <div className="sidebar-actions mt-3">
+        <div className="sidebar-actions mt-3" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <button className="btn btn-primary" onClick={handlePrint} style={{ width: '100%', justifyContent: 'center' }}>
             🖨 Print Sketch Sheet
+          </button>
+          <button className="btn btn-success" onClick={handleDownloadDxf} style={{ width: '100%', justifyContent: 'center', background: 'rgba(0, 212, 168, 0.15)', borderColor: 'rgba(0, 212, 168, 0.4)', color: 'var(--success)' }}>
+            💾 Download DXF File
           </button>
         </div>
       </div>
@@ -665,41 +903,64 @@ export default function PrintBlueprint({
 
         {/* 2. Print Multi-Page (Always hidden on screen, shown only during print if multi-page mode is active) */}
         <div className="blueprint-multi-container only-print">
-          {/* SHEET 1: Main Map and Title Block */}
+          {/* SHEET 1: Main Map, Title Block, and Mapcheck at the Bottom */}
           <div className="blueprint-sheet">
             <div className="blueprint-border-outer">
               <div className="blueprint-border-inner">
-                <div className="blueprint-grid">
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
                   
-                  {/* LEFT SIDE: Map Canvas */}
-                  <div className="blueprint-map-column">
-                    <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
-                    <canvas ref={setPrintCanvasElement} className="blueprint-canvas-element" />
+                  {/* Map occupies upper space */}
+                  <div style={{ flex: 1, minHeight: 0, position: 'relative', border: '1.5px solid #000000', boxSizing: 'border-box', marginBottom: '12px' }}>
+                    <canvas ref={setPrintCanvasElement} className="blueprint-canvas-element" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
                   </div>
 
-                  {/* RIGHT SIDE: Notes and Title Block */}
-                  <div className="blueprint-info-column">
-                    <div className="blueprint-desc-panel" style={{ height: '320px' }}>
-                      <div className="panel-header">SURVEYOR NOTES & CERTIFICATION</div>
-                      <div className="panel-body" style={{ fontSize: '0.7rem', color: '#333333' }}>
-                        <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>GENERAL COMPILATION NOTES:</p>
-                        <ol style={{ paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', listStyleType: 'decimal' }}>
-                          <li>This sketch sheet represents a mathematical compilation of recorded deed and plat data.</li>
-                          <li>All coordinate geometry (COGO) calculations computed using standard traverse adjustments.</li>
-                          <li>Linear closures and precision ratios are audited and verified.</li>
-                          <li>No property corners have been physically set as part of this mathematical traverse compilation.</li>
-                        </ol>
-                        <div style={{ marginTop: '1.2rem', paddingTop: '1rem', borderTop: '0.5px dashed #000000', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                          <div style={{ width: '120px', height: '60px', border: '1px solid #000000', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: '#777777', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            SURVEYOR SEAL AREA
+                  {/* Footer with Title Block and Mapcheck */}
+                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0 }}>
+                    
+                    {/* Mapcheck / Closure Box */}
+                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+                      <div className="panel-header">MAPCHECK / CLOSURE VERIFICATION</div>
+                      <div style={{ padding: '8px', fontSize: '0.65rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', flex: 1, alignContent: 'center' }}>
+                        <div>
+                          <span style={{ fontWeight: 600, color: '#555555' }}>PRECISION RATIO:</span>
+                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.8rem', fontWeight: 700, color: computedClosure?.status?.includes('FAIL') || computedClosure?.status?.includes('✗') ? '#cc0000' : '#007700' }}>
+                            {computedClosure?.precisionRatio || '1:∞'}
                           </div>
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: 600, color: '#555555' }}>LINEAR CLOSURE ERROR:</span>
+                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.8rem', fontWeight: 700 }}>
+                            {computedClosure?.linearError ? `${parseFloat(computedClosure.linearError).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+                          </div>
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: 600, color: '#555555' }}>ERROR NORTHING:</span>
+                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>
+                            {computedClosure?.errorNorthing ? `${parseFloat(computedClosure.errorNorthing).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+                          </div>
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: 600, color: '#555555' }}>ERROR EASTING:</span>
+                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>
+                            {computedClosure?.errorEasting ? `${parseFloat(computedClosure.errorEasting).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+                          </div>
+                        </div>
+                        <div style={{ gridColumn: 'span 2', borderTop: '0.5px solid #ccc', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600, color: '#555555' }}>TRAVERSE AUDIT STATUS:</span>
+                          <span style={{ fontWeight: 700, color: computedClosure?.status?.includes('FAIL') || computedClosure?.status?.includes('✗') ? '#cc0000' : '#007700' }}>
+                            {computedClosure?.status || 'PASS'}
+                          </span>
                         </div>
                       </div>
                     </div>
-                    
-                    {renderTitleBlock()}
-                  </div>
 
+                    {/* Title Block */}
+                    <div style={{ width: '420px', flexShrink: 0 }}>
+                      {renderTitleBlock()}
+                    </div>
+
+                  </div>
                 </div>
               </div>
             </div>
@@ -709,25 +970,45 @@ export default function PrintBlueprint({
           <div className="blueprint-sheet page-break">
             <div className="blueprint-border-outer">
               <div className="blueprint-border-inner">
-                <div className="blueprint-section-title" style={{ borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '16px' }}>
-                  METES & BOUNDS LEGAL DESCRIPTION
-                </div>
-                <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', flex: 1, boxSizing: 'border-box', overflow: 'hidden' }}>
-                  <div className="panel-header">RECORD DESCRIPTION</div>
-                  <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
-                    {legalDesc ? (
-                      <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
-                    ) : (
-                      <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
-                        [No legal description provided. Click "Auto-Write" in the sidebar editor to generate a professional metes & bounds legal description dynamically.]
-                      </p>
-                    )}
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div className="blueprint-section-title">METES & BOUNDS LEGAL DESCRIPTION</div>
+                  
+                  {/* Legal description box expands to fill space above the footer */}
+                  <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                    <div className="panel-header">RECORD DESCRIPTION</div>
+                    <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
+                      {legalDesc ? (
+                        <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
+                      ) : (
+                        <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
+                          [No legal description provided. Click "Auto-Write" in the sidebar editor to generate a professional metes & bounds legal description dynamically.]
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {/* Decorative bottom title bar */}
-                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', fontWeight: 600, borderTop: '1px solid #000000', paddingTop: '6px' }}>
-                  <span>BOUNDARY.IQ PLATFORM</span>
-                  <span>PAGE 2 OF 3</span>
+
+                  {/* Bottom section with Page Notes and Title Block */}
+                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                    
+                    {/* Left side: Notes and Page Info */}
+                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES & CERTIFICATION</div>
+                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                        <div>1. This legal description represents a mathematical compilation of recorded deed and plat data.</div>
+                        <div>2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.</div>
+                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                          <span>SHEET IDENTIFIER: METES & BOUNDS DESC</span>
+                          <span>PAGE 2 OF 5</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Right side: Title Block */}
+                    <div style={{ width: '420px', flexShrink: 0 }}>
+                      {renderTitleBlock()}
+                    </div>
+
+                  </div>
                 </div>
               </div>
             </div>
@@ -737,72 +1018,166 @@ export default function PrintBlueprint({
           <div className="blueprint-sheet page-break">
             <div className="blueprint-border-outer">
               <div className="blueprint-border-inner">
-                <div className="blueprint-section-title" style={{ borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '16px' }}>
-                  SURVEY COMPILATION — LINE AND CURVE DATA TABLES
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1, overflow: 'hidden' }}>
-                  {/* Left Side: Line Table */}
-                  <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
-                    <div className="panel-header">LINE TABLE</div>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                      {linesList.length > 0 ? (
-                        <table className="survey-table" style={{ fontSize: '0.78rem' }}>
-                          <thead>
-                            <tr><th>ID</th><th>BEARING</th><th>DISTANCE</th></tr>
-                          </thead>
-                          <tbody>
-                            {linesList.map(line => (
-                              <tr key={line.id}>
-                                <td className="bold" style={{ fontSize: '0.78rem' }}>{line.id}</td>
-                                <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.bearing}</td>
-                                <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.distance}'</td>
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div className="blueprint-section-title">SURVEY COMPILATION — LINE AND CURVE DATA TABLES</div>
+                  
+                  {/* Tables area occupies upper space */}
+                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', minHeight: 0, overflow: 'hidden' }}>
+                    {/* Left Side: Line Table */}
+                    <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+                      <div className="panel-header">LINE TABLE</div>
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                        {linesList.length > 0 ? (
+                          <table className="survey-table" style={{ fontSize: '0.78rem' }}>
+                            <thead>
+                              <tr><th>ID</th><th>BEARING</th><th>DISTANCE</th></tr>
+                            </thead>
+                            <tbody>
+                              {linesList.map(line => (
+                                <tr key={line.id}>
+                                  <td className="bold" style={{ fontSize: '0.78rem' }}>{line.id}</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.bearing}</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.distance}'</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Line Data Available</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Side: Curve Table */}
+                    <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+                      <div className="panel-header">CURVE TABLE</div>
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                        {curvesList.length > 0 ? (
+                          <table className="survey-table" style={{ fontSize: '0.72rem' }}>
+                            <thead>
+                              <tr>
+                                <th>ID</th>
+                                <th>RADIUS</th>
+                                <th>ARC LEN</th>
+                                <th>CHORD BRG</th>
+                                <th>CHORD DIST</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {curvesList.map(curve => (
+                                <tr key={curve.id}>
+                                  <td className="bold" style={{ fontSize: '0.72rem' }}>{curve.id}</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.radius}'</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.arcLength}'</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.68rem' }}>{curve.chordBearing}</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.chordDistance}'</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Curve Data Available</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom section with Page Notes and Title Block */}
+                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                    
+                    {/* Left side: Notes and Page Info */}
+                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>DATA TABLE METADATA</div>
+                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                        <div>1. Line and curve identifiers match corresponding labels shown on sheet 1.</div>
+                        <div>2. Distances and radii are shown in standard survey {units.toLowerCase()}.</div>
+                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                          <span>SHEET IDENTIFIER: COGO TABLES</span>
+                          <span>PAGE 3 OF 5</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Right side: Title Block */}
+                    <div style={{ width: '420px', flexShrink: 0 }}>
+                      {renderTitleBlock()}
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SHEET 4: Original Legal Description */}
+          <div className="blueprint-sheet page-break">
+            <div className="blueprint-border-outer">
+              <div className="blueprint-border-inner">
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div className="blueprint-section-title">ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION)</div>
+                  
+                  <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                    <div className="panel-header">ORIGINAL RECORD DESCRIPTION</div>
+                    <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
+                      {(originalLegalDescription || legalDesc) ? (
+                        <p style={{ textIndent: '2rem' }}>{originalLegalDescription || legalDesc}</p>
                       ) : (
-                        <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Line Data Available</p>
+                        <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
+                          [No original legal description available.]
+                        </p>
                       )}
                     </div>
                   </div>
 
-                  {/* Right Side: Curve Table */}
-                  <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
-                    <div className="panel-header">CURVE TABLE</div>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                      {curvesList.length > 0 ? (
-                        <table className="survey-table" style={{ fontSize: '0.72rem' }}>
-                          <thead>
-                            <tr>
-                              <th>ID</th>
-                              <th>RADIUS</th>
-                              <th>ARC LEN</th>
-                              <th>CHORD BRG</th>
-                              <th>CHORD DIST</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {curvesList.map(curve => (
-                              <tr key={curve.id}>
-                                <td className="bold" style={{ fontSize: '0.72rem' }}>{curve.id}</td>
-                                <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.radius}'</td>
-                                <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.arcLength}'</td>
-                                <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.68rem' }}>{curve.chordBearing}</td>
-                                <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.chordDistance}'</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Curve Data Available</p>
-                      )}
+                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES</div>
+                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                        <div>1. This page contains the original deed legal description as extracted prior to AI-assisted repair.</div>
+                        <div>2. Refer to Page 2 for the corrected metes & bounds legal description after traverse closure repair.</div>
+                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                          <span>SHEET IDENTIFIER: ORIGINAL LEGAL DESC</span>
+                          <span>PAGE 4 OF 5</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ width: '420px', flexShrink: 0 }}>
+                      {renderTitleBlock()}
                     </div>
                   </div>
                 </div>
-                {/* Decorative bottom title bar */}
-                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', fontWeight: 600, borderTop: '1px solid #000000', paddingTop: '6px' }}>
-                  <span>BOUNDARY.IQ PLATFORM</span>
-                  <span>PAGE 3 OF 3</span>
+              </div>
+            </div>
+          </div>
+
+          {/* SHEET 5: Original Uncorrected Sketch */}
+          <div className="blueprint-sheet page-break">
+            <div className="blueprint-border-outer">
+              <div className="blueprint-border-inner">
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div className="blueprint-section-title">ORIGINAL DEED — UNCORRECTED BOUNDARY SKETCH</div>
+                  
+                  <div style={{ flex: 1, minHeight: 0, position: 'relative', border: '1.5px solid #000000', boxSizing: 'border-box', marginBottom: '12px' }}>
+                    <canvas ref={setOriginalCanvasElement} className="blueprint-canvas-element" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0 }}>
+                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>ORIGINAL SKETCH NOTES</div>
+                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                        <div>1. This sketch represents the original boundary geometry as extracted from the deed prior to any AI-assisted corrections.</div>
+                        <div>2. Dashed lines indicate uncorrected traverse — compare with the corrected solid-line sketch on Page 1.</div>
+                        <div>3. Closure errors and self-intersections (bow-ties) may be present in this original geometry.</div>
+                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                          <span>SHEET IDENTIFIER: UNCORRECTED SKETCH</span>
+                          <span>PAGE 5 OF 5</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ width: '420px', flexShrink: 0 }}>
+                      {renderTitleBlock()}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

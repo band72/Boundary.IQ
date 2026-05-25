@@ -28,7 +28,8 @@ public record BatchDeedItemResult(
     PlatExtractResult? Extraction,
     TraverseResult? Traverse,
     WriteResult? LegalDescription,
-    string? Error
+    string? Error,
+    PlatExtractResult? OriginalExtraction = null  // Pre-repair Stage 0 extraction
 );
 
 public record BatchDeedResult(

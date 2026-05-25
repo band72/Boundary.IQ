@@ -3,12 +3,14 @@ import TraverseTab from './components/TraverseTab';
 import PlatTab from './components/PlatTab';
 import WriterTab from './components/WriterTab';
 import BatchDeedTab from './components/BatchDeedTab';
+import SettingsTab from './components/SettingsTab';
 
 const TABS = [
   { id: 'traverse',   icon: '📐', label: 'Traverse Compute' },
   { id: 'plat',       icon: '🛰',  label: 'Plat Extraction'  },
   { id: 'writer',     icon: '✍️',  label: 'Writer'           },
   { id: 'batch',      icon: '📦',  label: 'Batch Deed'       },
+  { id: 'settings',   icon: '⚙️',  label: 'Settings'         },
 ];
 
 export default function App() {
@@ -78,6 +80,7 @@ export default function App() {
           {tab === 'plat'     && <PlatTab />}
           {tab === 'writer'   && <WriterTab />}
           {tab === 'batch'    && <BatchDeedTab />}
+          {tab === 'settings' && <SettingsTab />}
         </main>
       </div>
     </div>
