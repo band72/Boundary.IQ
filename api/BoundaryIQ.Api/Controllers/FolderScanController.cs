@@ -21,6 +21,47 @@ public class FolderScanController : ControllerBase
 
     private const long MaxFileSizeBytes = 51L * 1024 * 1024; // 51 MB per file
 
+    // Configurable allowed root directories for folder scanning.
+    // Prevents path traversal attacks — only paths under these roots are permitted.
+    private static readonly string[] AllowedRoots = GetAllowedRoots();
+
+    private static string[] GetAllowedRoots()
+    {
+        var envRoots = Environment.GetEnvironmentVariable("BOUNDARY_SCAN_ROOTS");
+        if (!string.IsNullOrEmpty(envRoots))
+            return envRoots.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                          .Select(r => Path.GetFullPath(r.Trim()))
+                          .ToArray();
+
+        // Default: user's home directory
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return new[] { home };
+    }
+
+    /// <summary>
+    /// Validates that a user-supplied path is safe (no traversal, within allowed roots).
+    /// Returns the resolved absolute path or null if invalid.
+    /// </summary>
+    private string? ValidatePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        // Reject obvious traversal attempts
+        if (path.Contains("..")) return null;
+
+        // Resolve to absolute path
+        var resolved = Path.GetFullPath(path);
+
+        // Check against allowed roots
+        foreach (var root in AllowedRoots)
+        {
+            if (resolved.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                return resolved;
+        }
+
+        return null;
+    }
+
     // Document types that are likely to contain boundary traverses
     private static readonly string[] BoundaryKeywords = new[]
     {
@@ -82,13 +123,14 @@ public class FolderScanController : ControllerBase
     [HttpGet("scan")]
     public IActionResult Scan([FromQuery] string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-            return BadRequest(new { error = "Path is required." });
+        var validPath = ValidatePath(path);
+        if (validPath == null)
+            return StatusCode(403, new { error = "Path is not allowed. Set BOUNDARY_SCAN_ROOTS env var to configure allowed directories." });
 
-        if (!Directory.Exists(path))
-            return NotFound(new { error = $"Directory not found: {path}" });
+        if (!Directory.Exists(validPath))
+            return NotFound(new { error = $"Directory not found: {validPath}" });
 
-        var files = GetSupportedFiles(path)
+        var files = GetSupportedFiles(validPath)
             .Select(f =>
             {
                 var info     = new FileInfo(f);
@@ -128,13 +170,14 @@ public class FolderScanController : ControllerBase
     [HttpGet("debug-skipped")]
     public IActionResult DebugSkipped([FromQuery] string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-            return BadRequest(new { error = "Path is required." });
+        var validPath = ValidatePath(path);
+        if (validPath == null)
+            return StatusCode(403, new { error = "Path is not allowed. Set BOUNDARY_SCAN_ROOTS env var to configure allowed directories." });
 
-        if (!Directory.Exists(path))
-            return NotFound(new { error = $"Directory not found: {path}" });
+        if (!Directory.Exists(validPath))
+            return NotFound(new { error = $"Directory not found: {validPath}" });
 
-        var files = GetSupportedFiles(path)
+        var files = GetSupportedFiles(validPath)
             .Select(f =>
             {
                 var info = new FileInfo(f);
@@ -235,11 +278,15 @@ public class FolderScanController : ControllerBase
         [FromQuery] bool autoOutput = false,
         CancellationToken ct = default)
     {
-        if (!Directory.Exists(path))
-            return NotFound(new { error = $"Directory not found: {path}" });
+        var validPath = ValidatePath(path);
+        if (validPath == null)
+            return StatusCode(403, new { error = "Path is not allowed. Set BOUNDARY_SCAN_ROOTS env var to configure allowed directories." });
+
+        if (!Directory.Exists(validPath))
+            return NotFound(new { error = $"Directory not found: {validPath}" });
 
         // Build the same processable file list as Scan()
-        var allProcessable = GetSupportedFiles(path)
+        var allProcessable = GetSupportedFiles(validPath)
             .Where(f =>
             {
                 var info    = new FileInfo(f);
@@ -300,7 +347,7 @@ public class FolderScanController : ControllerBase
                                             cachedTr.AreaAcres, cachedTr.Perimeter)),
                                         cachedEx.Courses.Count);
                                 }
-                                catch { }
+                                catch (Exception ex) { _log.LogWarning(ex, "Legal description generation failed for cached {name}", fileName); }
                             }
                             resultsArray[index] = new BatchDeedItemResult(
                                 fileName, "success", cachedEx, cachedTr, cachedWrite, null);
@@ -326,8 +373,7 @@ public class FolderScanController : ControllerBase
 
                     // Read file and run pipeline
                     byte[] imageBytes = await System.IO.File.ReadAllBytesAsync(filePath, ct);
-                    string mime = DocConversionService.IsWordDocument(fileName)
-                        ? "application/pdf" : "application/pdf";
+                    string mime = InferMimeType(fileName);
 
                     // Convert Word docs to PDF via LibreOffice before sending to Gemini
                     if (DocConversionService.IsWordDocument(fileName))
@@ -359,11 +405,11 @@ public class FolderScanController : ControllerBase
                                     traverse?.AreaAcres, traverse?.Perimeter)),
                                 extraction.Courses.Count);
                         }
-                        catch { }
+                        catch (Exception ex) { _log.LogWarning(ex, "Legal description generation failed for {name}", fileName); }
                     }
 
                     resultsArray[index] = new BatchDeedItemResult(
-                        fileName, "success", extraction, traverse, writeResult, traverseError,
+                        fileName, status == "PASS" ? "success" : "error", extraction, traverse, writeResult, traverseError,
                         repairResult.OriginalExtraction);
 
                     string parcelLabel = county != null && state != null
@@ -558,7 +604,7 @@ public class FolderScanController : ControllerBase
                 }
             }
         }
-        catch { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"PDF text inspection failed for {filePath}: {ex.Message}"); }
 
         // 1. Unconditional Pass: If it contains a verifiable legal description in its text content
         if (ContainsLegalDescription(filePath))
@@ -577,6 +623,25 @@ public class FolderScanController : ControllerBase
         return ClassifyByFilename(fileName);
     }
 
+    /// <summary>
+    /// Infers MIME type from file extension (fixes the bug where all files were sent as application/pdf).
+    /// </summary>
+    private static string InferMimeType(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        return ext switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".gif" => "image/gif",
+            ".tiff" or ".tif" => "image/tiff",
+            ".bmp" => "image/bmp",
+            ".doc" or ".docx" => "application/pdf", // Will be converted to PDF first
+            _ => "application/pdf",
+        };
+    }
+
     private static double ParsePrecisionRatio(string? precisionStr)
     {
         if (string.IsNullOrEmpty(precisionStr)) return 0;
@@ -589,7 +654,10 @@ public class FolderScanController : ControllerBase
                 if (double.TryParse(cleaned, out double val)) return val;
             }
         }
-        catch { }
+        catch (Exception ex) 
+        {
+            System.Diagnostics.Debug.WriteLine($"ParsePrecisionRatio failed for '{precisionStr}': {ex.Message}");
+        }
         return 0;
     }
 }

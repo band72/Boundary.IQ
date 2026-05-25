@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-
-const API = 'http://localhost:5050/api';
+import { API } from '../config';
 
 const BLANK = { type: 'Line', bearing: '', distance: '', chordBearing: '', chordDistance: '', arcLength: '', delta: '', radius: '', curveDirection: 'Right' };
 const EXAMPLE = [

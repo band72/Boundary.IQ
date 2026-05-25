@@ -2,8 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-
-const API = 'http://localhost:5050/api';
+import { API } from '../config';
 
 export default function BatchDeedTab() {
   const [files, setFiles]       = useState([]);     // File[]

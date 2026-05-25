@@ -110,7 +110,7 @@ public class BatchDeedController : ControllerBase
                                     string text = _writer.Write(writeReq);
                                     cachedWriteResult = new WriteResult(text, cachedExtraction.Courses.Count);
                                 }
-                                catch { /* write failure is non-fatal */ }
+                                catch (Exception ex) { _log.LogWarning(ex, "Legal description generation failed for cached result {name}", image.FileName); }
                             }
 
                             resultsArray[index] = new BatchDeedItemResult(
@@ -195,11 +195,11 @@ public class BatchDeedController : ControllerBase
                             string text = _writer.Write(writeReq);
                             writeResult = new WriteResult(text, extraction.Courses.Count);
                         }
-                        catch { /* write failure is non-fatal */ }
+                        catch (Exception ex) { _log.LogWarning(ex, "Legal description generation failed for {name}", image.FileName); }
                     }
 
                     resultsArray[index] = new BatchDeedItemResult(
-                        image.FileName, status == "PASS" ? "success" : "success",
+                        image.FileName, status == "PASS" ? "success" : "error",
                         extraction, traverse, writeResult,
                         traverseError, repairResult.OriginalExtraction);
 

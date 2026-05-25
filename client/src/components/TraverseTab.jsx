@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-
-const API = 'http://localhost:5050/api';
+import { API } from '../config';
 
 const BLANK_COURSE = { type: 'Line', bearing: '', distance: '', curveDirection: 'Right', delta: '', radius: '', arcLength: '', chordBearing: '', chordDistance: '' };
 const EXAMPLE_COURSES = [

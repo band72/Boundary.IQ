@@ -22,7 +22,8 @@ if (envPath != null)
         var parts = line.Split('=', 2);
         if (parts.Length == 2)
         {
-            Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
+            var val = parts[1].Trim().Trim('"').Trim('\'');
+            Environment.SetEnvironmentVariable(parts[0].Trim(), val);
         }
     }
 }
@@ -49,9 +50,10 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// CORS — allow any origin for local dev flexibility
+// CORS — restrict to known frontend origin
+// WARNING: In production, set this to your actual domain
 builder.Services.AddCors(opts => opts.AddPolicy("BoundaryIQ", p =>
-    p.AllowAnyOrigin()
+    p.WithOrigins("http://localhost:5174", "http://localhost:5173")
      .AllowAnyMethod()
      .AllowAnyHeader()
 ));

@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-
-const API = 'http://localhost:5050/api';
+import { API } from '../config';
 const PAD = 50;
 
 function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000 }) {

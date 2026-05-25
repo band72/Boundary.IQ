@@ -1,8 +1,7 @@
 import { useState, useRef } from 'react';
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
-
-const API = 'http://localhost:5050/api';
+import { API } from '../config';
 
 export default function PlatTab() {
   const [file, setFile]         = useState(null);
@@ -20,6 +19,8 @@ export default function PlatTab() {
   const handleFile = f => {
     if (!f) return;
     setFile(f); setResult(null); setError('');
+    // Revoke previous Object URL to prevent memory leak
+    if (preview) URL.revokeObjectURL(preview);
     setPreview(URL.createObjectURL(f));
   };
 
