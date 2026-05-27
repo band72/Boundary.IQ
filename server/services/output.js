@@ -1,8 +1,11 @@
 // ─── Output Service ─────────────────────────────────────────────────────────
 // Port of OutputService.cs — writes output files to dated subfolders.
+// Extended: auto-saves DXF and PNG boundary sketch per deed during batch.
 
-import fs from 'fs';
+import fs   from 'fs';
 import path from 'path';
+import * as dxf    from './dxfExport.js';
+import * as sketch from './sketchRenderer.js';
 
 /**
  * Creates a dated output subfolder and returns its path.
@@ -73,6 +76,49 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
       originalExtraction: result.originalExtraction,
     };
     fs.writeFileSync(path.join(outputFolder, `${baseName}_report.json`), JSON.stringify(report, null, 2));
+
+    // 4. DXF — surveyor-grade CAD file
+    //    Only generated when we have stations (traverse computed successfully)
+    const stations = result.traverse?.stations || [];
+    const adjusted = result.traverse?.adjustedStations || [];
+    const courses  = result.extraction?.courses || result.finalExtraction?.courses || [];
+    if (stations.length >= 2 && courses.length >= 1) {
+      try {
+        const meta = {
+          parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
+          county:          result.extraction?.county           || null,
+          state:           result.extraction?.state            || null,
+          units:           result.extraction?.units            || 'Feet',
+          areaAcres:       result.traverse?.areaAcres          || 0,
+          perimeter:       result.traverse?.perimeter          || 0,
+          basisOfBearings: result.extraction?.basisOfBearings  || null,
+        };
+        const dxfStr = dxf.generateDxf(stations, adjusted, courses, meta);
+        fs.writeFileSync(path.join(outputFolder, `${baseName}.dxf`), dxfStr, 'utf-8');
+        console.log(`Output: wrote DXF — ${baseName}.dxf`);
+      } catch (dxfEx) {
+        console.warn(`Output: DXF generation failed for ${sourceFileName}:`, dxfEx.message);
+      }
+
+      // 5. PNG boundary sketch — letter-landscape at 2× resolution
+      try {
+        const skMeta = {
+          parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
+          county:          result.extraction?.county           || null,
+          state:           result.extraction?.state            || null,
+          units:           result.extraction?.units            || 'Feet',
+          areaAcres:       result.traverse?.areaAcres          || 0,
+          perimeter:       result.traverse?.perimeter          || 0,
+          basisOfBearings: result.extraction?.basisOfBearings  || null,
+          status:          result.status                       || null,
+        };
+        const pngBuf = sketch.renderSketchPng(stations, adjusted, courses, skMeta);
+        fs.writeFileSync(path.join(outputFolder, `${baseName}_sketch.png`), pngBuf);
+        console.log(`Output: wrote PNG sketch — ${baseName}_sketch.png`);
+      } catch (pngEx) {
+        console.warn(`Output: PNG sketch failed for ${sourceFileName}:`, pngEx.message);
+      }
+    }
   } catch (ex) {
     console.warn(`Failed to write output files for ${sourceFileName}:`, ex.message);
   }
