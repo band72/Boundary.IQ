@@ -395,7 +395,11 @@ function parseSegmentArray(arr) {
       bearing = `${el.Quad[0]}${Math.floor(deg)}°${Math.floor(min)}'${(sec || 0).toFixed(1)}"${el.Quad.length > 1 ? el.Quad[1] : ''}`;
     }
 
-    return {
+    // Deflection angle courses — preserve the two deflection fields for resolveDeflectionAngles()
+    const deflectionAngle     = getNum(el, 'deflectionAngle', 'DeflectionAngle') ?? null;
+    const deflectionDirection = el.deflectionDirection || el.DeflectionDirection || null;
+
+    const course = {
       type: 'Line',
       bearing,
       distance: getNum(el, 'distance', 'Distance'),
@@ -403,8 +407,17 @@ function parseSegmentArray(arr) {
       curveDirection: null, chordBearing: null, chordDistance: null,
       isUnknown,
     };
+
+    if (deflectionAngle !== null && deflectionDirection) {
+      course.deflectionAngle     = deflectionAngle;
+      course.deflectionDirection = deflectionDirection.toString().toUpperCase();
+      course.bearing             = null; // will be resolved by resolveDeflectionAngles()
+    }
+
+    return course;
   });
 }
+
 
 function getNum(el, ...keys) {
   for (const k of keys) {
@@ -510,6 +523,31 @@ RULE 9 — STRIP DEED / OPEN-ENDED SURVEY LINE:
   WHY: Strip parcels define a corridor of specified WIDTH along a centerline. The centerline
   runs point-to-point and never closes. Forcing closure produces a false linear error.
 
+RULE 10 — DEFLECTION ANGLE COURSES:
+  Some older deeds describe a change in direction as a DEFLECTION ANGLE rather than a compass bearing.
+  These look like: "THENCE AT A DEFLECTION ANGLE TO THE LEFT OF 13°22'55\", a distance of 89.02 feet"
+  or: "THENCE DEFLECTING RIGHT 45°00'00\", 200.00 feet to..."
+  A deflection angle is a RELATIVE turn from the current direction of travel:
+    LEFT  = counter-clockwise turn (the street or line bends to the left)
+    RIGHT = clockwise turn (the street or line bends to the right)
+  For these courses you MUST:
+    \u2192 Set "Bearing": null (DO NOT guess a compass bearing)
+    \u2192 Set "DeflectionAngle": the angle in decimal degrees (e.g. 13.3819 for 13°22'55")
+    \u2192 Set "DeflectionDirection": "LEFT" or "RIGHT"
+    \u2192 Set "Distance": the stated distance as usual
+    \u2192 Set "IsUnknown": false
+  The COGO engine will compute the correct absolute bearing automatically using the incoming course direction.
+  WARNING: Do NOT convert deflection angles to compass bearings yourself — the relative/absolute
+  transformation requires knowing the prior course direction, which only the COGO engine has.
+
+RULE 11 — CARDINAL DIRECTION COURSES:
+  Some older deeds use direction words without a precise bearing: "THENCE NORTHERLY 150 feet"
+  or "THENCE WESTERLY AND ALONG OAK STREET 57.08 feet".
+  For these courses:
+    \u2192 Set "Bearing": the cardinal word as a string, e.g. "NORTHERLY", "WESTERLY", "SOUTHEASTERLY"
+    \u2192 The COGO engine will resolve these to exact cardinal azimuths (N=0°, W=270°, etc.)
+  Do NOT fabricate a precise DMS bearing (like N00°00'00"E) when the deed only says "northerly".
+
 =========================================
 OUTPUT JSON SCHEMA
 =========================================
@@ -525,6 +563,20 @@ Return ONLY a valid JSON object in this EXACT format. No markdown fences, no exp
       "Type": "Line",
       "Bearing": "N45°22'10\\"E",
       "Distance": 150.25,
+      "IsUnknown": false
+    },
+    {
+      "Type": "Line",
+      "Bearing": "NORTHERLY",
+      "Distance": 57.84,
+      "IsUnknown": false
+    },
+    {
+      "Type": "Line",
+      "Bearing": null,
+      "DeflectionAngle": 13.3819,
+      "DeflectionDirection": "LEFT",
+      "Distance": 89.02,
       "IsUnknown": false
     },
     {

@@ -18,8 +18,11 @@ function unitFactor(units) {
  * @returns {object} TraverseResult
  */
 export function compute(req) {
+  // ── Step 0: Resolve deflection angles → absolute bearings
+  const resolved = resolveDeflectionAngles(req.courses);
+
   // ── Inverse Gap Solver: auto-fix meander/unknown runs
-  const courses = autoFixUnknownRuns(req.courses, req.pointOfBeginning);
+  const courses = autoFixUnknownRuns(resolved, req.pointOfBeginning);
 
   const uf = unitFactor(req.units);
   const pobN = req.pointOfBeginning.northing;
@@ -181,6 +184,70 @@ function shoelaceArea(pts) {
 // ─── Inverse Gap Solver (AutoFixUnknownRuns) ─────────────────────────────────
 // Heuristic #6: replace meander/unknown course runs with straight-line tie vectors.
 // Fix #3: Now handles up to 2 separate contiguous unknown runs.
+/**
+ * Resolve deflection-angle courses to absolute bearings.
+ *
+ * Deeds by deflection angle describe a course as:
+ *   "THENCE AT A DEFLECTION ANGLE TO THE LEFT OF 13°22'55", a distance of 89.02 feet"
+ * rather than a compass bearing.  The outgoing azimuth is:
+ *   LEFT  → incomingAz − deflectionAngle
+ *   RIGHT → incomingAz + deflectionAngle
+ *
+ * The AI extracts these with two extra fields:
+ *   { type: 'Line', deflectionAngle: 13.3819, deflectionDirection: 'LEFT', distance: 89.02 }
+ *
+ * Courses may also carry a cardinalDirection word ('NORTHERLY', 'SW', …) instead of a
+ * numeric bearing; we resolve those too so the caller always gets a proper bearing string.
+ *
+ * @param {Array} courses - Raw course list from AI extraction
+ * @returns {Array} Courses with all deflection angles converted to absolute bearings
+ */
+export function resolveDeflectionAngles(courses) {
+  if (!courses || courses.length === 0) return courses;
+
+  let prevAzDeg = null; // tracks the outgoing azimuth of the most recent resolved course
+
+  return courses.map((c, idx) => {
+    const course = { ...c };
+
+    // ── 1. Cardinal direction word → absolute bearing
+    //    e.g. bearing = 'NORTHERLY'  →  bearing = 'N00°00'00"E'
+    if (course.bearing) {
+      const cardAz = bp.parseCardinalAzimuth(course.bearing);
+      if (cardAz !== null) {
+        // Replace the word with a proper bearing string AND record the azimuth
+        course.bearing = bp.toDisplayString(cardAz);
+        prevAzDeg = cardAz;
+        return course;
+      }
+      // Regular bearing — just update prevAzDeg so the next deflection can reference it
+      try {
+        prevAzDeg = bp.parse(course.bearing).azimuthDeg;
+      } catch { /* leave prevAzDeg unchanged */ }
+      return course;
+    }
+
+    // ── 2. Deflection angle course
+    if (course.deflectionAngle != null && course.deflectionDirection) {
+      if (prevAzDeg === null) {
+        // No prior course to reference — mark as unknown for the gap solver
+        console.warn(`resolveDeflectionAngles: course ${idx} has deflection but no prior azimuth — marking unknown`);
+        course.isUnknown = true;
+        return course;
+      }
+      const outAz = bp.applyDeflection(prevAzDeg, course.deflectionAngle, course.deflectionDirection);
+      course.bearing = bp.toDisplayString(outAz);
+      // Remove deflection fields so downstream doesn't get confused
+      delete course.deflectionAngle;
+      delete course.deflectionDirection;
+      prevAzDeg = outAz;
+      return course;
+    }
+
+    return course;
+  });
+}
+
 export function autoFixUnknownRuns(courses, pob) {
   if (!courses || courses.length === 0) return courses;
 

@@ -130,3 +130,60 @@ export function vectorToBearing(dN, dE) {
   if (azDeg < 0) azDeg += 360.0;
   return toDisplayString(azDeg);
 }
+
+/**
+ * Apply a deflection angle to an incoming azimuth to produce an outgoing azimuth.
+ * Deflection angles are RELATIVE turns from the current direction of travel:
+ *   LEFT  = counter-clockwise (subtract from azimuth)
+ *   RIGHT = clockwise         (add to azimuth)
+ *
+ * Example: incoming N (0°), deflect LEFT 13°22'55" → outgoing N13°22'55"W (346.62°)
+ *
+ * @param {number} incomingAzDeg - Azimuth of the incoming course (0–360, CW from N)
+ * @param {number} deflAngleDeg  - Deflection angle in decimal degrees (always positive)
+ * @param {string} direction     - 'LEFT' or 'RIGHT' (case-insensitive)
+ * @returns {number} Outgoing azimuth in degrees (0–360)
+ */
+export function applyDeflection(incomingAzDeg, deflAngleDeg, direction) {
+  const dir = (direction || 'RIGHT').toString().toUpperCase().trim();
+  let outAz;
+  if (dir === 'LEFT' || dir === 'L') {
+    outAz = incomingAzDeg - deflAngleDeg;
+  } else {
+    outAz = incomingAzDeg + deflAngleDeg;
+  }
+  return ((outAz % 360) + 360) % 360; // normalize to [0, 360)
+}
+
+/**
+ * Parse a cardinal/ordinal direction word to azimuth degrees.
+ * Used to establish the incoming bearing for the first course in a deflection-angle deed,
+ * or for courses described as "NORTHERLY", "SOUTHWESTERLY", etc.
+ *
+ * @param {string} word - e.g. 'NORTHERLY', 'WESTERLY', 'NORTHWESTERLY', 'NORTH', 'SW'
+ * @returns {number|null} Azimuth in degrees, or null if unrecognised
+ */
+export function parseCardinalAzimuth(word) {
+  const CARDINAL_MAP = {
+    // 8 primary directions
+    'N': 0,   'NORTH': 0,     'NORTHERLY': 0,
+    'NE': 45, 'NORTHEAST': 45, 'NORTHEASTERLY': 45,
+    'E': 90,  'EAST': 90,     'EASTERLY': 90,
+    'SE': 135,'SOUTHEAST': 135,'SOUTHEASTERLY': 135,
+    'S': 180, 'SOUTH': 180,   'SOUTHERLY': 180,
+    'SW': 225,'SOUTHWEST': 225,'SOUTHWESTERLY': 225,
+    'W': 270, 'WEST': 270,    'WESTERLY': 270,
+    'NW': 315,'NORTHWEST': 315,'NORTHWESTERLY': 315,
+    // 16-point compass
+    'NNE': 22.5,  'NORTHNORTHEAST': 22.5,
+    'ENE': 67.5,  'EASTNORTHEAST': 67.5,
+    'ESE': 112.5, 'EASTSOUTHEAST': 112.5,
+    'SSE': 157.5, 'SOUTHSOUTHEAST': 157.5,
+    'SSW': 202.5, 'SOUTHSOUTHWEST': 202.5,
+    'WSW': 247.5, 'WESTSOUTHWEST': 247.5,
+    'WNW': 292.5, 'WESTNORTHWEST': 292.5,
+    'NNW': 337.5, 'NORTHNORTHWEST': 337.5,
+  };
+  const key = (word || '').toUpperCase().replace(/[^A-Z]/g, '');
+  return key in CARDINAL_MAP ? CARDINAL_MAP[key] : null;
+}
