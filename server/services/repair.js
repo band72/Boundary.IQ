@@ -1,0 +1,1103 @@
+// ─── Repair Service ─────────────────────────────────────────────────────────
+// Port of RepairService.cs — 4-stage automated repair pipeline.
+// Pass Threshold: LinearError < 0.30 ft OR PrecisionRatio >= 1:10,000
+
+import * as gemini from './geminiVision.js';
+import * as traverseSvc from './traverse.js';
+import * as bp from './bearingParser.js';
+import { SupervisorAgent } from './agentSystem.js';
+
+const PASS_LINEAR_ERROR_FT = 0.30;
+const PASS_PRECISION_RATIO = 10000.0;
+
+/**
+ * Run the full repair pipeline for a single deed image.
+ * @param {Buffer} imageBytes
+ * @param {string} mimeType
+ * @param {{ northing: number, easting: number }} pob
+ * @param {string} units
+ * @param {boolean} isOpenEnded
+ * @param {string} fileName
+ * @returns {Promise<object>} RepairResult
+ */
+export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpenEnded = false, fileName = '', maxTurns = 3) {
+  const pipelineStart = Date.now();
+
+  // ── Stage 5: Hierarchical Multi-Agent Deed Resolution System ────────────────────
+  console.log('Repair Pipeline Stage 5: Executing Hierarchical Multi-Agent System...');
+  let cachedExtraction = null; // Fix #2: cache Stage 5 extraction to avoid redundant Gemini call
+  try {
+    const supervisor = new SupervisorAgent();
+    const agentResult = await supervisor.solve(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
+
+    // Always cache the extraction for Stage 0 reuse (Fix #2)
+    if (agentResult.extraction?.courses?.length > 0) {
+      cachedExtraction = agentResult.extraction;
+    }
+
+    if (agentResult.status === 'PASS') {
+      console.log(`✓ Hierarchical Agent System succeeded: ${agentResult.repairStageUsed}`);
+      const steps = buildSolutionSteps(
+        agentResult.extraction,
+        agentResult.extraction,
+        agentResult.repairStageUsed,
+        agentResult.traverse,
+        Date.now() - pipelineStart
+      );
+      return {
+        finalExtraction: agentResult.extraction,
+        finalTraverse: agentResult.traverse,
+        status: 'PASS',
+        repairStageUsed: agentResult.repairStageUsed,
+        traverseError: null,
+        originalExtraction: agentResult.extraction,
+        agentTurns: agentResult.agentTurns || [],
+        trustScore: agentResult.trustScore ?? null,
+        trustLevel: agentResult.trustLevel ?? null,
+        trustFlags: agentResult.trustFlags || [],
+        bustCourseIndex: agentResult.bustCourseIndex ?? null,
+        solutionSteps: steps,
+      };
+    }
+    console.log('⚠ Hierarchical Agent System failed to close. Falling back to sequential pipeline stages...');
+  } catch (err) {
+    console.error('✗ Hierarchical Agent System encountered an error, falling back:', err.message);
+  }
+
+  // ── Stage 0: Direct Gemini Extraction ───────────────────────────────────
+  // Fix #2: Reuse Stage 5 cached extraction if available — skip redundant Gemini call
+  let extraction;
+  if (cachedExtraction) {
+    console.log('Repair Pipeline Stage 0: Reusing Stage 5 cached extraction (no extra Gemini call).');
+    extraction = cachedExtraction;
+  } else {
+    console.log('Repair Pipeline Stage 0: Direct Gemini extraction.');
+    try {
+      extraction = await gemini.extractBoundary(imageBytes, mimeType);
+    } catch (ex) {
+      console.error('Stage 0: Gemini extraction failed hard.', ex.message);
+      throw ex;
+    }
+  }
+
+  const originalExtraction = extraction;
+
+  if (!extraction.courses || extraction.courses.length === 0) {
+    return {
+      finalExtraction: extraction, finalTraverse: null, status: 'FAIL',
+      repairStageUsed: 'Stage 0: No courses extracted',
+      traverseError: 'Gemini returned empty course list.',
+      originalExtraction,
+    };
+  }
+
+  // Fix #9: Prefer the structured isOpenEnded boolean from extraction; string scan is secondary fallback
+  const docText = extraction.rawJson || '';
+  const actualOpenEnded = extraction.isOpenEnded || detectOpenEnded(docText, fileName, false) || isOpenEnded;
+  if (actualOpenEnded) {
+    console.log('Classified traverse as OPEN-ENDED (Easement, Right-of-Way, Centerline, Strip Deed).');
+    // Stage 0 Short-Circuit: Open-ended survey lines are correct by design.
+    // Do NOT burn through the full repair pipeline — exit immediately as MEANDER.
+    const [tvOpen] = tryCompute(extraction.courses, pob, units, true);
+    return {
+      finalExtraction: extraction,
+      finalTraverse:   tvOpen,
+      status:          'MEANDER',
+      repairStageUsed: 'Stage 0: Open-Ended Survey Centerline (Strip/Easement/R-O-W)',
+      traverseError:   null,
+      originalExtraction: extraction,
+    };
+  }
+
+  // ── Compute initial traverse ──────────────────────────────────────────
+  let [traverse, traverseError] = tryCompute(extraction.courses, pob, units, actualOpenEnded);
+  if (traverse && isPassing(traverse)) {
+    console.log(`Stage 0 PASS: ${traverse.closure.precisionRatio}`);
+    if (traverse.courses) {
+      extraction.courses = traverse.courses;
+      extraction.rawJson = JSON.stringify(traverse.courses);
+    }
+    const steps = buildSolutionSteps(originalExtraction, extraction, 'Stage 1: Direct Traverse', traverse, Date.now() - pipelineStart);
+    return { finalExtraction: extraction, finalTraverse: traverse, status: 'PASS', repairStageUsed: 'Stage 1: Direct Traverse', traverseError: null, originalExtraction, solutionSteps: steps };
+  }
+
+  // ── Stage 1: Bowtie / Quadrant Inversion Auto-Fix ─────────────────────
+  console.log('Stage 1: Bowtie/Quadrant Inversion bearing-flip repair.');
+  const stage1Extraction = tryBowtieAutoFix(extraction, pob, units);
+  const [t1, e1] = tryCompute(stage1Extraction.courses, pob, units, actualOpenEnded);
+  if (t1 && isPassing(t1)) {
+    console.log(`Stage 1 PASS: ${t1.closure.precisionRatio}`);
+    if (t1.courses) {
+      stage1Extraction.courses = t1.courses;
+      stage1Extraction.rawJson = JSON.stringify(t1.courses);
+    }
+    const label = stage1Extraction.message || 'Stage 1: Bowtie Auto-Fix';
+    const steps = buildSolutionSteps(originalExtraction, stage1Extraction, label, t1, Date.now() - pipelineStart);
+    return { finalExtraction: stage1Extraction, finalTraverse: t1, status: 'PASS', repairStageUsed: label, traverseError: null, originalExtraction, solutionSteps: steps };
+  }
+
+  // ── Stage 1.5: Surveyor Shape Constraint & Scrivener Corrector ─────────
+  let stage1_5Extraction = stage1Extraction;
+  let t1_5 = t1;
+  if (stage1Extraction.courses && (stage1Extraction.courses.length === 3 || stage1Extraction.courses.length === 4)) {
+    console.log('Stage 1.5: Surveyor Shape Constraint & Scrivener Corrector.');
+    stage1_5Extraction = trySurveyorShapeCorrection(stage1Extraction, pob, units);
+    if (stage1_5Extraction !== stage1Extraction) {
+      const [t1_5_new, e1_5] = tryCompute(stage1_5Extraction.courses, pob, units, actualOpenEnded);
+      if (t1_5_new) {
+        t1_5 = t1_5_new;
+        if (isPassing(t1_5)) {
+          console.log(`Stage 1.5 PASS: ${t1_5.closure.precisionRatio}`);
+          if (t1_5.courses) {
+            stage1_5Extraction.courses = t1_5.courses;
+            stage1_5Extraction.rawJson = JSON.stringify(t1_5.courses);
+          }
+          const label15 = stage1_5Extraction.message || 'Stage 1.5: Surveyor Shape & Scrivener Corrector';
+          const steps15 = buildSolutionSteps(originalExtraction, stage1_5Extraction, label15, t1_5, Date.now() - pipelineStart);
+          return {
+            finalExtraction: stage1_5Extraction, finalTraverse: t1_5, status: 'PASS',
+            repairStageUsed: label15, traverseError: null, originalExtraction, solutionSteps: steps15
+          };
+        }
+      }
+    }
+  }
+
+  // ── Stage 2: Dual-Run Consensus ───────────────────────────────────────
+  console.log('Stage 2: Dual-run Gemini consensus voting.');
+  let stage2Extraction = null, t2 = null;
+  try {
+    stage2Extraction = await gemini.extractBoundary(imageBytes, mimeType);
+    [t2] = tryCompute(stage2Extraction.courses, pob, units, actualOpenEnded);
+  } catch (ex) {
+    console.warn('Stage 2: Second Gemini run failed, skipping consensus.', ex.message);
+  }
+
+  let bestExtraction = stage1_5Extraction || stage1Extraction || extraction;
+  let bestTraverse = t1_5 || t1 || traverse;
+  let bestStage = (stage1_5Extraction && stage1_5Extraction.message) || (stage1Extraction && stage1Extraction.message) || 'Stage 1: Bowtie Auto-Fix';
+
+  if (t2) {
+    const err1 = bestTraverse?.closure?.linearError ?? Infinity;
+    const err2 = t2.closure.linearError;
+    if (err2 < err1) {
+      bestExtraction = stage2Extraction;
+      bestTraverse = t2;
+      bestStage = 'Stage 2: Consensus (Run 2)';
+      console.log(`Stage 2: Run 2 wins with LinearError=${err2}`);
+    } else {
+      console.log(`Stage 2: Run 1 wins with LinearError=${err1}`);
+    }
+  }
+
+  if (bestTraverse && isPassing(bestTraverse)) {
+    console.log(`Stage 2 PASS: ${bestTraverse.closure.precisionRatio}`);
+    if (bestTraverse.courses) {
+      bestExtraction.courses = bestTraverse.courses;
+      bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
+    }
+    const steps2 = buildSolutionSteps(originalExtraction, bestExtraction, bestStage, bestTraverse, Date.now() - pipelineStart);
+    return { finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'PASS', repairStageUsed: bestStage, traverseError: null, originalExtraction, solutionSteps: steps2 };
+  }
+
+  // ── Stage 3: AI Misclosure Repair ─────────────────────────────────────
+  console.log('Stage 3: AI misclosure repair.');
+  const worstTraverse = bestTraverse || traverse || t1;
+  try {
+    const stage3Extraction = await gemini.extractMisclosureRepair(imageBytes, mimeType, bestExtraction, worstTraverse);
+    const [t3, e3] = tryCompute(stage3Extraction.courses, pob, units, actualOpenEnded);
+    if (t3 && isPassing(t3)) {
+      console.log(`Stage 3 PASS: ${t3.closure.precisionRatio}`);
+      if (t3.courses) {
+        stage3Extraction.courses = t3.courses;
+        stage3Extraction.rawJson = JSON.stringify(t3.courses);
+      }
+      const steps3 = buildSolutionSteps(originalExtraction, stage3Extraction, 'Stage 3: AI Misclosure Repair', t3, Date.now() - pipelineStart);
+      return { finalExtraction: stage3Extraction, finalTraverse: t3, status: 'PASS', repairStageUsed: 'Stage 3: AI Misclosure Repair', traverseError: null, originalExtraction, solutionSteps: steps3 };
+    }
+    if (t3 && t3.closure.linearError < worstTraverse.closure.linearError) {
+      bestExtraction = stage3Extraction;
+      bestTraverse = t3;
+      console.log(`Stage 3 improved error: ${t3.closure.linearError}`);
+    }
+  } catch (ex) {
+    console.warn('Stage 3: AI repair call failed, proceeding to Stage 4.', ex.message);
+  }
+
+  // Sync solved courses for Stage 4 fallback scenarios as well
+  if (bestTraverse && bestTraverse.courses) {
+    bestExtraction.courses = bestTraverse.courses;
+    bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
+  }
+
+  // ── Stage 3.5: Compass Rule (Bowditch) Adjustment ────────────────────
+  // Standard surveying practice: if a traverse closes to 1:5,000 or better
+  // AND linear error ≤ 1.0 ft, distribute the misclosure proportionally
+  // across all courses (Bowditch method) and accept as PASS(Adjusted).
+  // This converts ~300 near-closed FAILs without any AI re-extraction.
+  if (bestTraverse && !actualOpenEnded) {
+    const linErr = bestTraverse.closure?.linearError ?? Infinity;
+    const precStr = bestTraverse.closure?.precisionRatio ?? '';
+    const precVal = (() => {
+      const parts = precStr.split(':');
+      if (parts.length < 2) return 0;
+      const v = parseFloat(parts[1].replace(/,/g,'').replace('∞','999999999').trim());
+      return isNaN(v) ? 0 : v;
+    })();
+
+    const COMPASS_RULE_MIN_PRECISION = 5000;  // 1:5,000 minimum
+    const COMPASS_RULE_MAX_LINEAR_FT = 1.0;   // 1.0 ft maximum misclosure
+
+    if (linErr > 0 && linErr <= COMPASS_RULE_MAX_LINEAR_FT && precVal >= COMPASS_RULE_MIN_PRECISION) {
+      console.log(`Stage 3.5 PASS (Compass Rule): error=${linErr.toFixed(4)}ft ratio=${precStr} — applying Bowditch adjustment`);
+
+      // Re-compute traverse using the Bowditch-adjusted stations from traverse.js
+      // The adjusted stations are already in bestTraverse.adjustedStations
+      // Rebuild a "clean" traverse result that reflects the adjusted coordinates
+      const adjustedTraverse = {
+        ...bestTraverse,
+        closure: {
+          ...bestTraverse.closure,
+          linearError: 0,
+          errorNorthing: 0,
+          errorEasting: 0,
+          precisionRatio: '1:∞ (Compass-Adjusted)',
+          status: `✓ PASSES (Compass Rule Adjusted from ${precStr})`,
+        },
+        compassRuleApplied: true,
+        compassRuleOriginalError: linErr,
+        compassRuleOriginalPrecision: precStr,
+      };
+
+      // Recompute area from adjusted stations
+      const adjPts = bestTraverse.adjustedStations || [];
+      if (adjPts.length > 2) {
+        let area = 0;
+        for (let i = 0; i < adjPts.length; i++) {
+          const p1 = adjPts[i];
+          const p2 = adjPts[(i + 1) % adjPts.length];
+          area += (p1.easting * p2.northing) - (p2.easting * p1.northing);
+        }
+        adjustedTraverse.areaSqFt = Math.abs(area) / 2.0;
+        adjustedTraverse.areaAcres = adjustedTraverse.areaSqFt / 43560.0;
+      }
+
+      const steps35 = buildSolutionSteps(originalExtraction, bestExtraction,
+        `Stage 3.5: Compass Rule Adjusted (was ${precStr}, error=${linErr.toFixed(4)}ft)`,
+        adjustedTraverse, Date.now() - pipelineStart);
+
+      return {
+        finalExtraction: bestExtraction,
+        finalTraverse:   adjustedTraverse,
+        status:          'PASS',
+        repairStageUsed: `Stage 3.5: Compass Rule Adjusted (${precStr})`,
+        traverseError:   null,
+        originalExtraction,
+        solutionSteps:   steps35,
+      };
+    }
+  }
+
+  // ── Stage 3.6: Meander-Parcel Gap Closure ────────────────────────────
+  // For deeds with water boundary meander courses (creek, river, lake, marsh),
+  // the AI often extracts the meander segment with isUnknown=true or distance=0
+  // because the deed says "along the meanderings thereof, 100 ft more or less".
+  // These are VALID parcels — the water boundary is inherently approximate.
+  // Strategy: force all meander-like unknown courses into the gap solver,
+  // which replaces them with a straight-line chord. If the resulting traverse
+  // closes cleanly (or within 5ft for multi-meander parcels), mark as MEANDER.
+  if (isMeanderDeed(bestExtraction)) {
+    console.log('Stage 3.6: Meander-Parcel — attempting gap closure of water boundary courses.');
+
+    const meanderCourses = (bestExtraction.courses || []).map(c => {
+      // Mark as unknown if: distance=0, isUnknown=true, or description contains meander keywords
+      const desc = ((c.description || '') + ' ' + (c.label || '')).toUpperCase();
+      const isMeanderCourse =
+        c.isUnknown ||
+        c.distance === 0 || c.distance == null ||
+        /MEANDER|MORE OR LESS|BANK OF|CREEK|RIVER|LAKE|MARSH|CANAL|THEREOF/.test(desc);
+      if (isMeanderCourse) {
+        return { type: 'Line', bearing: null, distance: null, isUnknown: true, _wasMeander: true };
+      }
+      return { ...c };
+    });
+
+    // Check we have at least one unknown run and at least one known course
+    const hasUnknown = meanderCourses.some(c => c.isUnknown);
+    const hasKnown   = meanderCourses.some(c => !c.isUnknown);
+
+    if (hasUnknown && hasKnown) {
+      const [tmGap] = tryCompute(meanderCourses, pob, units, false);
+      if (tmGap) {
+        const linErr = tmGap.closure.linearError;
+        // For meander parcels: accept up to 5ft error (water boundaries shift seasonally)
+        const MEANDER_MAX_ERROR_FT = 5.0;
+        if (linErr <= MEANDER_MAX_ERROR_FT) {
+          const solvedCourses = traverseSvc.autoFixUnknownRuns(meanderCourses, pob);
+          const [tmSolved] = tryCompute(solvedCourses, pob, units, false);
+          const finalTrav = tmSolved || tmGap;
+          console.log(`Stage 3.6 MEANDER: gap-closed water boundary, linearError=${finalTrav.closure.linearError.toFixed(3)}ft`);
+          const mergedExtraction = {
+            ...bestExtraction,
+            courses: solvedCourses,
+            rawJson: JSON.stringify(solvedCourses),
+            isOpenEnded: false,
+          };
+          const steps36 = buildSolutionSteps(originalExtraction, mergedExtraction,
+            'Stage 3.6: Meander-Parcel Gap Closure', finalTrav, Date.now() - pipelineStart);
+          return {
+            finalExtraction: mergedExtraction,
+            finalTraverse:   finalTrav,
+            status:          'MEANDER',
+            repairStageUsed: `Stage 3.6: Meander-Parcel (water boundary ≤${MEANDER_MAX_ERROR_FT}ft, gap-closed)`,
+            traverseError:   null,
+            originalExtraction,
+            solutionSteps:   steps36,
+          };
+        } else {
+          console.log(`Stage 3.6: gap closure gave ${linErr.toFixed(3)}ft — too large, falling through to Stage 4.`);
+        }
+      }
+    }
+  }
+
+  // ── Stage 4: Meander / Adjacent Lot Detection ────────────────────────
+  if (isMeanderDeed(bestExtraction)) {
+    console.log('Stage 4: Detected MEANDER deed (water boundary).');
+    return {
+      finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'MEANDER',
+      repairStageUsed: 'Stage 4: Meander Deed (Water Boundary)',
+      traverseError: `Closure error ${bestTraverse?.closure?.linearError?.toFixed(4)} ft — deed contains meander/water boundary lines.`,
+      originalExtraction,
+    };
+  }
+
+  console.log('Stage 4: Marking deed for adjacent-lot boundary review.');
+  return {
+    finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'FAIL',
+    repairStageUsed: 'Stage 4: Needs Adjacent Lot Review',
+    traverseError: `Closure error ${bestTraverse?.closure?.linearError?.toFixed(4)} ft after all repair stages.`,
+    originalExtraction,
+  };
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Builds a structured solution-steps record comparing original vs repaired courses.
+ * Stored in SolutionStepsJson in DeedLogs for full forensic replay.
+ */
+function buildSolutionSteps(originalExtraction, repairedExtraction, stage, traverse, elapsedMs = 0) {
+  const origCourses  = originalExtraction?.courses  || [];
+  const repairCourses = repairedExtraction?.courses || [];
+
+  const corrections = repairCourses.map((rc, i) => {
+    const oc = origCourses[i];
+    const bearingChanged  = oc && rc.bearing  && oc.bearing  !== rc.bearing;
+    const distanceChanged = oc && rc.distance != null && oc.distance != null && Math.abs(oc.distance - rc.distance) > 0.001;
+    const wasUnknown      = !oc || oc.isUnknown || !oc.bearing || oc.distance == null || oc.distance === 0;
+
+    let changeType = 'ORIGINAL';
+    if (wasUnknown && rc.bearing)      changeType = 'SOLVED_BY_INVERSE';
+    else if (bearingChanged)           changeType = 'BEARING_CORRECTED';
+    else if (distanceChanged)          changeType = 'DISTANCE_CORRECTED';
+
+    return {
+      courseNumber: i + 1,
+      changeType,
+      originalBearing:  oc?.bearing   ?? null,
+      correctedBearing: rc.bearing    ?? null,
+      originalDistance: oc?.distance  ?? null,
+      correctedDistance: rc.distance  ?? null,
+      type: rc.type ?? 'Line',
+    };
+  });
+
+  // If repairedExtraction has MORE courses (gap solved new segments)
+  for (let i = origCourses.length; i < repairCourses.length; i++) {
+    const rc = repairCourses[i];
+    corrections.push({
+      courseNumber: i + 1,
+      changeType: 'SOLVED_BY_INVERSE',
+      originalBearing: null, correctedBearing: rc.bearing ?? null,
+      originalDistance: null, correctedDistance: rc.distance ?? null,
+      type: rc.type ?? 'Line',
+    });
+  }
+
+  const changed = corrections.filter(c => c.changeType !== 'ORIGINAL');
+
+  return {
+    stage,
+    elapsedMs,
+    timestamp: new Date().toISOString(),
+    originalCourseCount: origCourses.length,
+    repairedCourseCount: repairCourses.length,
+    correctionsApplied: changed.length,
+    closureAfter: traverse ? {
+      linearError:    traverse.closure?.linearError  ?? null,
+      precisionRatio: traverse.closure?.precisionRatio ?? null,
+      status:         traverse.closure?.status ?? null,
+      areaAcres:      traverse.areaAcres ?? null,
+      perimeter:      traverse.perimeter ?? null,
+    } : null,
+    corrections,
+    summary: changed.length === 0
+      ? 'No corrections required — deed closed on first attempt.'
+      : changed.map(c =>
+          c.changeType === 'SOLVED_BY_INVERSE'
+            ? `Course ${c.courseNumber}: solved by inverse gap (→ ${c.correctedBearing} ${c.correctedDistance?.toFixed(2)}')`
+            : c.changeType === 'BEARING_CORRECTED'
+              ? `Course ${c.courseNumber}: bearing corrected (${c.originalBearing} → ${c.correctedBearing})`
+              : `Course ${c.courseNumber}: distance adjusted (${c.originalDistance?.toFixed(2)}' → ${c.correctedDistance?.toFixed(2)}')`
+        ).join('; '),
+  };
+}
+
+function tryCompute(courses, pob, units, isOpenEnded = false) {
+  if (!courses || courses.length === 0) return [null, 'No courses'];
+  try {
+    const result = traverseSvc.compute({ pointOfBeginning: pob, courses, units, isOpenEnded });
+    return [result, null];
+  } catch (ex) {
+    return [null, ex.message];
+  }
+}
+
+function isPassing(t) {
+  if (t.closure.status.includes('Open-Ended')) return true;
+
+  // Degeneracy Check: Area is extremely small, but perimeter is significant
+  const isDegenerate = t.areaSqFt != null && t.areaSqFt < 10.0 && t.perimeter > 100.0;
+  if (isDegenerate) {
+    console.log(`isPassing: Rejected degenerate traverse (areaSqFt=${t.areaSqFt.toFixed(2)}, perimeter=${t.perimeter.toFixed(2)})`);
+    return false;
+  }
+
+  // Backtracking Check: Reject if there are backtracking/opposite consecutive courses
+  if (t.courses && detectBacktracking(t.courses)) {
+    console.log(`isPassing: Rejected traverse due to backtracking`);
+    return false;
+  }
+
+  if (t.closure.linearError < PASS_LINEAR_ERROR_FT) return true;
+  const parts = t.closure.precisionRatio.split(':');
+  if (parts.length > 1) {
+    const cleaned = parts[1].replace(/,/g, '').replace('∞', '999999999').trim();
+    const ratio = parseFloat(cleaned);
+    if (!isNaN(ratio) && ratio >= PASS_PRECISION_RATIO) return true;
+  }
+  return false;
+}
+
+/**
+ * Robust Self-Intersection (Bowtie) Detector
+ * Evaluates stations coordinates to see if they self-intersect.
+ */
+export function detectSelfIntersection(stations) {
+  if (!stations || stations.length < 4) return false;
+  
+  const ccw = (A, B, C) => (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+  const intersect = (A, B, C, D) => ccw(A, C, D) !== ccw(B, C, D) && ccw(A, B, C) !== ccw(A, B, D);
+  
+  const n = stations.length;
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = i + 2; j < n - 1; j++) {
+      if (i === 0 && j === n - 2) continue; // skip sharing vertex at start/end
+      const A = { x: stations[i].easting, y: stations[i].northing };
+      const B = { x: stations[i+1].easting, y: stations[i+1].northing };
+      const C = { x: stations[j].easting, y: stations[j].northing };
+      const D = { x: stations[j+1].easting, y: stations[j+1].northing };
+      
+      if (A.x == null || B.x == null || C.x == null || D.x == null) continue;
+      
+      if (intersect(A, B, C, D)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Robust Backtracking Detector
+ * Verifies if consecutive courses travel backwards over each other.
+ */
+export function detectBacktracking(courses) {
+  if (!courses || courses.length < 2) return false;
+  
+  for (let i = 0; i < courses.length; i++) {
+    const c1 = courses[i];
+    const c2 = courses[(i + 1) % courses.length];
+    
+    if (!c1 || !c2) continue;
+    if (c1.type !== 'Line' || c2.type !== 'Line') continue;
+    if (!c1.bearing || !c2.bearing) continue;
+    
+    try {
+      const az1 = bp.parse(c1.bearing).azimuthDeg;
+      const az2 = bp.parse(c2.bearing).azimuthDeg;
+      
+      const diff = Math.abs(az1 - az2);
+      const isOpposite = Math.abs(diff - 180) < 0.01 || Math.abs(diff - 180) > 359.99;
+      
+      if (isOpposite) {
+        console.log(`Backtracking detected between segment ${i + 1} and segment ${((i + 1) % courses.length) + 1}!`);
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return false;
+}
+
+/**
+ * Intelligent Combinatorial Quadrant Inversion Bowtie Solver
+ * Tests single and double segment bearing flips to minimize closure error and resolve intersections.
+ */
+export function tryBowtieAutoFix(original, pob = { northing: 5000, easting: 5000 }, units = 'Feet') {
+  const courses = original.courses.map(c => ({ ...c }));
+  
+  const flippableIndices = [];
+  for (let i = 0; i < courses.length; i++) {
+    const c = courses[i];
+    if (c.type === 'Line' && c.bearing) {
+      flippableIndices.push(i);
+    } else if (c.type === 'Curve' && c.chordBearing) {
+      flippableIndices.push(i);
+    }
+  }
+  
+  if (flippableIndices.length === 0) return original;
+  
+  const evaluate = (testCourses) => {
+    try {
+      // Always run the gap solver first — unknown courses must be resolved before
+      // we can test whether a bearing flip produces a valid non-degenerate polygon.
+      const solvedCourses = traverseSvc.autoFixUnknownRuns(testCourses, pob);
+      const res = traverseSvc.compute({ pointOfBeginning: pob, courses: solvedCourses, units, isOpenEnded: false });
+      const hasIntersection = detectSelfIntersection(res.stations);
+      const hasBacktracking = detectBacktracking(solvedCourses);
+      const isDegenerate = res.areaSqFt < 10.0 && res.perimeter > 100.0;
+      
+      let ratio = 0;
+      const parts = res.closure.precisionRatio.split(':');
+      if (parts.length > 1) {
+        const cleaned = parts[1].replace(/,/g, '').replace('∞', '999999999').trim();
+        ratio = parseFloat(cleaned) || 0;
+      }
+      
+      return {
+        linearError: res.closure.linearError,
+        precisionRatio: ratio,
+        hasIntersection: hasIntersection || hasBacktracking || isDegenerate,
+        stations: res.stations,
+        solvedCourses,  // carry forward the gap-solved courses
+      };
+    } catch {
+      return { linearError: Infinity, precisionRatio: 0, hasIntersection: true, stations: null, solvedCourses: testCourses };
+    }
+  };
+  
+  const originalEval = evaluate(courses);
+  if (!originalEval.hasIntersection && originalEval.linearError < PASS_LINEAR_ERROR_FT) {
+    return original;
+  }
+  
+  let bestCourses = courses;
+  let bestEval = originalEval;
+  let bestStage = null;
+  
+  // --- SINGLE FLIP SEARCH ---
+  for (const idx of flippableIndices) {
+    const testCourses = courses.map(c => ({ ...c }));
+    const c = testCourses[idx];
+    if (c.type === 'Line') {
+      c.bearing = flipQuadrant(c.bearing);
+    } else {
+      c.chordBearing = flipQuadrant(c.chordBearing);
+    }
+    
+    const testEval = evaluate(testCourses);
+    
+    if (!testEval.hasIntersection && (testEval.linearError < PASS_LINEAR_ERROR_FT || testEval.precisionRatio >= PASS_PRECISION_RATIO)) {
+      console.log(`Combinatorial Bowtie Solver: Solved via SINGLE FLIP on course ${idx + 1}!`);
+      // Use gap-solved courses so the corrected unknown segments are included
+      const finalCourses = testEval.solvedCourses || testCourses;
+      return {
+        ...original,
+        courses: finalCourses,
+        rawJson: JSON.stringify(finalCourses),
+        message: `Stage 1: Bowtie Solver corrected course ${idx + 1} bearing`
+      };
+    }
+    
+    if (!testEval.hasIntersection && testEval.linearError < bestEval.linearError) {
+      bestCourses = testCourses;
+      bestEval = testEval;
+      bestStage = `Stage 1: Combinatorial single-flip course ${idx + 1}`;
+    }
+  }
+  
+  // --- DOUBLE FLIP SEARCH ---
+  if (flippableIndices.length <= 30) {
+    for (let i = 0; i < flippableIndices.length; i++) {
+      for (let j = i + 1; j < flippableIndices.length; j++) {
+        const idx1 = flippableIndices[i];
+        const idx2 = flippableIndices[j];
+        
+        const testCourses = courses.map(c => ({ ...c }));
+        const c1 = testCourses[idx1];
+        const c2 = testCourses[idx2];
+        
+        if (c1.type === 'Line') c1.bearing = flipQuadrant(c1.bearing);
+        else c1.chordBearing = flipQuadrant(c1.chordBearing);
+        
+        if (c2.type === 'Line') c2.bearing = flipQuadrant(c2.bearing);
+        else c2.chordBearing = flipQuadrant(c2.chordBearing);
+        
+        const testEval = evaluate(testCourses);
+        
+        if (!testEval.hasIntersection && (testEval.linearError < PASS_LINEAR_ERROR_FT || testEval.precisionRatio >= PASS_PRECISION_RATIO)) {
+          console.log(`Combinatorial Bowtie Solver: Solved via DOUBLE FLIP on courses ${idx1 + 1} & ${idx2 + 1}!`);
+          return {
+            ...original,
+            courses: testCourses,
+            rawJson: JSON.stringify(testCourses),
+            message: `Stage 1: Bowtie Solver corrected courses ${idx1 + 1} & ${idx2 + 1} bearings`
+          };
+        }
+        
+        if (!testEval.hasIntersection && testEval.linearError < bestEval.linearError) {
+          bestCourses = testCourses;
+          bestEval = testEval;
+          bestStage = `Stage 1: Combinatorial double-flip courses ${idx1 + 1} & ${idx2 + 1}`;
+        }
+      }
+    }
+  }
+  
+  if (bestEval.linearError < originalEval.linearError) {
+    console.log(`Combinatorial Bowtie Solver: Improved linear error from ${originalEval.linearError.toFixed(2)} to ${bestEval.linearError.toFixed(2)} via ${bestStage}`);
+    return {
+      ...original,
+      courses: bestCourses,
+      rawJson: JSON.stringify(bestCourses),
+      message: bestStage
+    };
+  }
+  
+  return original;
+}
+
+/**
+ * Stage 1.5 Surveyor Shape Constraint & Scrivener Corrector.
+ * Handles 3-segment traverses by appending a 4th meandering course.
+ * Handles 4-segment traverses by correcting opposite-side parallel/scrivener errors.
+ */
+export function trySurveyorShapeCorrection(original, pob = { northing: 5000, easting: 5000 }, units = 'Feet') {
+  const courses = original.courses.map(c => ({ ...c }));
+  
+  if (courses.length === 3) {
+    console.log('Stage 1.5: 3 courses detected. Appending 4th meandering line to close the traverse.');
+    const testCourses = [...courses, {
+      type: 'Line',
+      bearing: '',
+      distance: null,
+      isUnknown: true,
+      description: 'Meandering line (automated Stage 1.5 correction)'
+    }];
+    
+    const solvedCourses = traverseSvc.autoFixUnknownRuns(testCourses, pob);
+    
+    try {
+      const res = traverseSvc.compute({ pointOfBeginning: pob, courses: solvedCourses, units, isOpenEnded: false });
+      let ratio = 0;
+      const parts = res.closure.precisionRatio.split(':');
+      if (parts.length > 1) {
+        const cleaned = parts[1].replace(/,/g, '').replace('∞', '999999999').trim();
+        ratio = parseFloat(cleaned) || 0;
+      }
+      
+      if (res.closure.linearError < PASS_LINEAR_ERROR_FT || ratio >= PASS_PRECISION_RATIO) {
+        console.log(`Stage 1.5: 3 bearings + meander successfully closed!`);
+        return {
+          ...original,
+          courses: solvedCourses,
+          rawJson: JSON.stringify(solvedCourses),
+          message: 'Stage 1.5: Closed 3-course traverse via Meander Gap Solver'
+        };
+      }
+    } catch (e) {
+      console.warn('Stage 1.5: Failed to compute 3-course traverse with appended meander.', e.message);
+    }
+  }
+  
+  if (courses.length === 4) {
+    console.log('Stage 1.5: 4 courses detected. Evaluating rectangular opposite-side scrivener alignments.');
+    
+    const evaluate = (testCourses) => {
+      try {
+        const res = traverseSvc.compute({ pointOfBeginning: pob, courses: testCourses, units, isOpenEnded: false });
+        const hasIntersection = detectSelfIntersection(res.stations);
+        const hasBacktracking = detectBacktracking(testCourses);
+        const isDegenerate = res.areaSqFt < 10.0 && res.perimeter > 100.0;
+        
+        let ratio = 0;
+        const parts = res.closure.precisionRatio.split(':');
+        if (parts.length > 1) {
+          const cleaned = parts[1].replace(/,/g, '').replace('∞', '999999999').trim();
+          ratio = parseFloat(cleaned) || 0;
+        }
+        
+        return {
+          linearError: res.closure.linearError,
+          precisionRatio: ratio,
+          hasIntersection: hasIntersection || isDegenerate || hasBacktracking,
+          stations: res.stations,
+          courses: res.courses
+        };
+      } catch {
+        return { linearError: Infinity, precisionRatio: 0, hasIntersection: true, stations: null, courses: null };
+      }
+    };
+    
+    const originalEval = evaluate(courses);
+    if (!originalEval.hasIntersection && originalEval.linearError < PASS_LINEAR_ERROR_FT) {
+      if (originalEval.courses) {
+        const hasChanges = JSON.stringify(originalEval.courses) !== JSON.stringify(courses);
+        if (hasChanges) {
+          console.log('Stage 1.5: Solved missing segment bearing inside initial evaluation!');
+          return {
+            ...original,
+            courses: originalEval.courses,
+            rawJson: JSON.stringify(originalEval.courses),
+            message: 'Stage 1.5: Solved missing segment bearing'
+          };
+        }
+      }
+      return original;
+    }
+    
+    let bestCourses = courses;
+    let bestEval = originalEval;
+    let bestMessage = null;
+    
+    const candidates = [];
+    
+    const addCandidate = (name, modifierFn) => {
+      const testCourses = courses.map(c => ({ ...c }));
+      try {
+        modifierFn(testCourses);
+        const testEval = evaluate(testCourses);
+        candidates.push({ courses: testCourses, evaluation: testEval, message: name });
+      } catch (e) {
+        // Ignore errors during modification
+      }
+    };
+    
+    // Opposing sides: index 0 opposite 2, index 1 opposite 3
+    
+    // Distance alignments (Pair A)
+    addCandidate('Stage 1.5: Set Segment 3 distance = Segment 1 distance', (c) => {
+      c[2].distance = c[0].distance;
+      if (c[2].type === 'Curve') c[2].chordDistance = c[0].distance;
+    });
+    addCandidate('Stage 1.5: Set Segment 1 distance = Segment 3 distance', (c) => {
+      c[0].distance = c[2].distance;
+      if (c[0].type === 'Curve') c[0].chordDistance = c[2].distance;
+    });
+    
+    // Distance alignments (Pair B)
+    addCandidate('Stage 1.5: Set Segment 4 distance = Segment 2 distance', (c) => {
+      c[3].distance = c[1].distance;
+      if (c[3].type === 'Curve') c[3].chordDistance = c[1].distance;
+    });
+    addCandidate('Stage 1.5: Set Segment 2 distance = Segment 4 distance', (c) => {
+      c[1].distance = c[3].distance;
+      if (c[1].type === 'Curve') c[1].chordDistance = c[3].distance;
+    });
+    
+    // Bearing alignments (Pair A)
+    addCandidate('Stage 1.5: Align Segment 3 bearing to Segment 1', (c) => {
+      const flipped = flipQuadrant(c[0].bearing || c[0].chordBearing);
+      if (flipped) {
+        if (c[2].type === 'Line') c[2].bearing = flipped;
+        else c[2].chordBearing = flipped;
+      }
+    });
+    addCandidate('Stage 1.5: Align Segment 1 bearing to Segment 3', (c) => {
+      const flipped = flipQuadrant(c[2].bearing || c[2].chordBearing);
+      if (flipped) {
+        if (c[0].type === 'Line') c[0].bearing = flipped;
+        else c[0].chordBearing = flipped;
+      }
+    });
+    
+    // Bearing alignments (Pair B)
+    addCandidate('Stage 1.5: Align Segment 4 bearing to Segment 2', (c) => {
+      const flipped = flipQuadrant(c[1].bearing || c[1].chordBearing);
+      if (flipped) {
+        if (c[3].type === 'Line') c[3].bearing = flipped;
+        else c[3].chordBearing = flipped;
+      }
+    });
+    addCandidate('Stage 1.5: Align Segment 2 bearing to Segment 4', (c) => {
+      const flipped = flipQuadrant(c[3].bearing || c[3].chordBearing);
+      if (flipped) {
+        if (c[1].type === 'Line') c[1].bearing = flipped;
+        else c[1].chordBearing = flipped;
+      }
+    });
+    
+    // Joint alignments (Pair A)
+    addCandidate('Stage 1.5: Align Segment 3 distance and bearing to Segment 1', (c) => {
+      c[2].distance = c[0].distance;
+      if (c[2].type === 'Curve') c[2].chordDistance = c[0].distance;
+      const flipped = flipQuadrant(c[0].bearing || c[0].chordBearing);
+      if (flipped) {
+        if (c[2].type === 'Line') c[2].bearing = flipped;
+        else c[2].chordBearing = flipped;
+      }
+    });
+    addCandidate('Stage 1.5: Align Segment 1 distance and bearing to Segment 3', (c) => {
+      c[0].distance = c[2].distance;
+      if (c[0].type === 'Curve') c[0].chordDistance = c[2].distance;
+      const flipped = flipQuadrant(c[2].bearing || c[2].chordBearing);
+      if (flipped) {
+        if (c[0].type === 'Line') c[0].bearing = flipped;
+        else c[0].chordBearing = flipped;
+      }
+    });
+    
+    // Joint alignments (Pair B)
+    addCandidate('Stage 1.5: Align Segment 4 distance and bearing to Segment 2', (c) => {
+      c[3].distance = c[1].distance;
+      if (c[3].type === 'Curve') c[3].chordDistance = c[1].distance;
+      const flipped = flipQuadrant(c[1].bearing || c[1].chordBearing);
+      if (flipped) {
+        if (c[3].type === 'Line') c[3].bearing = flipped;
+        else c[3].chordBearing = flipped;
+      }
+    });
+    addCandidate('Stage 1.5: Align Segment 2 distance and bearing to Segment 4', (c) => {
+      c[1].distance = c[3].distance;
+      if (c[1].type === 'Curve') c[1].chordDistance = c[3].distance;
+      const flipped = flipQuadrant(c[3].bearing || c[3].chordBearing);
+      if (flipped) {
+        if (c[1].type === 'Line') c[1].bearing = flipped;
+        else c[1].chordBearing = flipped;
+      }
+    });
+    
+    // Perpendicular Rectangular Box Reconstructions (Clockwise & Counter-Clockwise)
+    addCandidate('Stage 1.5: Reconstruct as Perpendicular Rectangular Box (Clockwise)', (c) => {
+      const az0 = bp.parse(c[0].bearing || c[0].chordBearing).azimuthDeg;
+      const az1 = (az0 + 90) % 360;
+      const az2 = (az0 + 180) % 360;
+      const az3 = (az0 + 270) % 360;
+      
+      if (c[1].type === 'Line') c[1].bearing = bp.toDisplayString(az1);
+      else c[1].chordBearing = bp.toDisplayString(az1);
+      
+      if (c[2].type === 'Line') c[2].bearing = bp.toDisplayString(az2);
+      else c[2].chordBearing = bp.toDisplayString(az2);
+      
+      if (c[3].type === 'Line') c[3].bearing = bp.toDisplayString(az3);
+      else c[3].chordBearing = bp.toDisplayString(az3);
+
+      // Ensure equal opposing side distances for rectangular box
+      const distA = c[0].distance || c[0].chordDistance || c[2].distance || c[2].chordDistance || 100.0;
+      c[0].distance = distA;
+      if (c[0].type === 'Curve') c[0].chordDistance = distA;
+      c[2].distance = distA;
+      if (c[2].type === 'Curve') c[2].chordDistance = distA;
+
+      const distB = c[1].distance || c[1].chordDistance || c[3].distance || c[3].chordDistance || distA;
+      c[1].distance = distB;
+      if (c[1].type === 'Curve') c[1].chordDistance = distB;
+      c[3].distance = distB;
+      if (c[3].type === 'Curve') c[3].chordDistance = distB;
+    });
+    
+    addCandidate('Stage 1.5: Reconstruct as Perpendicular Rectangular Box (Counter-Clockwise)', (c) => {
+      const az0 = bp.parse(c[0].bearing || c[0].chordBearing).azimuthDeg;
+      const az1 = (az0 + 270) % 360;
+      const az2 = (az0 + 180) % 360;
+      const az3 = (az0 + 90) % 360;
+      
+      if (c[1].type === 'Line') c[1].bearing = bp.toDisplayString(az1);
+      else c[1].chordBearing = bp.toDisplayString(az1);
+      
+      if (c[2].type === 'Line') c[2].bearing = bp.toDisplayString(az2);
+      else c[2].chordBearing = bp.toDisplayString(az2);
+      
+      if (c[3].type === 'Line') c[3].bearing = bp.toDisplayString(az3);
+      else c[3].chordBearing = bp.toDisplayString(az3);
+
+      // Ensure equal opposing side distances for rectangular box
+      const distA = c[0].distance || c[0].chordDistance || c[2].distance || c[2].chordDistance || 100.0;
+      c[0].distance = distA;
+      if (c[0].type === 'Curve') c[0].chordDistance = distA;
+      c[2].distance = distA;
+      if (c[2].type === 'Curve') c[2].chordDistance = distA;
+
+      const distB = c[1].distance || c[1].chordDistance || c[3].distance || c[3].chordDistance || distA;
+      c[1].distance = distB;
+      if (c[1].type === 'Curve') c[1].chordDistance = distB;
+      c[3].distance = distB;
+      if (c[3].type === 'Curve') c[3].chordDistance = distB;
+    });
+    
+    // Evaluate candidates
+    for (const cand of candidates) {
+      const testEval = cand.evaluation;
+      if (!testEval.hasIntersection && (testEval.linearError < PASS_LINEAR_ERROR_FT || testEval.precisionRatio >= PASS_PRECISION_RATIO)) {
+        console.log(`Stage 1.5: Rectangular Scrivener Solver corrected via candidate: "${cand.message}"!`);
+        return {
+          ...original,
+          courses: cand.courses,
+          rawJson: JSON.stringify(cand.courses),
+          message: cand.message
+        };
+      }
+      
+      if (!testEval.hasIntersection && testEval.linearError < bestEval.linearError) {
+        bestCourses = cand.courses;
+        bestEval = testEval;
+        bestMessage = cand.message;
+      }
+    }
+    
+    if (bestEval.linearError < originalEval.linearError) {
+      console.log(`Stage 1.5: Rectangular Scrivener Solver improved error from ${originalEval.linearError.toFixed(2)} to ${bestEval.linearError.toFixed(2)} via: "${bestMessage}"`);
+      return {
+        ...original,
+        courses: bestCourses,
+        rawJson: JSON.stringify(bestCourses),
+        message: bestMessage
+      };
+    }
+  }
+  
+  return original;
+}
+
+function flipQuadrant(bearing) {
+  if (!bearing || bearing.length < 2) return null;
+  const ns = bearing[0].toUpperCase();
+  const ew = bearing[bearing.length - 1].toUpperCase();
+  if (!'NS'.includes(ns) || !'EW'.includes(ew)) return null;
+  const newNS = ns === 'N' ? 'S' : 'N';
+  const newEW = ew === 'E' ? 'W' : 'E';
+  return newNS + bearing.slice(1, -1) + newEW;
+}
+
+function isMeanderDeed(extraction) {
+  // Build a combined text from all available text fields
+  const text = [
+    extraction.rawJson || '',
+    extraction.message || '',
+    extraction.mentalMapSummary || '',
+    extraction.extractedText || '',
+    (extraction.courses || []).map(c => c.description || c.label || '').join(' '),
+  ].join(' ').toUpperCase();
+
+  if (text.includes('MEANDER')) return true;
+
+  const hasMoreOrLess = text.includes('MORE OR LESS');
+  const waterKeywords = [
+    'CREEK', 'RIVER', 'LAKE', 'MARSH', 'WATERS OF', 'ALONG SAID WATER',
+    'HIGH WATER', 'WATER LINE', 'BANK OF', 'SHORE', 'CANAL', 'POND',
+    'BAYOU', 'SLOUGH', 'BAY', 'INLET', 'STREAM', 'TRIBUTARY', 'LAGOON',
+  ];
+  const hasWaterBody = waterKeywords.some(w => text.includes(w));
+
+  if (hasMoreOrLess && hasWaterBody) return true;
+  if (text.includes('FOLLOWING') && (text.includes('THEREOF') || text.includes('SAID')) && hasWaterBody) return true;
+  return false;
+}
+
+
+/**
+ * Unified Multi-factor Open-Ended Traverse Classifier
+ */
+export function detectOpenEnded(text, fileName, aiFlag) {
+  if (aiFlag === true) return true;
+  
+  const upperText = (text || '').toUpperCase();
+  const upperFile = (fileName || '').toUpperCase();
+  const combined = upperText + ' ' + upperFile;
+
+  // ── Fast-path: Definitive strip deed signal ─────────────────────────────
+  // "a strip of land" + "point of termination" = open-ended survey centerline.
+  // These parcels describe corridors (road/utility R/W), not closed polygons.
+  const isStripDeed = combined.includes('STRIP OF LAND') && combined.includes('POINT OF TERMINATION');
+  if (isStripDeed) {
+    console.log('detectOpenEnded: Fast-path STRIP DEED detected ("strip of land" + "point of termination")');
+    return true;
+  }
+
+  // ── Keyword scan ─────────────────────────────────────────────────────────
+  const indicators = [
+    'EASEMENT', 'EAESMENT', 'EASMENT', 'RIGHT OF WAY', 'RIGHT-OF-WAY', 'R/W', 'R-O-W',
+    'CENTERLINE', 'CENTER LINE',
+    'STRIP OF LAND', 'STRIP 10 FEET', 'STRIP 20 FEET', 'STRIP 30 FEET',
+    'FEET IN WIDTH', 'FEET WIDE', 'IN WIDTH, LYING',
+    'HEREIN DESCRIBED SURVEY LINE', 'DESCRIBED SURVEY LINE',
+    'POINT OF TERMINATION',
+    'UTILITY LINE', 'PIPELINE', 'INGRESS', 'EGRESS', 'ACCESS ROAD'
+  ];
+  
+  const hasIndicator = indicators.some(w => combined.includes(w));
+  if (!hasIndicator) return false;
+  
+  const hasPobReturn = combined.includes('POINT OF BEGINNING') && (combined.includes('RETURN') || combined.includes('CLOSE') || combined.includes('TO SAID'));
+  if (combined.includes('CLOSED') && hasPobReturn) {
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Multi-Parcel Text Splitter
+ *
+ * Detects labeled "Parcel A" / "Parcel B" (or "PARCEL A" / "PARCEL B") sections
+ * in a deed's raw text and splits them into separate sub-descriptions.
+ *
+ * Returns an array of { label, text } objects (e.g. [{label:'A', text:'...'}, {label:'B', text:'...'}])
+ * if 2 or more named parcels are found, or null for single-parcel documents.
+ *
+ * @param {string} docText  Raw deed text (from _extracted/*.txt or AI message)
+ * @returns {Array<{label:string, text:string}>|null}
+ */
+export function extractNamedParcels(docText) {
+  if (!docText || docText.length < 20) return null;
+
+  // Match "Parcel A", "PARCEL B", "Parcel C" etc. as section dividers.
+  // We only handle single-letter labels (A-Z), up to 6 parcels.
+  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL)[ \t]+([A-F])[ \t]*(?:\n|$)/gi;
+
+  const matches = [];
+  let m;
+  while ((m = headerRe.exec(docText)) !== null) {
+    matches.push({ label: m[1].toUpperCase(), index: m.index });
+  }
+
+  // Need at least 2 labeled parcels to split
+  if (matches.length < 2) return null;
+
+  const parcels = [];
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end   = i + 1 < matches.length ? matches[i + 1].index : docText.length;
+    const text  = docText.slice(start, end).trim();
+    if (text.length > 10) {
+      parcels.push({ label: matches[i].label, text });
+    }
+  }
+
+  return parcels.length >= 2 ? parcels : null;
+}

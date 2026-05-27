@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const PAD = 40;
+const PAD = 50;
 
 function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000 }) {
   const pts = [{ northing: pob.northing, easting: pob.easting }];
@@ -87,8 +87,8 @@ export default function TraverseMap({ stations, adjusted, courses }) {
     const tx = e => PAD + (e - minE) * scale;
     const ty = n => H - PAD - (n - minN) * scale;
 
-    // Grid lines
-    ctx.strokeStyle = 'rgba(31,46,77,0.5)';
+    // Grid lines (Surveyor Draft grid)
+    ctx.strokeStyle = 'rgba(31, 46, 77, 0.4)';
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 5; i++) {
       const x = PAD + i * (W - PAD * 2) / 5;
@@ -97,81 +97,138 @@ export default function TraverseMap({ stations, adjusted, courses }) {
       ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
     }
 
-    // Fill polygon
+    // Fill polygon interior
     ctx.beginPath();
     ctx.moveTo(tx(pts[0].easting), ty(pts[0].northing));
     for (let i = 1; i < pts.length; i++) ctx.lineTo(tx(pts[i].easting), ty(pts[i].northing));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(61,127,255,0.07)';
+    ctx.fillStyle = 'rgba(61,127,255,0.06)';
     ctx.fill();
 
-    // Draw traverse lines
+    // Draw boundary lines
     ctx.beginPath();
     ctx.strokeStyle = '#3d7fff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.moveTo(tx(pts[0].easting), ty(pts[0].northing));
     for (let i = 1; i < pts.length; i++) ctx.lineTo(tx(pts[i].easting), ty(pts[i].northing));
     ctx.closePath();
     ctx.stroke();
 
-    // Closure line (if not perfectly closed)
+    // Draw visual midpoint labels aligned parallel to segments
+    if (courses && courses.length > 0 && pts.length >= 2) {
+      for (let i = 0; i < courses.length; i++) {
+        const course = courses[i];
+        const p1 = pts[i];
+        const p2 = pts[i + 1] || pts[0];
+        if (!p1 || !p2) continue;
+
+        const x1 = tx(p1.easting), y1 = ty(p1.northing);
+        const x2 = tx(p2.easting), y2 = ty(p2.northing);
+
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+
+        const isCurve = (course.type || '').toLowerCase() === 'curve';
+        const distVal = course.distance ?? course.arcLength ?? course.chordDistance;
+        const distStr = distVal != null ? `${distVal.toFixed(1)}'` : '';
+        const rawBrg = course.bearing || course.chordBearing || '';
+        const brgStr = rawBrg ? rawBrg.replace(/\s+/g, '') : '';
+        const label = isCurve ? `C${i + 1} R=${course.radius || 0} L=${distStr}` : `${brgStr} ${distStr}`;
+
+        // Compute angle of segment in canvas space
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        let angRad = Math.atan2(dy, dx);
+
+        // Normalize text rotation so it is never upside down
+        if (angRad > Math.PI / 2) angRad -= Math.PI;
+        else if (angRad < -Math.PI / 2) angRad += Math.PI;
+
+        ctx.save();
+        ctx.translate(midX, midY);
+        ctx.rotate(angRad);
+        
+        ctx.fillStyle = isCurve ? '#ff9f43' : '#a8c4ff';
+        ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        // Draw with small 4px perpendicular offset
+        ctx.fillText(label, 0, -4);
+        ctx.restore();
+      }
+    }
+
+    // Visual Error / Misclosure gap dashed red line
     const last = pts[pts.length - 1];
     const first = pts[0];
     const closeGap = Math.hypot(last.northing - first.northing, last.easting - first.easting);
-    if (closeGap > 0.01) {
+    if (closeGap > 0.05) {
+      const xLast = tx(last.easting), yLast = ty(last.northing);
+      const xFirst = tx(first.easting), yFirst = ty(first.northing);
+
       ctx.beginPath();
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = '#ff4d6d';
       ctx.lineWidth = 1.5;
-      ctx.moveTo(tx(last.easting), ty(last.northing));
-      ctx.lineTo(tx(first.easting), ty(first.northing));
+      ctx.moveTo(xLast, yLast);
+      ctx.lineTo(xFirst, yFirst);
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // Label the misclosure line
+      ctx.fillStyle = '#ff4d6d';
+      ctx.font = 'bold 9px Inter, sans-serif';
+      ctx.fillText(`Error: ${closeGap.toFixed(3)}'`, (xLast + xFirst) / 2 + 8, (yLast + yFirst) / 2 - 4);
     }
 
-    // Points
+    // Corner pin node drawing
     pts.forEach((p, i) => {
       const x = tx(p.easting), y = ty(p.northing);
       ctx.beginPath();
-      ctx.arc(x, y, i === 0 ? 6 : 4, 0, Math.PI * 2);
+      ctx.arc(x, y, i === 0 ? 6.5 : 4.5, 0, Math.PI * 2);
       ctx.fillStyle = i === 0 ? '#00d4a8' : '#3d7fff';
       ctx.fill();
       ctx.strokeStyle = '#090e1a';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.8;
       ctx.stroke();
 
-      // Labels
-      if (pts.length <= 20) {
-        ctx.fillStyle = i === 0 ? '#00d4a8' : '#a8c4ff';
-        ctx.font = '11px JetBrains Mono, monospace';
-        ctx.fillText(i === 0 ? 'POB' : `${i}`, x + 7, y - 5);
+      // Corner point labels
+      if (pts.length <= 30) {
+        ctx.fillStyle = i === 0 ? '#00d4a8' : '#fff';
+        ctx.font = 'bold 10px Inter, sans-serif';
+        // Offset label from the node center so it doesn't clash
+        ctx.fillText(i === 0 ? 'POB' : `${i}`, x + 7, y - 6);
       }
     });
 
-    // North arrow
+    // North arrow graphic
     ctx.save();
-    ctx.translate(W - 30, 50);
+    ctx.translate(W - 35, 55);
     ctx.fillStyle = '#3d7fff';
     ctx.font = 'bold 11px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('N', 0, -16);
-    ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(4, 0); ctx.lineTo(0, -4); ctx.lineTo(-4, 0); ctx.closePath();
+    ctx.fillText('N', 0, -18);
+    ctx.beginPath(); 
+    ctx.moveTo(0, -15); 
+    ctx.lineTo(4.5, 0); 
+    ctx.lineTo(0, -4); 
+    ctx.lineTo(-4.5, 0); 
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
 
-  }, [canvasElement, pts]);
+  }, [canvasElement, pts, courses]);
 
   return (
     <div className="map-container" style={{ height: 340 }}>
       <canvas ref={setCanvasElement} className="map-canvas" width={700} height={340} />
       <div className="map-legend">
-        <span style={{ color: 'var(--success)' }}>● POB</span>
+        <span style={{ color: 'var(--success)', fontWeight: 600 }}>● POB</span>
         {'  '}
-        <span style={{ color: 'var(--accent)' }}>● Station</span>
+        <span style={{ color: 'var(--accent)', fontWeight: 600 }}>● Station</span>
         {'  '}
-        <span style={{ color: 'var(--danger)' }}>- - Error</span>
+        <span style={{ color: 'var(--danger)', fontWeight: 600 }}>- - Misclosure Error</span>
       </div>
     </div>
   );
 }
-

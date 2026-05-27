@@ -19,6 +19,7 @@ appsettings.Local.json
 client/node_modules/
 client/dist/
 client/.vite/
+server/node_modules/
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store

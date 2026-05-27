@@ -227,7 +227,12 @@ export default function PlatTab() {
                🖨 Print Blueprint
              </button>
           </div>
-          <TraverseMap stations={trav?.stations} adjusted={trav?.adjustedStations} courses={ext?.courses} />
+          <TraverseMap
+            key={`${trav?.stations?.length || 0}_${trav?.closure?.linearError || 0}_${ext?.courses?.length || 0}`}
+            stations={trav?.stations}
+            adjusted={trav?.adjustedStations}
+            courses={ext?.courses}
+          />
         </div>
       )}
 
@@ -244,6 +249,7 @@ export default function PlatTab() {
       )}
       {showPrint && ext?.courses?.length > 0 && (
         <PrintBlueprint
+          key={`${trav?.stations?.length || 0}_${trav?.closure?.linearError || 0}_${ext?.courses?.length || 0}`}
           courses={ext.courses}
           stations={trav?.stations || []}
           adjusted={trav?.adjustedStations || []}

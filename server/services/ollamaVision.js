@@ -1,0 +1,229 @@
+// ─── Ollama Vision Service ──────────────────────────────────────────────────
+// Provides boundary extraction using a local Ollama instance.
+// Automatically routes to the correct Ollama API based on model family:
+//   • Vision models (gemma4, llava, …) → /api/chat  + image content blocks
+//   • Text-only models (qwen, deepseek, …) → /api/generate + format:'json'
+// Ollama API docs: https://github.com/ollama/ollama/blob/main/docs/api.md
+
+import { fetch, Agent } from 'undici';
+
+const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+const MAX_RETRIES = 1;   // Reduced from 2 — failing fast is better than hanging SSE for 30+ min
+
+// Per-model inference timeout — fail fast so the retry cascade can try the next model
+// Small models: 4 min  |  Medium: 8 min  |  Large/slow: 10 min
+function modelTimeout(model) {
+  const lower = (model || '').toLowerCase();
+  if (lower.includes('1.5b') || lower.includes('e2b') || lower.includes('3b')) return 4 * 60 * 1000;
+  if (lower.includes('7b')   || lower.includes('8b')  || lower.includes('gemma3')) return 8 * 60 * 1000;
+  return 10 * 60 * 1000;   // 6.7b, 13b, 70b, unknown — 10 minutes max
+}
+
+// Reusable dispatcher — connect/headers/body timeouts stay long (model controls the limit)
+const ollamaAgent = new Agent({
+  connectTimeout: 30000,
+  headersTimeout: 1800000,
+  bodyTimeout: 1800000,
+});
+
+// ── Model family detection ────────────────────────────────────────────────────
+// Vision models support multimodal /api/chat with image content blocks.
+// Text-only models use /api/generate with format:'json' for structured output.
+const VISION_MODEL_PREFIXES = [
+  'gemma4', 'llava', 'minicpm-v', 'bakllava', 'moondream', 'llava-phi', 'llava-llama',
+];
+
+function isVisionModel(model) {
+  const lower = (model || '').toLowerCase();
+  return VISION_MODEL_PREFIXES.some(p => lower.startsWith(p));
+}
+
+/** Public alias — used by geminiVision.js to determine routing */
+export function isVisionCapable(model) { return isVisionModel(model); }
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Check if Ollama is reachable and return available models.
+ * @returns {Promise<{ online: boolean, models: string[], error?: string }>}
+ */
+export async function getStatus() {
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+      signal: AbortSignal.timeout(3000),
+      dispatcher: ollamaAgent,
+    });
+    if (!res.ok) return { online: false, models: [], error: `HTTP ${res.status}` };
+    const data = await res.json();
+    const models = (data.models || []).map(m => m.name);
+    return { online: true, models };
+  } catch (ex) {
+    return { online: false, models: [], error: ex.message };
+  }
+}
+
+/**
+ * Check if an OpenAI-compatible endpoint is reachable and return its model list.
+ * Works with Ollama /v1, LM Studio, llama.cpp server, etc.
+ * @param {string} baseUrl  e.g. "http://127.0.0.1:11434/v1"
+ * @returns {Promise<{ online: boolean, models: string[], error?: string }>}
+ */
+export async function getStatusOpenAI(baseUrl) {
+  const url = `${baseUrl.replace(/\/$/, '')}/models`;
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(3000),
+      dispatcher: ollamaAgent,
+    });
+    if (!res.ok) return { online: false, models: [], error: `HTTP ${res.status}` };
+    const data = await res.json();
+    const models = (data.data || []).map(m => m.id).filter(Boolean);
+    return { online: true, models };
+  } catch (ex) {
+    return { online: false, models: [], error: ex.message };
+  }
+}
+
+// ── Vision model path: /api/chat with image content blocks ────────────────────
+
+async function generateVisionChat(buffer, model, prompt) {
+  // Build multimodal user message
+  const userContent = [];
+  if (buffer && buffer.length > 0) {
+    userContent.push({ type: 'image', data: buffer.toString('base64') });
+  }
+  userContent.push({ type: 'text', text: prompt });
+
+  const payload = {
+    model,
+    messages: [{ role: 'user', content: userContent }],
+    stream: false,
+    options: { temperature: 0.1, num_predict: 8192 },
+    // NOTE: Do NOT set format:'json' — vision models may not honor it and it
+    // can suppress the entire response. Rely on prompt instructions instead.
+  };
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(modelTimeout(model)),
+        dispatcher: ollamaAgent,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 404) {
+          throw new Error(`Model "${model}" not found. Pull it with: ollama pull ${model}`);
+        }
+        if (attempt < MAX_RETRIES) {
+          console.warn(`Ollama /chat ${res.status} on attempt ${attempt + 1}. Retrying…`);
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw new Error(`Ollama /api/chat returned ${res.status}: ${errText}`);
+      }
+
+      const data = await res.json();
+      const rawText = data.message?.content || '';
+      console.log(`Ollama vision [${model}] /chat → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
+      return { rawText };
+    } catch (ex) {
+      if (ex.name === 'TimeoutError') {
+        throw new Error(`Ollama /chat timed out. Model "${model}" may be too large for your hardware.`);
+      }
+      if (attempt === MAX_RETRIES) throw ex;
+      console.warn(`Ollama /chat attempt ${attempt + 1} failed: ${ex.message}. Retrying…`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  throw new Error('Exceeded maximum retry attempts for Ollama /api/chat.');
+}
+
+// ── Text-only model path: /api/generate with format:'json' ───────────────────
+
+async function generateTextOnly(prompt, model) {
+  const payload = {
+    model,
+    prompt,
+    stream: false,
+    options: { temperature: 0.1, num_predict: 8192 },
+    format: 'json',
+  };
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(modelTimeout(model)),
+        dispatcher: ollamaAgent,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 404) {
+          throw new Error(`Model "${model}" not found. Pull it with: ollama pull ${model}`);
+        }
+        if (attempt < MAX_RETRIES) {
+          console.warn(`Ollama /generate ${res.status} on attempt ${attempt + 1}. Retrying…`);
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw new Error(`Ollama /api/generate returned ${res.status}: ${errText}`);
+      }
+
+      const data = await res.json();
+      const rawText = data.response || '';
+      console.log(`Ollama text [${model}] /generate → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
+      return { rawText };
+    } catch (ex) {
+      if (ex.name === 'TimeoutError') {
+        throw new Error(`Ollama /generate timed out. Model "${model}" may be too large for your hardware.`);
+      }
+      if (attempt === MAX_RETRIES) throw ex;
+      console.warn(`Ollama /generate attempt ${attempt + 1} failed: ${ex.message}. Retrying…`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  throw new Error('Exceeded maximum retry attempts for Ollama /api/generate.');
+}
+
+// ── Unified entry-point ───────────────────────────────────────────────────────
+
+/**
+ * Route to the correct Ollama API based on model family.
+ * @param {Buffer}  buffer   — image buffer (empty Buffer for text-only)
+ * @param {string}  mimeType — e.g. 'image/png' or 'application/pdf'
+ * @param {string}  model    — Ollama model name e.g. 'gemma4:e2b'
+ * @param {string}  prompt   — extraction prompt (text already injected for PDFs)
+ * @returns {Promise<{ rawText: string }>}
+ */
+export async function generate(buffer, mimeType, model, prompt) {
+  const hasImage = buffer && buffer.length > 0;
+  const vision = isVisionModel(model);
+
+  if (hasImage && vision) {
+    console.log(`Ollama routing → /api/chat  [vision model: ${model}]`);
+    return generateVisionChat(buffer, model, prompt);
+  }
+
+  if (hasImage && !vision) {
+    // Text model received an image buffer — this means the PDF→text extraction
+    // upstream failed. Warn but fall through; the prompt text is the best we have.
+    console.warn(`Ollama: text-only model "${model}" received an image buffer it cannot process. Falling back to text-only prompt.`);
+  }
+
+  console.log(`Ollama routing → /api/generate [text model: ${model}]`);
+  return generateTextOnly(prompt, model);
+}
+
+/**
+ * Alias for compatibility — same as generate().
+ */
+export async function generateWithImage(buffer, mimeType, model, prompt) {
+  return generate(buffer, mimeType, model, prompt);
+}

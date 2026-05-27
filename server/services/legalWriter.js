@@ -1,0 +1,84 @@
+// ─── Legal Description Writer ───────────────────────────────────────────────
+// Port of LegalDescriptionWriter.cs — generates formatted metes-and-bounds legal descriptions.
+
+/**
+ * Converts a computed traverse into a formatted metes-and-bounds legal description.
+ * @param {object} req - WriteRequest
+ * @returns {string}
+ */
+export function write(req) {
+  const courses = req.courses;
+  const units = req.units || 'feet';
+  const county = req.county || '______ County';
+  const state = req.state || '______';
+  const parcel = req.parcelDescription || 'a parcel of land';
+  const lines = [];
+
+  // ── Header
+  lines.push(`A parcel of land being ${parcel}, situated in ${county}, ${state}, more particularly described as follows:`);
+  lines.push('');
+  lines.push(`BEGINNING at a point, said point being the Point of Beginning (POB), having coordinates of Northing ${(req.pobNorthing || 0).toFixed(2)}, Easting ${(req.pobEasting || 0).toFixed(2)};`);
+  lines.push('');
+
+  // ── Courses
+  for (let i = 0; i < courses.length; i++) {
+    const c = courses[i];
+    const isLast = i === courses.length - 1;
+    const term = isLast ? 'to the Point of Beginning.' : ';';
+
+    if ((c.type || '').toLowerCase() === 'line') {
+      const brg = formatBearing(c.bearing || '');
+      const dist = (c.distance || 0).toFixed(2);
+      lines.push(`THENCE ${brg}, a distance of ${dist} ${units}${term}`);
+    } else {
+      // Curve
+      const dir = c.curveDirection || 'Right';
+      const delta = formatDMS(c.delta || 0);
+      const radius = (c.radius || 0).toFixed(2);
+      const arc = (c.arcLength || 0).toFixed(2);
+      const chord = (c.chordDistance || 0).toFixed(2);
+      const chBrg = formatBearing(c.chordBearing || '');
+      lines.push(`THENCE along a curve to the ${dir}, having a radius of ${radius} ${units}, a central angle of ${delta}, an arc length of ${arc} ${units}, a chord bearing of ${chBrg}, and a chord distance of ${chord} ${units}${term}`);
+    }
+
+    if (!isLast) lines.push('');
+  }
+
+  // ── Closure stats
+  if (req.areaAcres != null || req.perimeter != null) {
+    lines.push('');
+    lines.push(`Said parcel containing ${(req.areaAcres || 0).toFixed(4)} acres, more or less, and having a perimeter of ${(req.perimeter || 0).toFixed(2)} ${units}.`);
+  }
+
+  // ── Basis of bearings
+  lines.push('');
+  lines.push(`Bearings are based on ${req.basisOfBearings || 'the deed of record'} and are ${req.bearingSystem || 'grid bearings'}.`);
+
+  return lines.join('\n').trimEnd();
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatBearing(raw) {
+  if (!raw || raw.length < 3) return raw;
+  raw = raw.trim();
+  const ns = raw[0].toUpperCase() === 'N' ? 'North' : 'South';
+  const ew = raw[raw.length - 1].toUpperCase() === 'E' ? 'East' : 'West';
+  let mid = raw.slice(1, -1).trim();
+  // Normalize dash separators
+  if (mid.includes('-')) {
+    const i1 = mid.indexOf('-');
+    mid = mid.substring(0, i1) + '°' + mid.substring(i1 + 1);
+    const i2 = mid.indexOf('-');
+    if (i2 >= 0) mid = mid.substring(0, i2) + "'" + mid.substring(i2 + 1);
+  }
+  return `${ns} ${mid} ${ew}`;
+}
+
+function formatDMS(dms) {
+  const d = Math.floor(Math.abs(dms));
+  const rem = (Math.abs(dms) - d) * 100;
+  const m = Math.floor(rem);
+  const s = (rem - m) * 100;
+  return `${String(d).padStart(2, '0')}°${String(m).padStart(2, '0')}'${s.toFixed(2).padStart(5, '0')}"`;
+}

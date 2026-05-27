@@ -1,0 +1,58 @@
+// ─── DXF Route ──────────────────────────────────────────────────────────────
+import { Router } from 'express';
+import { generateDxf } from '../services/dxfExport.js';
+const router = Router();
+
+router.post('/generate', (req, res) => {
+  try {
+    const body = req.body;
+    if (!body) return res.status(400).send('Request body is required.');
+
+    const stations = (body.stations ?? body.Stations ?? []).map(s => ({
+      easting: s.easting ?? s.Easting, northing: s.northing ?? s.Northing,
+      depDN: s.depDN ?? s.DepDN ?? 0, depDE: s.depDE ?? s.DepDE ?? 0,
+    }));
+    const adjusted = (body.adjusted ?? body.Adjusted ?? body.adjustedStations ?? body.AdjustedStations ?? []).map(s => ({
+      easting: s.easting ?? s.Easting, northing: s.northing ?? s.Northing,
+    }));
+    const courses = (body.courses ?? body.Courses ?? []).map(c => ({
+      type: c.type ?? c.Type ?? 'Line',
+      bearing: c.bearing ?? c.Bearing ?? null,
+      distance: c.distance ?? c.Distance ?? null,
+      delta: c.delta ?? c.Delta ?? null,
+      radius: c.radius ?? c.Radius ?? null,
+      arcLength: c.arcLength ?? c.ArcLength ?? null,
+      curveDirection: c.curveDirection ?? c.CurveDirection ?? c.Direction ?? null,
+      chordBearing: c.chordBearing ?? c.ChordBearing ?? null,
+      chordDistance: c.chordDistance ?? c.ChordDistance ?? null,
+    }));
+
+    if (stations.length < 2 && adjusted.length < 2)
+      return res.status(400).send('At least 2 stations are required to generate a DXF.');
+
+    const meta = {
+      parcel: body.parcel ?? body.Parcel ?? null,
+      county: body.county ?? body.County ?? null,
+      state: body.state ?? body.State ?? null,
+      units: body.units ?? body.Units ?? 'Feet',
+      areaAcres: body.areaAcres ?? body.AreaAcres ?? 0,
+      perimeter: body.perimeter ?? body.Perimeter ?? 0,
+      basisOfBearings: body.basisOfBearings ?? body.BasisOfBearings ?? null,
+    };
+
+    // Fix #1: Pass bustCourseIndex so the DXF generator can highlight the suspect course
+    const bustCourseIndex = body.bustCourseIndex ?? body.BustCourseIndex ?? null;
+    const dxfString = generateDxf(stations, adjusted, courses, meta, bustCourseIndex != null ? parseInt(bustCourseIndex) : null);
+
+    let safeFileName = 'boundary_sketch.dxf';
+    if (meta.parcel) safeFileName = meta.parcel.replace(/ /g, '_').replace(/\//g, '-') + '.dxf';
+
+    res.setHeader('Content-Type', 'application/dxf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
+    res.send(dxfString);
+  } catch (ex) {
+    res.status(400).json({ error: `DXF generation failed: ${ex.message}` });
+  }
+});
+
+export default router;

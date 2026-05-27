@@ -15,6 +15,81 @@ export default function SettingsTab() {
   const [dbMessage, setDbMessage]   = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
 
+  // ── AI Model Provider state ────────────────────────────────────
+  const [modelConfig, setModelConfig]   = useState(null);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [modelMsg, setModelMsg]         = useState('');
+  const [switchingTo, setSwitchingTo]   = useState(null);
+  const [startingOllama, setStartingOllama] = useState(false);
+  const [openaiBaseUrl, setOpenaiBaseUrl] = useLocalStorage('boundaryiq_openai_base_url', 'http://127.0.0.1:11434/v1');
+
+  const fetchModelConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/settings/model`);
+      if (res.ok) setModelConfig(await res.json());
+    } catch (e) { console.error('Failed to fetch model config:', e); }
+  }, []);
+
+  const switchModel = async (provider, model) => {
+    setSwitchingTo(`${provider}/${model}`);
+    setModelLoading(true); setModelMsg('');
+    try {
+      const body = { provider, model };
+      if (provider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
+      const res = await fetch(`${API}/settings/model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setModelMsg(`✓ ${data.message}`);
+        fetchModelConfig();
+      } else {
+        setModelMsg(`✗ ${data.error}`);
+      }
+    } catch (e) { setModelMsg(`✗ ${e.message}`); }
+    finally { setModelLoading(false); setSwitchingTo(null); }
+  };
+
+  const startOllama = async () => {
+    setStartingOllama(true);
+    setModelMsg('⏳ Starting Ollama…');
+    try {
+      const res = await fetch(`${API}/settings/ollama/start`, { method: 'POST' });
+      const data = await res.json();
+      if (data.started) {
+        setModelMsg(`✓ ${data.message}`);
+        fetchModelConfig();
+      } else if (data.error) {
+        // Not up yet — poll every 2s up to 15s
+        setModelMsg('⏳ Waiting for Ollama to initialize…');
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          const s = await fetch(`${API}/settings/ollama/status`).then(r => r.json()).catch(() => ({}));
+          if (s.online) {
+            clearInterval(poll);
+            setModelMsg(`✓ Ollama is online — ${s.models?.length || 0} model(s) ready.`);
+            setStartingOllama(false);
+            fetchModelConfig();
+          } else if (attempts >= 8) {
+            clearInterval(poll);
+            setModelMsg(`✗ Ollama did not start in time. Try running 'ollama serve' in a terminal.`);
+            setStartingOllama(false);
+          }
+        }, 2000);
+        return; // don't set startingOllama=false here, poll will do it
+      } else {
+        setModelMsg(`✓ ${data.message}`);
+        fetchModelConfig();
+      }
+    } catch (e) {
+      setModelMsg(`✗ ${e.message}`);
+    }
+    setStartingOllama(false);
+  };
+
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch(`${API}/diagnostics/stats`);
@@ -22,7 +97,7 @@ export default function SettingsTab() {
     } catch (e) { console.error('Failed to fetch DB stats:', e); }
   }, []);
 
-  useEffect(() => { fetchStats(); }, [fetchStats]);
+  useEffect(() => { fetchStats(); fetchModelConfig(); }, [fetchStats, fetchModelConfig]);
 
   const dbAction = async (url, label) => {
     setDbLoading(true); setDbMessage('');
@@ -34,6 +109,15 @@ export default function SettingsTab() {
     } catch (e) { setDbMessage(`Error: ${e.message}`); }
     finally { setDbLoading(false); setConfirmClear(false); }
   };
+
+  // ── Helper: provider color + icon ──────────────────────────────
+  const providerMeta = {
+    gemini: { color: '#4285F4', icon: '☁️', gradient: 'linear-gradient(135deg, #4285F4 0%, #8AB4F8 100%)', label: 'Cloud' },
+    ollama: { color: '#00d4a8', icon: '🖥️', gradient: 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)', label: 'Local' },
+    openai: { color: '#a855f7', icon: '🔌', gradient: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)', label: 'Compat' },
+  };
+
+  const isOllamaOffline = modelConfig && !modelConfig.ollama.online;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -71,6 +155,294 @@ export default function SettingsTab() {
               Fine-tune the parallel execution and cognitive agent pipelines.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* ── AI Model Provider Section ──────────────────────────────── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(66, 133, 244, 0.3)',
+        boxShadow: '0 4px 24px rgba(66, 133, 244, 0.1)',
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              🧠 AI Model Provider
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={fetchModelConfig} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
+          </div>
+        </div>
+
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* Active Model Badge */}
+          {modelConfig && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+            }}>
+              <div style={{
+                background: providerMeta[modelConfig.activeProvider]?.gradient || 'var(--bg-elevated)',
+                padding: '0.5rem 1.2rem',
+                borderRadius: '99px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                boxShadow: `0 0 20px ${providerMeta[modelConfig.activeProvider]?.color || '#fff'}33`,
+              }}>
+                <span style={{ fontSize: '1rem' }}>{providerMeta[modelConfig.activeProvider]?.icon}</span>
+                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.85rem', letterSpacing: '-0.01em' }}>
+                  {modelConfig.activeModel}
+                </span>
+              </div>
+              <span style={{
+                fontSize: '0.72rem',
+                color: providerMeta[modelConfig.activeProvider]?.color,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+              }}>
+                {providerMeta[modelConfig.activeProvider]?.label} · Active
+              </span>
+            </div>
+          )}
+
+          {/* Ollama Status */}
+          {modelConfig && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              padding: '0.6rem 1rem',
+              background: modelConfig.ollama.online ? 'rgba(0, 212, 168, 0.06)' : 'rgba(220, 50, 50, 0.06)',
+              border: `1px solid ${modelConfig.ollama.online ? 'rgba(0, 212, 168, 0.25)' : 'rgba(220, 50, 50, 0.25)'}`,
+              borderRadius: 'var(--radius-md)',
+              fontSize: '0.78rem',
+              flexWrap: 'wrap',
+            }}>
+              <div style={{
+                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                background: modelConfig.ollama.online ? '#00d4a8' : '#dc3232',
+                boxShadow: modelConfig.ollama.online ? '0 0 8px #00d4a8' : '0 0 8px #dc3232',
+                animation: modelConfig.ollama.online ? 'pulse 2s infinite' : 'none',
+              }} />
+              <span style={{ color: modelConfig.ollama.online ? 'var(--success)' : '#dc3232', fontWeight: 600 }}>
+                Ollama {modelConfig.ollama.online ? 'Online' : 'Offline'}
+              </span>
+              {modelConfig.ollama.online && (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  · {modelConfig.ollama.modelCount} model{modelConfig.ollama.modelCount !== 1 ? 's' : ''} · {modelConfig.ollama.url}
+                </span>
+              )}
+              {!modelConfig.ollama.online && modelConfig.ollama.error && (
+                <span style={{ color: 'var(--text-muted)', flex: 1 }}>
+                  · {modelConfig.ollama.error}
+                </span>
+              )}
+              {!modelConfig.ollama.online && (
+                <button
+                  onClick={startOllama}
+                  disabled={startingOllama}
+                  style={{
+                    marginLeft: 'auto',
+                    padding: '0.3rem 0.85rem',
+                    background: startingOllama
+                      ? 'rgba(0,212,168,0.08)'
+                      : 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)',
+                    border: '1px solid rgba(0,212,168,0.5)',
+                    borderRadius: '99px',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    cursor: startingOllama ? 'wait' : 'pointer',
+                    letterSpacing: '0.04em',
+                    transition: 'all 0.2s',
+                    boxShadow: startingOllama ? 'none' : '0 0 12px rgba(0,212,168,0.3)',
+                    animation: startingOllama ? 'pulse 1s infinite' : 'none',
+                  }}
+                >
+                  {startingOllama ? '⏳ Starting…' : '▶ Start Ollama'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Model Selector Grid */}
+          {modelConfig && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.65rem' }}>
+              {modelConfig.availableModels.map(m => {
+                const isActive = modelConfig.activeProvider === m.provider && modelConfig.activeModel === m.id;
+                const isSwitching = switchingTo === `${m.provider}/${m.id}`;
+                const needsOllama = m.provider === 'ollama' && !modelConfig.ollama.online;
+                const meta = providerMeta[m.provider] || providerMeta.gemini;
+
+                return (
+                  <button
+                    key={`${m.provider}-${m.id}`}
+                    title={needsOllama ? 'Start Ollama first to use this model' : undefined}
+                    disabled={isActive || modelLoading}
+                    onClick={() => needsOllama ? startOllama() : switchModel(m.provider, m.id)}
+                    style={{
+                      background: isActive
+                        ? `linear-gradient(135deg, ${meta.color}18 0%, ${meta.color}08 100%)`
+                        : needsOllama ? 'rgba(220,50,50,0.04)' : 'var(--bg-elevated)',
+                      border: `1px solid ${isActive ? meta.color + '60' : needsOllama ? 'rgba(220,50,50,0.25)' : 'var(--border)'}`,
+                      borderRadius: 'var(--radius-md)',
+                      padding: '0.85rem 1rem',
+                      cursor: isActive ? 'default' : needsOllama ? 'pointer' : 'pointer',
+                      opacity: needsOllama ? 0.65 : 1,
+                      transition: 'all 0.25s ease',
+                      textAlign: 'left',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.3rem',
+                      position: 'relative',
+                      boxShadow: isActive ? `0 0 16px ${meta.color}20` : 'none',
+                    }}
+                    onMouseEnter={e => { if (!isActive) { e.currentTarget.style.borderColor = needsOllama ? 'rgba(220,50,50,0.5)' : meta.color + '50'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
+                    onMouseLeave={e => { if (!isActive) { e.currentTarget.style.borderColor = needsOllama ? 'rgba(220,50,50,0.25)' : 'var(--border)'; e.currentTarget.style.transform = 'none'; } }}
+                  >
+                    {/* Provider tag */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em',
+                        color: meta.color,
+                        background: meta.color + '15',
+                        padding: '1px 6px',
+                        borderRadius: '3px',
+                      }}>
+                        {meta.icon} {m.provider}
+                      </span>
+                      {isActive && (
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--success)' }}>✓ ACTIVE</span>
+                      )}
+                      {needsOllama && !isActive && (
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#dc3232' }}>▶ Start</span>
+                      )}
+                      {isSwitching && (
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#c97a00', animation: 'pulse 0.6s infinite' }}>⏳</span>
+                      )}
+                    </div>
+                    {/* Model name */}
+                    <span style={{
+                      fontSize: '0.88rem',
+                      fontWeight: 700,
+                      color: isActive ? '#fff' : 'var(--text-primary)',
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}>
+                      {m.name}
+                    </span>
+                    {/* Description */}
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      {m.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Status message */}
+          {modelMsg && (
+            <div style={{
+              padding: '0.5rem 0.85rem', borderRadius: 'var(--radius-sm)',
+              background: modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)',
+              border: `1px solid ${modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.3)' : 'rgba(220,50,50,0.3)'}`,
+              color: modelMsg.startsWith('✓') ? 'var(--success)' : '#dc3232',
+              fontSize: '0.78rem', fontWeight: 500,
+              transition: 'all 0.3s ease',
+            }}>
+              {modelMsg}
+            </div>
+          )}
+
+          {/* OpenAI-Compat Status Row */}
+          {modelConfig?.openaiCompat && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              padding: '0.6rem 1rem',
+              background: modelConfig.openaiCompat.online ? 'rgba(168,85,247,0.06)' : 'rgba(100,100,120,0.06)',
+              border: `1px solid ${modelConfig.openaiCompat.online ? 'rgba(168,85,247,0.25)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius-md)',
+              fontSize: '0.78rem',
+              flexWrap: 'wrap',
+              gap: '0.5rem',
+            }}>
+              <div style={{
+                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                background: modelConfig.openaiCompat.online ? '#a855f7' : 'var(--text-muted)',
+                boxShadow: modelConfig.openaiCompat.online ? '0 0 8px #a855f7' : 'none',
+              }} />
+              <span style={{ color: modelConfig.openaiCompat.online ? '#a855f7' : 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
+                🔌 OpenAI-Compat {modelConfig.openaiCompat.online ? `Online · ${modelConfig.openaiCompat.modelCount} model(s)` : 'Offline'}
+              </span>
+              <input
+                type="text"
+                value={openaiBaseUrl}
+                onChange={e => setOpenaiBaseUrl(e.target.value)}
+                placeholder="http://127.0.0.1:11434/v1"
+                style={{
+                  flex: 1, minWidth: '200px',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.25rem 0.6rem',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '0.72rem',
+                }}
+                onKeyDown={e => e.key === 'Enter' && fetchModelConfig()}
+              />
+              <button
+                onClick={fetchModelConfig}
+                style={{
+                  padding: '0.3rem 0.75rem',
+                  background: 'rgba(168,85,247,0.12)',
+                  border: '1px solid rgba(168,85,247,0.35)',
+                  borderRadius: '99px',
+                  color: '#a855f7',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                ↻ Probe
+              </button>
+            </div>
+          )}
+
+          {/* Provider Info */}
+          <div style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '0.85rem 1rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.4rem',
+            fontSize: '0.75rem',
+            color: 'var(--text-muted)',
+            lineHeight: 1.6,
+          }}>
+            <div style={{ fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span>💡</span> Provider Information
+            </div>
+            <div>
+              • <strong style={{ color: '#4285F4' }}>Gemini (Cloud)</strong> — Google's multimodal API. Requires API key. Best accuracy for plat image extraction.
+            </div>
+            <div>
+              • <strong style={{ color: '#00d4a8' }}>Ollama (Local)</strong> — Run models locally. No API key. No data leaves your machine. Start with <code style={{ fontSize: '0.7rem', color: 'var(--accent)', background: 'rgba(61,127,255,0.08)', padding: '1px 5px', borderRadius: '3px' }}>ollama serve</code>.
+            </div>
+            <div>
+              • <strong style={{ color: '#a855f7' }}>OpenAI-Compat (🔌)</strong> — Any <code style={{ fontSize: '0.7rem', color: 'var(--accent)', background: 'rgba(61,127,255,0.08)', padding: '1px 5px', borderRadius: '3px' }}>/v1/chat/completions</code> endpoint: LM Studio, llama.cpp, vLLM, or Ollama's v1 API.
+            </div>
+            <div>
+              • Pull new models: <code style={{ fontSize: '0.7rem', color: 'var(--accent)', background: 'rgba(61,127,255,0.08)', padding: '1px 5px', borderRadius: '3px' }}>ollama pull gemma4</code> or <code style={{ fontSize: '0.7rem', color: 'var(--accent)', background: 'rgba(61,127,255,0.08)', padding: '1px 5px', borderRadius: '3px' }}>ollama pull llava</code>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -252,7 +624,7 @@ export default function SettingsTab() {
             <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               Each stream processes a separate batch of 20 files concurrently. Combined throughput = Parallel Streams × Concurrent Agents per stream.
               At <strong style={{ color: 'var(--text-primary)' }}>{parallelBatches} × {concurrentAgents}</strong> = up to{' '}
-              <strong style={{ color: '#c97a00' }}>{parallelBatches * concurrentAgents} simultaneous Gemini requests</strong>.
+              <strong style={{ color: '#c97a00' }}>{parallelBatches * concurrentAgents} simultaneous {modelConfig?.activeProvider === 'ollama' ? 'Ollama' : 'Gemini'} requests</strong>.
             </p>
           </div>
         </div>

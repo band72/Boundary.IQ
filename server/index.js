@@ -1,0 +1,112 @@
+// ─── Boundary.IQ API — Node.js Entry Point ──────────────────────────────────
+// Drop-in replacement for the ASP.NET Core 8 backend.
+// Same API routes, same JSON shapes, same behavior.
+
+import 'dotenv/config';
+import { Agent, setGlobalDispatcher } from 'undici';
+
+// Configure global undici dispatcher to support 30 minutes timeout for native fetch (e.g. Ollama calls)
+setGlobalDispatcher(new Agent({
+  connectTimeout: 1800000,
+  headersTimeout: 1800000,
+  bodyTimeout: 1800000
+}));
+
+import express from 'express';
+import cors from 'cors';
+
+// Initialize services
+import * as gemini from './services/geminiVision.js';
+import * as diagnosticsDb from './services/diagnosticsDb.js';
+
+// Route modules
+import healthRouter from './routes/health.js';
+import traverseRouter from './routes/traverse.js';
+import writerRouter from './routes/writer.js';
+import platRouter from './routes/plat.js';
+import dxfRouter from './routes/dxf.js';
+import diagnosticsRouter from './routes/diagnostics.js';
+import batchDeedRouter from './routes/batchDeed.js';
+import folderScanRouter from './routes/folderScan.js';
+import settingsRouter from './routes/settings.js';
+import deedRouter from './routes/deed.js';
+
+const app = express();
+const PORT = parseInt(process.env.PORT || '5050');
+
+// ── Strip quoted values from env vars (common .env issue) ────────────────────
+function getEnv(key) {
+  let val = process.env[key];
+  if (val && val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+  if (val && val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+  return val;
+}
+
+// ── Initialize Gemini API key ───────────────────────────────────────────────
+const apiKey = getEnv('GEMINI_API_KEY') || getEnv('Gemini__ApiKey');
+if (apiKey) {
+  gemini.init(apiKey);
+  console.log('✓ Gemini API key loaded.');
+} else {
+  console.warn('⚠ GEMINI_API_KEY not found — Gemini extraction will fail. Use Ollama for local inference.');
+}
+
+// ── Initialize SQLite database ──────────────────────────────────────────────
+try {
+  diagnosticsDb.init();
+  console.log('✓ Diagnostics database initialized.');
+} catch (ex) {
+  console.error('✗ Failed to initialize diagnostics database:', ex.message);
+}
+
+// ── Middleware ───────────────────────────────────────────────────────────────
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Request logging
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    if (req.path !== '/api/health') {
+      console.log(`${req.method} ${req.path} → ${res.statusCode} (${ms}ms)`);
+    }
+  });
+  next();
+});
+
+// ── Routes ──────────────────────────────────────────────────────────────────
+app.use('/api/health', healthRouter);
+app.use('/api/traverse', traverseRouter);
+app.use('/api/writer', writerRouter);
+app.use('/api/plat', platRouter);
+app.use('/api/dxf', dxfRouter);
+app.use('/api/diagnostics', diagnosticsRouter);
+app.use('/api/batchdeed', batchDeedRouter);
+app.use('/api/folderscan', folderScanRouter);
+app.use('/api/settings', settingsRouter);
+app.use('/api/deed', deedRouter);
+
+// ── Error handling ──────────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: err.message || 'Internal server error' });
+});
+
+// ── Start ───────────────────────────────────────────────────────────────────
+const server = app.listen(PORT, () => {
+  console.log(`\n🌐 Boundary.IQ API (Node.js) listening on http://localhost:${PORT}`);
+  console.log(`   Health check:  http://localhost:${PORT}/api/health`);
+  console.log(`   Diagnostics:   http://localhost:${PORT}/api/diagnostics/stats`);
+  console.log(`   Deed Solver:   http://localhost:${PORT}/api/deed/models (local LLM endpoint)\n`);
+});
+
+// Configure server timeouts to 30 minutes to support local CPU LLM inference
+server.timeout = 1800000;
+server.keepAliveTimeout = 1800000;
+server.headersTimeout = 1805000;

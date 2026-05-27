@@ -62,7 +62,14 @@ export default function TraverseTab() {
   const [error, setError] = useState('');
   const [showPrint, setShowPrint] = useState(false);
   const [isOpenEnded, setIsOpenEnded] = useState(false);
-  const [typoHint, setTypoHint] = useState(null); // { index, originalBearing, flippedBearing, improvement }
+  const [typoHint, setTypoHint] = useState(null);
+
+  // ── Fix Deed Text state ────────────────────────────────────────────────────
+  const [fixDeedText, setFixDeedText] = useState('');
+  const [fixDeedLoading, setFixDeedLoading] = useState(false);
+  const [fixDeedResult, setFixDeedResult] = useState(null);
+  const [fixDeedError, setFixDeedError] = useState('');
+  const [fixDeedOpen, setFixDeedOpen] = useState(false);
 
   // ── Typo Assist: run after every failed result ────────────────────────────────────
   useEffect(() => {
@@ -125,6 +132,52 @@ export default function TraverseTab() {
     }
   };
 
+  // ── Fix Deed Text ──────────────────────────────────────────────────────────
+  const handleFixDeed = async () => {
+    if (!fixDeedText.trim()) return;
+    setFixDeedLoading(true);
+    setFixDeedError('');
+    setFixDeedResult(null);
+    try {
+      const res = await fetch(`${API}/deed/solve-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deedText: fixDeedText,
+          pobNorthing: parseFloat(pob.northing) || 5000,
+          pobEasting:  parseFloat(pob.easting)  || 5000,
+          units,
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+      setFixDeedResult(data);
+    } catch (e) {
+      setFixDeedError(e.message);
+    } finally {
+      setFixDeedLoading(false);
+    }
+  };
+
+  const applyFixedCourses = () => {
+    if (!fixDeedResult?.repairedCourses) return;
+    const newCourses = fixDeedResult.repairedCourses.map(c => ({
+      ...{ ...BLANK_COURSE },
+      type: c.type || 'Line',
+      bearing: c.bearing || '',
+      distance: c.distance != null ? String(c.distance) : '',
+    }));
+    setCourses(newCourses);
+    // Also update POB from deed if available
+    if (fixDeedResult.pob) {
+      setPob({ northing: String(fixDeedResult.pob.northing), easting: String(fixDeedResult.pob.easting) });
+    }
+    setResult(null);
+    setFixDeedOpen(false);
+    setFixDeedResult(null);
+    setFixDeedText('');
+  };
+
   const isPassing = result?.closure?.status?.startsWith('✓');
 
   return (
@@ -155,6 +208,158 @@ export default function TraverseTab() {
             <input type="number" value={pob.easting} onChange={e => setPob(p => ({ ...p, easting: e.target.value }))} />
           </div>
         </div>
+      </div>
+
+      {/* ── Fix Deed Text ─────────────────────────────────────────────── */}
+      <div className="card" style={{ borderColor: fixDeedOpen ? 'var(--accent)' : undefined }}>
+        <div className="card-header" style={{ cursor: 'pointer' }} onClick={() => setFixDeedOpen(o => !o)}>
+          <div className="card-title">🔧 Fix Broken Deed Description</div>
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Paste raw deed text — auto-corrects errors &amp; loads courses
+            </span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{fixDeedOpen ? '▲' : '▼'}</span>
+          </div>
+        </div>
+
+        {fixDeedOpen && (
+          <div style={{ padding: '0 1rem 1rem' }}>
+            <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+              <label className="form-label">Paste Legal Description</label>
+              <textarea
+                value={fixDeedText}
+                onChange={e => setFixDeedText(e.target.value)}
+                placeholder={`BEGINNING at a point, having coordinates of Northing 5000.00, Easting 5000.00;\n\nTHENCE North 45°22'10" East, a distance of 150.25 feet;\nTHENCE South 45°22'10" West, a distance of 150.25 feet;\nTHENCE South 45°22'10" East, a distance of 150.25 feet;\nTHENCE North / West, a distance of 0.00 feet to the Point of Beginning.`}
+                style={{
+                  width: '100%', minHeight: 160, resize: 'vertical',
+                  fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem',
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-md)', padding: '0.75rem',
+                  color: 'var(--text-primary)', lineHeight: 1.6, boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setFixDeedText(''); setFixDeedResult(null); setFixDeedError(''); }}>
+                Clear
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleFixDeed}
+                disabled={fixDeedLoading || !fixDeedText.trim()}
+              >
+                {fixDeedLoading
+                  ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Solving…</>
+                  : '⚡ Solve Deed'}
+              </button>
+            </div>
+
+            {fixDeedError && (
+              <div className="alert alert-error" style={{ marginBottom: '0.75rem' }}>⚠ {fixDeedError}</div>
+            )}
+
+            {fixDeedResult && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+
+                {/* Status banner */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+                  padding: '0.65rem 0.9rem',
+                  background: fixDeedResult.status === 'PASS' ? 'rgba(0,200,100,0.08)' : 'rgba(255,80,80,0.08)',
+                  border: `1px solid ${fixDeedResult.status === 'PASS' ? 'var(--success)' : 'var(--danger)'}`,
+                  borderRadius: 'var(--radius-md)',
+                }}>
+                  <span style={{
+                    fontWeight: 700, fontSize: '0.9rem',
+                    color: fixDeedResult.status === 'PASS' ? 'var(--success)' : 'var(--danger)',
+                  }}>
+                    {fixDeedResult.status === 'PASS' ? '✓ SOLVED' : '⚠ UNCLOSED'}
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Trust: <strong style={{ color: fixDeedResult.trustScore >= 80 ? 'var(--success)' : fixDeedResult.trustScore >= 55 ? '#c97a00' : 'var(--danger)' }}>
+                      {fixDeedResult.trustScore}/100 {fixDeedResult.trustLevel}
+                    </strong>
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Method: <strong>{fixDeedResult.primaryHypothesis?.replace(/_/g, ' ')}</strong>
+                  </span>
+                  {fixDeedResult.traverse?.closure && (
+                    <>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Precision: <strong>{fixDeedResult.traverse.closure.precisionRatio}</strong>
+                      </span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Area: <strong>{fixDeedResult.traverse.areaAcres?.toFixed(4)} ac</strong>
+                      </span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Perimeter: <strong>{fixDeedResult.traverse.perimeter?.toFixed(2)} ft</strong>
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {/* Correction table */}
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Status</th>
+                        <th>Corrected Bearing</th>
+                        <th>Distance</th>
+                        <th>Original Bearing</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fixDeedResult.correctionTable?.map((c, i) => {
+                        const isFixed   = c.status === 'CORRECTED';
+                        const isSolved  = c.status === 'SOLVED-BY-INVERSE';
+                        const isOrig    = c.status === 'ORIGINAL';
+                        const rowColor  = isFixed ? 'rgba(255,170,0,0.10)' : isSolved ? 'rgba(0,180,255,0.10)' : undefined;
+                        return (
+                          <tr key={i} style={{ background: rowColor }}>
+                            <td style={{ fontWeight: 600 }}>C{c.courseNumber}</td>
+                            <td>
+                              <span style={{
+                                padding: '2px 7px', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700,
+                                background: isFixed ? 'rgba(255,140,0,0.2)' : isSolved ? 'rgba(0,140,255,0.2)' : 'rgba(0,200,80,0.2)',
+                                color: isFixed ? '#c97a00' : isSolved ? '#007acc' : 'var(--success)',
+                              }}>
+                                {isFixed ? '✎ CORRECTED' : isSolved ? '⊕ SOLVED' : '✓ OK'}
+                              </span>
+                            </td>
+                            <td style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: isFixed ? '#c97a00' : isSolved ? '#007acc' : undefined }}>
+                              {c.bearing || <span style={{ color: 'var(--text-muted)' }}>??</span>}
+                            </td>
+                            <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                              {c.distance != null ? `${c.distance.toFixed(2)}'` : <span style={{ color: 'var(--text-muted)' }}>??</span>}
+                            </td>
+                            <td style={{ fontFamily: 'JetBrains Mono, monospace', color: isFixed ? 'var(--danger)' : 'var(--text-muted)', textDecoration: isFixed ? 'line-through' : undefined, fontSize: '0.75rem' }}>
+                              {c.originalBearing || (c.status === 'SOLVED-BY-INVERSE' ? <em>unknown</em> : '—')}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Apply button */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setFixDeedResult(null)}>Dismiss</button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={applyFixedCourses}
+                    style={{ fontWeight: 700 }}
+                  >
+                    ✔ Apply Corrected Courses to Traverse
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Course Entry ─────────────────────────────────────────────── */}
@@ -315,7 +520,11 @@ export default function TraverseTab() {
                 🖨 Print Blueprint
               </button>
             </div>
-            <TraverseMap stations={result.stations} adjusted={result.adjustedStations} />
+            <TraverseMap
+              key={`${result.stations?.length || 0}_${result.closure?.linearError || 0}`}
+              stations={result.stations}
+              adjusted={result.adjustedStations}
+            />
           </div>
 
           {/* Station Table */}
@@ -355,6 +564,7 @@ export default function TraverseTab() {
       )}
       {showPrint && result && (
         <PrintBlueprint
+          key={`${result.stations?.length || 0}_${result.closure?.linearError || 0}`}
           courses={courses}
           stations={result.stations}
           adjusted={result.adjustedStations}
