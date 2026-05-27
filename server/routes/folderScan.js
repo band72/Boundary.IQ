@@ -210,8 +210,42 @@ router.get('/debug-skipped', (req, res) => {
   res.json({ path: req.query.path, totalFiles: files.length, totalProcessable: files.length - skipped.length, totalSkipped: skipped.length, skippedFiles: skipped });
 });
 
+// ── Global processing lock ─────────────────────────────────────────────────
+// Ollama is single-threaded. Concurrent batch requests each queue 20+ LLM calls
+// that all block for up to 30 min. This lock ensures only ONE batch or retry run
+// is active at a time, returning 503 immediately if already busy.
+let _processingLock = false;
+let _processingInfo = null; // { type, startTime, path }
+
+function acquireLock(type, path) {
+  if (_processingLock) return false;
+  _processingLock = true;
+  _processingInfo = { type, path, startTime: Date.now() };
+  return true;
+}
+function releaseLock() {
+  _processingLock = false;
+  _processingInfo = null;
+}
+
+// GET /api/folderscan/status  — is the server currently processing?
+router.get('/status', (req, res) => {
+  if (_processingLock && _processingInfo) {
+    const elapsedSec = Math.round((Date.now() - _processingInfo.startTime) / 1000);
+    return res.json({ busy: true, type: _processingInfo.type, path: _processingInfo.path, elapsedSec });
+  }
+  res.json({ busy: false });
+});
+
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
+  if (!acquireLock('process-batch', req.query.path)) {
+    const info = _processingInfo;
+    const elapsed = info ? Math.round((Date.now() - info.startTime) / 1000) : 0;
+    return res.status(503).json({
+      error: `Server is already processing (${info?.type ?? 'unknown'} — ${elapsed}s elapsed). Please wait for it to finish or restart the server.`
+    });
+  }
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
@@ -449,6 +483,8 @@ router.post('/process-batch', async (req, res) => {
   } catch (ex) {
     console.error('FolderScan process-batch error:', ex);
     res.status(500).json({ error: ex.message });
+  } finally {
+    releaseLock();
   }
 });
 
@@ -751,6 +787,14 @@ router.post('/retry-failed', async (req, res) => {
   if (!validPath) return res.status(403).json({ error: 'Path not allowed.' });
   if (!fs.existsSync(validPath)) return res.status(404).json({ error: 'Directory not found.' });
 
+  if (!acquireLock('retry-failed', req.query.path)) {
+    const info = _processingInfo;
+    const elapsed = info ? Math.round((Date.now() - info.startTime) / 1000) : 0;
+    return res.status(503).json({
+      error: `Server is already processing (${info?.type ?? 'unknown'} — ${elapsed}s elapsed). Please wait for it to finish or restart the server.`
+    });
+  }
+
   const pobN      = parseFloat(req.query.pobN) || 5000;
   const pobE      = parseFloat(req.query.pobE) || 5000;
   const units     = req.query.units || 'Feet';
@@ -916,6 +960,7 @@ router.post('/retry-failed', async (req, res) => {
     console.error('retry-failed error:', ex);
     send('error', { message: ex.message });
   } finally {
+    releaseLock();
     clearInterval(heartbeat);                              // stop keepalive
     try { geminiVision.setProvider(originalProvider, originalModel); } catch {}
     if (!res.writableEnded) res.end();
