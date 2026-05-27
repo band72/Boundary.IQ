@@ -239,13 +239,6 @@ router.get('/status', (req, res) => {
 
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
-  if (!acquireLock('process-batch', req.query.path)) {
-    const info = _processingInfo;
-    const elapsed = info ? Math.round((Date.now() - info.startTime) / 1000) : 0;
-    return res.status(503).json({
-      error: `Server is already processing (${info?.type ?? 'unknown'} — ${elapsed}s elapsed). Please wait for it to finish or restart the server.`
-    });
-  }
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
@@ -483,8 +476,6 @@ router.post('/process-batch', async (req, res) => {
   } catch (ex) {
     console.error('FolderScan process-batch error:', ex);
     res.status(500).json({ error: ex.message });
-  } finally {
-    releaseLock();
   }
 });
 

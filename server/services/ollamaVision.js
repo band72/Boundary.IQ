@@ -23,6 +23,33 @@ const ollamaAgent = new Agent({
   bodyTimeout: 1800000,
 });
 
+// ── Global Ollama concurrency semaphore ───────────────────────────────
+// Ollama is single-threaded: concurrent requests queue behind each other,
+// each consuming 30 min of wall time. Limit to 1 active inference at a time.
+// Multiple batch routes can run in parallel but they wait HERE for Ollama.
+let _ollamaActive = 0;
+const _ollamaQueue = [];
+const OLLAMA_MAX_CONCURRENT = 1;
+
+function ollamaAcquire() {
+  return new Promise(resolve => {
+    if (_ollamaActive < OLLAMA_MAX_CONCURRENT) {
+      _ollamaActive++;
+      resolve();
+    } else {
+      _ollamaQueue.push(resolve);
+    }
+  });
+}
+function ollamaRelease() {
+  if (_ollamaQueue.length > 0) {
+    const next = _ollamaQueue.shift();
+    next(); // keep _ollamaActive at 1
+  } else {
+    _ollamaActive--;
+  }
+}
+
 // ── Model family detection ────────────────────────────────────────────────────
 // Vision models support multimodal /api/chat with image content blocks.
 // Text-only models use /api/generate with format:'json' for structured output.
@@ -203,19 +230,22 @@ export async function generate(buffer, mimeType, model, prompt) {
   const hasImage = buffer && buffer.length > 0;
   const vision = isVisionModel(model);
 
-  if (hasImage && vision) {
-    console.log(`Ollama routing → /api/chat  [vision model: ${model}]`);
-    return generateVisionChat(buffer, model, prompt);
-  }
+  await ollamaAcquire();
+  try {
+    if (hasImage && vision) {
+      console.log(`Ollama routing → /api/chat  [vision model: ${model}]`);
+      return await generateVisionChat(buffer, model, prompt);
+    }
 
-  if (hasImage && !vision) {
-    // Text model received an image buffer — this means the PDF→text extraction
-    // upstream failed. Warn but fall through; the prompt text is the best we have.
-    console.warn(`Ollama: text-only model "${model}" received an image buffer it cannot process. Falling back to text-only prompt.`);
-  }
+    if (hasImage && !vision) {
+      console.warn(`Ollama: text-only model "${model}" received an image buffer it cannot process. Falling back to text-only prompt.`);
+    }
 
-  console.log(`Ollama routing → /api/generate [text model: ${model}]`);
-  return generateTextOnly(prompt, model);
+    console.log(`Ollama routing → /api/generate [text model: ${model}]`);
+    return await generateTextOnly(prompt, model);
+  } finally {
+    ollamaRelease();
+  }
 }
 
 /**
