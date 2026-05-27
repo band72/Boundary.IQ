@@ -854,53 +854,9 @@ export default function BatchDeedTab() {
                         );
                       })}
 
-                      {/* ── Agent Turn Telemetry (Priority 5) ────────────── */}
-                      {s.failedFiles?.some(f => f.agentTurns?.length > 0) && (
-                        <div>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            🤖 Agent Turn History
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                            {s.failedFiles.filter(f => f.agentTurns?.length > 0).map(f => (
-                              <div key={f.fileName} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.8rem' }}>
-                                <div style={{ fontSize: '0.72rem', fontFamily: 'JetBrains Mono, monospace', color: 'var(--danger)', marginBottom: '0.4rem' }}>
-                                  {f.fileName}
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                                  {f.agentTurns.map((turn, ti) => {
-                                    const outcomeColor =
-                                      turn.outcome?.startsWith('PASS') ? 'var(--success)'
-                                      : turn.outcome === 'EMPTY_EXTRACTION' ? '#8090ff'
-                                      : '#c97a00';
-                                    return (
-                                      <div key={ti} style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', paddingLeft: '0.5rem', borderLeft: `2px solid ${outcomeColor}55` }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', minWidth: 40 }}>Turn {turn.turn}</span>
-                                          <span style={{ fontSize: '0.65rem', background: `${outcomeColor}22`, border: `1px solid ${outcomeColor}44`, color: outcomeColor, borderRadius: 4, padding: '0px 6px', fontWeight: 600 }}>
-                                            {turn.outcome || 'UNKNOWN'}
-                                          </span>
-                                          {turn.diagnoses?.length > 0 && (
-                                            <span style={{ fontSize: '0.63rem', color: 'var(--text-muted)' }}>
-                                              {turn.diagnoses.length} hypothesis{turn.diagnoses.length !== 1 ? 'es' : ''} tested
-                                            </span>
-                                          )}
-                                        </div>
-                                        {turn.diagnoses?.map((d, di) => (
-                                          <div key={di} style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', paddingLeft: '0.5rem' }}>
-                                            → {d.type} ({Math.round((d.confidence || 0) * 100)}%)
-                                          </div>
-                                        ))}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
+
                 </div>
               );
             })()}
