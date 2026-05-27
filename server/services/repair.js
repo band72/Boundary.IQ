@@ -361,7 +361,59 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     }
   }
 
-  // ── Stage 4: Meander / Adjacent Lot Detection ────────────────────────
+  // ── Stage 3.7: Deterministic Scrivener Error Solver ──────────────────────
+  // Encodes key principles from COGO closure analysis (Parcel B pattern):
+  //
+  // PRINCIPLE 1 — Area-consistent but non-closing = single course error.
+  //   When the computed area (from forced shoelace on open traverse) closely
+  //   matches the deed's stated area, the geometry is largely correct and only
+  //   ONE course is likely wrong. Do NOT re-extract — solve mathematically.
+  //
+  // PRINCIPLE 2 — Final return course distance is the #1 scrivener target.
+  //   Deed typists often miscopy the closing distance (last "back to POB" leg).
+  //   Strategy: compute the EXACT distance needed to close from C(n-1) endpoint
+  //   back to POB along the existing final bearing. Accept if precision >= 1:7500.
+  //
+  // PRINCIPLE 3 — Bearing quadrant inversions (NS or EW swap).
+  //   A single misread letter (S for N, W for E) produces a geometric mirror.
+  //   Test all four reflections of every course bearing individually.
+  //
+  // PRINCIPLE 4 — Digit-drop / transcription distance errors.
+  //   Common patterns: 9x.xx → 10x.xx (leading-digit drop), x9.xx → x0.xx,
+  //   or a decimal shift (195.0 → 19.50). Test ±10, ±20, ÷10, ×10 variants.
+  //
+  // PRINCIPLE 5 — Consecutive same-bearing courses should be merged.
+  //   When two adjacent courses share the exact bearing, they are intentionally
+  //   split (ROW boundaries, easement limits) — do NOT merge them for repair.
+  //   But DO test correcting the second segment's distance independently.
+
+  if (bestTraverse && !isPassing(bestTraverse)) {
+    console.log('Stage 3.7: Deterministic Scrivener Error Solver — systematic single-course correction.');
+    const s37result = tryScrivenerErrorSolver(bestExtraction, pob, units, actualOpenEnded);
+    if (s37result) {
+      const [t37, e37] = tryCompute(s37result.courses, pob, units, actualOpenEnded);
+      if (t37 && isPassing(t37)) {
+        console.log(`Stage 3.7 PASS: ${t37.closure.precisionRatio} — ${s37result.message}`);
+        t37.courses = s37result.courses;
+        const steps37 = buildSolutionSteps(originalExtraction, s37result, s37result.message, t37, Date.now() - pipelineStart);
+        return {
+          finalExtraction: s37result,
+          finalTraverse:   t37,
+          status:          'PASS',
+          repairStageUsed: `Stage 3.7: ${s37result.message}`,
+          traverseError:   null,
+          originalExtraction,
+          solutionSteps:   steps37,
+        };
+      } else {
+        console.log(`Stage 3.7: best candidate error=${t37?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
+      }
+    } else {
+      console.log('Stage 3.7: No single-course correction achieved closure.');
+    }
+  }
+
+
   if (isMeanderDeed(bestExtraction)) {
     console.log('Stage 4: Detected MEANDER deed (water boundary).');
     return {
@@ -491,10 +543,230 @@ function isPassing(t) {
 }
 
 /**
+ * Stage 3.7 — Deterministic Scrivener Error Solver
+ *
+ * Systematically tests single-course corrections derived from 5 key principles
+ * observed in real deed closure failures (Parcel B pattern analysis):
+ *
+ *  Principle 2: Exact closing distance on final course (most common fix)
+ *  Principle 2b: Exact closing distance on ANY course bearing (all courses)
+ *  Principle 3: Bearing quadrant inversion — flip NS or EW on each course
+ *  Principle 4: Distance digit errors — ±10/±20/÷10/×10 variants
+ *  Principle 4b: Decimal shift errors (e.g. 95.78 vs 957.8 vs 9.578)
+ *
+ * Returns the corrected extraction object (with .message) if a fix passes,
+ * or null if no single-course correction achieves closure.
+ *
+ * Design rule: never modifies more than one course per hypothesis.
+ * This prevents false positives from over-fitting to bad geometry.
+ */
+function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
+  const courses = extraction?.courses;
+  if (!courses || courses.length < 3) return null;
+
+  const N_COURSES = courses.length;
+
+  // ── Utility: run traverse from a start position through a slice of courses ──
+  const runSlice = (startN, startE, slice) => {
+    let N = startN, E = startE;
+    for (const c of slice) {
+      const az = (() => { try { return bp.parse(c.bearing)?.azimuthDeg ?? null; } catch { return null; } })();
+      if (az == null || !c.distance) return null;
+      const rad = (az * Math.PI) / 180;
+      N += c.distance * Math.cos(rad);
+      E += c.distance * Math.sin(rad);
+    }
+    return { N, E };
+  };
+
+  // ── Compute prefix endpoint (position after first i courses) ──
+  const prefixPts = [{ N: pob.northing, E: pob.easting }];
+  for (let i = 0; i < N_COURSES; i++) {
+    const prev = prefixPts[i];
+    const c = courses[i];
+    const az = (() => { try { return bp.parse(c.bearing)?.azimuthDeg ?? null; } catch { return null; } })();
+    if (az == null || !c.distance) { prefixPts.push(null); continue; }
+    const rad = (az * Math.PI) / 180;
+    prefixPts.push({
+      N: prev.N + c.distance * Math.cos(rad),
+      E: prev.E + c.distance * Math.sin(rad),
+    });
+  }
+
+  // ── Scoring: evaluate full modified course list ──
+  const evaluate = (modifiedCourses) => {
+    const [t] = tryCompute(modifiedCourses, pob, units, isOpenEnded);
+    if (!t) return null;
+    return { t, linearError: t.closure.linearError };
+  };
+
+  let bestResult = null;
+  let bestError  = Infinity;
+  const tryCandidate = (modifiedCourses, label) => {
+    const res = evaluate(modifiedCourses);
+    if (!res) return;
+    if (res.linearError < bestError) {
+      bestError  = res.linearError;
+      bestResult = { courses: modifiedCourses, message: label };
+    }
+  };
+
+  // ────────────────────────────────────────────────────────────────
+  // PRINCIPLE 2: Exact closing distance on the FINAL course
+  // Most common scrivener error: typist mis-copies the return leg distance.
+  // Strategy: hold the final bearing fixed; compute the distance that makes
+  // the traverse close exactly from the C(n-1) endpoint back to POB.
+  // ────────────────────────────────────────────────────────────────
+  (() => {
+    const lastCourse = courses[N_COURSES - 1];
+    const preLastPt  = prefixPts[N_COURSES - 1];
+    if (!lastCourse?.bearing || !preLastPt) return;
+
+    const az  = (() => { try { return bp.parse(lastCourse.bearing)?.azimuthDeg ?? null; } catch { return null; } })();
+    if (az == null) return;
+    const rad = (az * Math.PI) / 180;
+    const cosA = Math.cos(rad), sinA = Math.sin(rad);
+
+    // Exact close in Northing: d = (pobN - preLastN) / cos(az)
+    // Exact close in Easting:  d = (pobE - preLastE) / sin(az)
+    const dN_needed = pob.northing - preLastPt.N;
+    const dE_needed = pob.easting  - preLastPt.E;
+
+    // Solve least-squares distance that minimizes residual
+    // d = (cosA*dN_needed + sinA*dE_needed) / (cosA² + sinA²) = cosA*dN + sinA*dE
+    const dExact = cosA * dN_needed + sinA * dE_needed;
+
+    if (dExact > 0.1) {
+      const fixed = courses.map((c, i) =>
+        i === N_COURSES - 1 ? { ...c, distance: parseFloat(dExact.toFixed(4)) } : { ...c }
+      );
+      const origDist = lastCourse.distance;
+      tryCandidate(fixed,
+        `Scrivener fix: C${N_COURSES} distance ${origDist?.toFixed(2) ?? '?'}→${dExact.toFixed(2)}ft (final leg exact close)`);
+    }
+  })();
+
+  // ────────────────────────────────────────────────────────────────
+  // PRINCIPLE 2b: Exact closing distance on EVERY course
+  // Sometimes the error is mid-traverse, not on the last leg.
+  // For each course i: fix its distance so remaining courses close.
+  // ────────────────────────────────────────────────────────────────
+  for (let i = 0; i < N_COURSES; i++) {
+    const c = courses[i];
+    if (!c.bearing || !c.distance) continue;
+    const preI = prefixPts[i];
+    if (!preI) continue;
+
+    const az  = (() => { try { return bp.parse(c.bearing)?.azimuthDeg ?? null; } catch { return null; } })();
+    if (az == null) continue;
+    const rad = (az * Math.PI) / 180;
+    const cosA = Math.cos(rad), sinA = Math.sin(rad);
+
+    // Run courses AFTER i (i+1 … n-1) from a test endpoint
+    // Find d such that: preI + d*(cosA,sinA) + suffix = POB
+    // suffix vector is fixed regardless of d
+    const suffixStart = { N: 0, E: 0 }; // placeholder
+    const afterI = courses.slice(i + 1);
+    const suffix  = runSlice(0, 0, afterI);
+    if (!suffix) continue;
+
+    // preI.N + d*cosA + suffix.N = pobN → d = (pobN - preI.N - suffix.N) / cosA
+    const dN_needed = pob.northing - preI.N - suffix.N;
+    const dE_needed = pob.easting  - preI.E - suffix.E;
+    const dExact    = cosA * dN_needed + sinA * dE_needed;
+
+    if (dExact <= 0.1) continue;
+
+    const origDist  = c.distance;
+    // Only proceed if change is meaningful (>0.1ft) and plausible (<2× original)
+    if (Math.abs(dExact - origDist) < 0.05) continue;
+    if (dExact > origDist * 3 || dExact < origDist * 0.3) continue;
+
+    const fixed = courses.map((cc, j) =>
+      j === i ? { ...cc, distance: parseFloat(dExact.toFixed(4)) } : { ...cc }
+    );
+    tryCandidate(fixed,
+      `Scrivener fix: C${i + 1} distance ${origDist.toFixed(2)}→${dExact.toFixed(2)}ft (exact close)`);
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // PRINCIPLE 3: Bearing quadrant inversion
+  // A single misread NS or EW letter mirrors the course.
+  // Test all 3 alternate quadrants for every course bearing.
+  // ────────────────────────────────────────────────────────────────
+  for (let i = 0; i < N_COURSES; i++) {
+    const c = courses[i];
+    if (!c.bearing) continue;
+
+    const b = c.bearing.toUpperCase().trim();
+    // Extract quadrant letters (e.g. "N85°05'42\"E" → ns='N', ew='E')
+    const qMatch = b.match(/^([NS])([\d°'".\s]+)([EW])$/);
+    if (!qMatch) continue;
+    const [, ns, mid, ew] = qMatch;
+
+    const flips = [
+      [ns === 'N' ? 'S' : 'N', ew],          // flip NS
+      [ns, ew === 'E' ? 'W' : 'E'],           // flip EW
+      [ns === 'N' ? 'S' : 'N', ew === 'E' ? 'W' : 'E'], // flip both (reverse)
+    ];
+
+    for (const [newNs, newEw] of flips) {
+      const newBearing = `${newNs}${mid}${newEw}`;
+      const fixed = courses.map((cc, j) =>
+        j === i ? { ...cc, bearing: newBearing } : { ...cc }
+      );
+      tryCandidate(fixed,
+        `Scrivener fix: C${i + 1} bearing ${c.bearing}→${newBearing} (quadrant flip)`);
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // PRINCIPLE 4: Distance digit-drop / transcription errors
+  // Common patterns from real deed typist errors:
+  //   d ± 10, d ± 20  (leading digit dropped or added)
+  //   d × 10, d ÷ 10  (decimal point shift)
+  //   d with digits swapped (e.g. 95.78 → 59.78)
+  // ────────────────────────────────────────────────────────────────
+  for (let i = 0; i < N_COURSES; i++) {
+    const c = courses[i];
+    if (!c.bearing || !c.distance || c.distance <= 0) continue;
+
+    const d = c.distance;
+    const variants = new Set([
+      d + 10, d + 20, d - 10, d - 20,
+      d * 10, d / 10,
+      d + 100, d - 100,
+      // Reverse the two significant digits before decimal (e.g. 95.78 → 59.78)
+      ...(d >= 10 && d < 100
+        ? [Math.floor(d / 10) + (d % 10 === Math.floor(d % 10) ? 0 : 0) +
+           (d % 10) * 10 + (d - Math.floor(d))] : []),
+    ]);
+
+    for (const testDist of variants) {
+      if (testDist <= 0 || testDist > 99999) continue;
+      if (Math.abs(testDist - d) < 0.01) continue;
+
+      const fixed = courses.map((cc, j) =>
+        j === i ? { ...cc, distance: parseFloat(testDist.toFixed(4)) } : { ...cc }
+      );
+      tryCandidate(fixed,
+        `Scrivener fix: C${i + 1} distance ${d.toFixed(2)}→${testDist.toFixed(2)}ft (digit error)`);
+    }
+  }
+
+  // Return best candidate only if it actually passes isPassing()
+  if (!bestResult) return null;
+  const [tBest] = tryCompute(bestResult.courses, pob, units, isOpenEnded);
+  if (tBest && isPassing(tBest)) return bestResult;
+  return null;
+}
+
+/**
  * Robust Self-Intersection (Bowtie) Detector
  * Evaluates stations coordinates to see if they self-intersect.
  */
 export function detectSelfIntersection(stations) {
+
   if (!stations || stations.length < 4) return false;
   
   const ccw = (A, B, C) => (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
