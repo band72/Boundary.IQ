@@ -271,6 +271,11 @@ router.post('/process-batch', async (req, res) => {
     db.saveBatchRun(batchId, batch.length, 0.0);
     console.log(`FolderScan batch ${batchIndex}/${totalBatches - 1}: ${batch.length} files from ${req.query.path}`);
 
+    // Force fast vision model — process-batch must not use slow text models
+    const _origProvider = geminiVision.getActiveProvider ? geminiVision.getActiveProvider() : 'ollama';
+    const _origModel    = geminiVision.getActiveModel();
+    geminiVision.setProvider('ollama', 'gemma4:e2b');
+
     const semaphore = { current: 0, max: concurrency };
     const tasks = batch.map((filePath, index) => async () => {
       const fileName = path.basename(filePath);
@@ -476,7 +481,10 @@ router.post('/process-batch', async (req, res) => {
   } catch (ex) {
     console.error('FolderScan process-batch error:', ex);
     res.status(500).json({ error: ex.message });
+  } finally {
+    try { geminiVision.setProvider(_origProvider, _origModel); } catch {}
   }
+
 });
 
 // POST /api/folderscan/process-file
@@ -796,7 +804,7 @@ router.post('/retry-failed', async (req, res) => {
   const PER_FILE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 min max per file
 
   // Local model cascade — try best first, fall back
-  const LOCAL_MODELS = ['gemma4:e2b', 'qwen2.5-coder:7b', 'deepseek-coder:6.7b', 'qwen2.5-coder:1.5b'];
+  const LOCAL_MODELS = ['gemma4:e2b', 'qwen2.5-coder:1.5b'];  // 7b/6.7b too slow on CPU (22+ min each)
 
   // SSE setup
   res.setHeader('Content-Type', 'text/event-stream');
