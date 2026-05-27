@@ -758,7 +758,7 @@ router.post('/retry-failed', async (req, res) => {
   const state     = req.query.state  || null;
   const maxPasses = parseInt(req.query.maxPasses) || 3;   // retry rounds
   const concurrency = 1;  // MUST be 1 — setProvider() is global state; concurrent calls corrupt each other
-  const PER_FILE_TIMEOUT_MS = 20 * 60 * 1000;  // 20 min max per file (all models combined)
+  const PER_FILE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 min max per file
 
   // Local model cascade — try best first, fall back
   const LOCAL_MODELS = ['gemma4:e2b', 'qwen2.5-coder:7b', 'deepseek-coder:6.7b', 'qwen2.5-coder:1.5b'];

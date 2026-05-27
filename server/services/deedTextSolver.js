@@ -63,7 +63,7 @@ async function callOllama(model, prompt) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(300000), // 5 min max for local text inference
+    signal: AbortSignal.timeout(1800000), // 30 min max for local text inference
     dispatcher: ollamaAgent,
   });
 

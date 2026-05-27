@@ -10,13 +10,10 @@ import { fetch, Agent } from 'undici';
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 const MAX_RETRIES = 1;   // Reduced from 2 — failing fast is better than hanging SSE for 30+ min
 
-// Per-model inference timeout — fail fast so the retry cascade can try the next model
-// Small models: 4 min  |  Medium: 8 min  |  Large/slow: 10 min
+// Per-model inference timeout — 30 minutes to support slow CPU hardware
+const MODEL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 function modelTimeout(model) {
-  const lower = (model || '').toLowerCase();
-  if (lower.includes('1.5b') || lower.includes('e2b') || lower.includes('3b')) return 4 * 60 * 1000;
-  if (lower.includes('7b')   || lower.includes('8b')  || lower.includes('gemma3')) return 8 * 60 * 1000;
-  return 10 * 60 * 1000;   // 6.7b, 13b, 70b, unknown — 10 minutes max
+  return MODEL_TIMEOUT_MS;
 }
 
 // Reusable dispatcher — connect/headers/body timeouts stay long (model controls the limit)

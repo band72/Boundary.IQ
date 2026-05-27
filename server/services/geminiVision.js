@@ -40,7 +40,7 @@ async function convertPdfToPng(buffer) {
     console.log(`Converting PDF page to PNG via pdftoppm...`);
     await execFileAsync('pdftoppm', [
       '-png', '-singlefile', '-r', '150', tempPdfPath, tempPngPrefix
-    ], { timeout: 30000 });
+    ], { timeout: 300000 });
     
     const pngBytes = await fs.readFile(tempPngPath);
     console.log(`Successfully converted PDF to PNG image buffer (${(pngBytes.length / 1024).toFixed(1)} KB)`);
