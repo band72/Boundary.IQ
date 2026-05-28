@@ -115,3 +115,31 @@ Boundary.IQ is designed for low-overhead local development.
 
 4. **Access the Web Dashboard**:
    Open your browser and navigate to **`http://localhost:5174`**. Select the **Plat Extraction** or **Traverse Compute** tab to begin mapping!
+
+---
+
+## 🧪 Headless Testing
+
+Boundary.IQ includes a suite of headless tests to verify the core computation engine, self-healing Scrivener error repair algorithms, and Express REST API endpoints programmatically without starting a browser.
+
+### 1. Surveyor Riddle & OCR Dropout Solver Unit Tests
+Verify backtracking detection, opposite-side Scrivener alignments, and OCR gap-repair algorithms offline:
+```bash
+cd server
+/home/friend/.nvm/versions/node/v20.20.2/bin/node test_headless_riddle.js
+```
+
+### 2. Full Server REST API Integration Tests
+Tests all core API endpoints including health status, settings, traverse compute, legal description writing, DXF generator, and diagnostics database stats:
+```bash
+cd server
+/home/friend/.nvm/versions/node/v20.20.2/bin/node test_server_headless.js
+```
+
+### 3. Run All Headless Tests Sequentially
+To execute the complete unit and integration test suite sequentially:
+```bash
+cd server
+/home/friend/.nvm/versions/node/v20.20.2/bin/node test_headless_riddle.js && /home/friend/.nvm/versions/node/v20.20.2/bin/node test_server_headless.js
+```
+

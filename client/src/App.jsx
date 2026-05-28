@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TraverseTab from './components/TraverseTab';
 import PlatTab from './components/PlatTab';
 import WriterTab from './components/WriterTab';
@@ -7,6 +7,7 @@ import DashboardTab from './components/DashboardTab';
 import SettingsTab from './components/SettingsTab';
 import HelpModal from './components/HelpModal';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 const TABS = [
   { id: 'traverse',   icon: '📐', label: 'Traverse Compute' },
@@ -18,8 +19,37 @@ const TABS = [
 ];
 
 export default function App() {
+  const [hideTraverse, setHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
+  const [hidePlat, setHidePlat]         = useLocalStorage('boundaryiq_hide_plat', false);
+  const [hideWriter, setHideWriter]     = useLocalStorage('boundaryiq_hide_writer', false);
+
   const [tab, setTab] = useState('traverse');
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // Auto-redirect if currently active tab gets hidden
+  useEffect(() => {
+    if (hideTraverse && tab === 'traverse') {
+      setTab('batch');
+    } else if (hidePlat && tab === 'plat') {
+      setTab('batch');
+    } else if (hideWriter && tab === 'writer') {
+      setTab('batch');
+    }
+  }, [hideTraverse, hidePlat, hideWriter, tab]);
+
+  // If the initial default 'traverse' tab is hidden on startup, redirect to 'batch'
+  useEffect(() => {
+    if (tab === 'traverse' && hideTraverse) {
+      setTab('batch');
+    }
+  }, [hideTraverse]);
+
+  const visibleTabs = TABS.filter(t => {
+    if (t.id === 'traverse' && hideTraverse) return false;
+    if (t.id === 'plat' && hidePlat) return false;
+    if (t.id === 'writer' && hideWriter) return false;
+    return true;
+  });
 
   return (
     <StatsRefreshProvider>
@@ -40,7 +70,7 @@ export default function App() {
           {/* Sidebar */}
           <nav className="sidebar">
             <div className="nav-section" style={{ marginTop: '0.5rem' }}>Tools</div>
-            {TABS.map(t => (
+            {visibleTabs.map(t => (
               <button
                 key={t.id}
                 className={`nav-item ${tab === t.id ? 'active' : ''}`}
@@ -108,7 +138,16 @@ export default function App() {
             {tab === 'writer'    && <WriterTab />}
             {tab === 'batch'     && <BatchDeedTab />}
             {tab === 'dashboard' && <DashboardTab />}
-            {tab === 'settings'  && <SettingsTab />}
+            {tab === 'settings'  && (
+              <SettingsTab
+                hideTraverse={hideTraverse}
+                setHideTraverse={setHideTraverse}
+                hidePlat={hidePlat}
+                setHidePlat={setHidePlat}
+                hideWriter={hideWriter}
+                setHideWriter={setHideWriter}
+              />
+            )}
           </main>
         </div>
       </div>

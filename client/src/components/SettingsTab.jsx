@@ -2,7 +2,27 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { API } from '../config';
 
-export default function SettingsTab() {
+export default function SettingsTab({
+  hideTraverse: propHideTraverse,
+  setHideTraverse: propSetHideTraverse,
+  hidePlat: propHidePlat,
+  setHidePlat: propSetHidePlat,
+  hideWriter: propHideWriter,
+  setHideWriter: propSetHideWriter,
+}) {
+  // Safe fallbacks to support both standalone and prop-driven usage
+  const [localHideTraverse, localSetHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
+  const [localHidePlat, localSetHidePlat]         = useLocalStorage('boundaryiq_hide_plat', false);
+  const [localHideWriter, localSetHideWriter]     = useLocalStorage('boundaryiq_hide_writer', false);
+
+  const hideTraverse = propHideTraverse !== undefined ? propHideTraverse : localHideTraverse;
+  const setHideTraverse = propSetHideTraverse || localSetHideTraverse;
+
+  const hidePlat = propHidePlat !== undefined ? propHidePlat : localHidePlat;
+  const setHidePlat = propSetHidePlat || localSetHidePlat;
+
+  const hideWriter = propHideWriter !== undefined ? propHideWriter : localHideWriter;
+  const setHideWriter = propSetHideWriter || localSetHideWriter;
   const [concurrentAgents, setConcurrentAgents] = useLocalStorage('boundaryiq_concurrent_agents', 5);
   const [parallelBatches, setParallelBatches]   = useLocalStorage('boundaryiq_parallel_batches', 1);
   const [maxFileSize, setMaxFileSize]           = useLocalStorage('boundaryiq_max_file_size', 51);
@@ -734,6 +754,160 @@ export default function SettingsTab() {
             <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               Sets the local file filter threshold. The server currently supports uploads and scanning up to **51 MB** for large, multi-page subdivision covenant files. Files exceeding this size will be filtered out to optimize memory usage during AI repairs.
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Sidebar Navigation Customization ────────────────────────────── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid var(--border)',
+        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15)',
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            🖥️ Sidebar Navigation Customization
+          </div>
+        </div>
+
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Toggle the visibility of specific tools in the sidebar menu. Hidden tools remain fully operational via internal shortcuts but are hidden from the primary navigation interface.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginTop: '0.25rem' }}>
+            {/* Toggle Traverse */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.85rem 1.2rem',
+              background: hideTraverse ? 'rgba(255,255,255,0.02)' : 'rgba(61,127,255,0.04)',
+              border: `1px solid ${hideTraverse ? 'var(--border)' : 'rgba(61,127,255,0.25)'}`,
+              borderRadius: 'var(--radius-md)',
+              transition: 'all 0.3s ease',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.2rem' }}>📐</span>
+                <div>
+                  <div style={{ fontWeight: 600, color: hideTraverse ? 'var(--text-muted)' : '#e8eeff', fontSize: '0.85rem' }}>
+                    Traverse Compute Tab
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                    Manual coordinate entry & closure analysis
+                  </div>
+                </div>
+              </div>
+              
+              <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!hideTraverse}
+                  onChange={e => setHideTraverse(!e.target.checked)}
+                  style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                />
+                <div style={{
+                  width: '40px', height: '20px', borderRadius: '10px',
+                  background: !hideTraverse ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(255,255,255,0.1)',
+                  border: `1px solid ${!hideTraverse ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                  position: 'relative', transition: 'all 0.25s ease',
+                  boxShadow: !hideTraverse ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
+                }}>
+                  <div style={{
+                    width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+                    position: 'absolute', top: '2px', left: !hideTraverse ? '22px' : '3px',
+                    transition: 'left 0.25s ease',
+                  }} />
+                </div>
+              </label>
+            </div>
+
+            {/* Toggle Plat Extraction */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.85rem 1.2rem',
+              background: hidePlat ? 'rgba(255,255,255,0.02)' : 'rgba(0,212,168,0.03)',
+              border: `1px solid ${hidePlat ? 'var(--border)' : 'rgba(0,212,168,0.25)'}`,
+              borderRadius: 'var(--radius-md)',
+              transition: 'all 0.3s ease',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.2rem' }}>🛰️</span>
+                <div>
+                  <div style={{ fontWeight: 600, color: hidePlat ? 'var(--text-muted)' : '#e8eeff', fontSize: '0.85rem' }}>
+                    Plat Extraction Tab
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                    AI-powered OCR for boundary images and PDFs
+                  </div>
+                </div>
+              </div>
+
+              <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!hidePlat}
+                  onChange={e => setHidePlat(!e.target.checked)}
+                  style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                />
+                <div style={{
+                  width: '40px', height: '20px', borderRadius: '10px',
+                  background: !hidePlat ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(255,255,255,0.1)',
+                  border: `1px solid ${!hidePlat ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                  position: 'relative', transition: 'all 0.25s ease',
+                  boxShadow: !hidePlat ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
+                }}>
+                  <div style={{
+                    width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+                    position: 'absolute', top: '2px', left: !hidePlat ? '22px' : '3px',
+                    transition: 'left 0.25s ease',
+                  }} />
+                </div>
+              </label>
+            </div>
+
+            {/* Toggle Writer */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.85rem 1.2rem',
+              background: hideWriter ? 'rgba(255,255,255,0.02)' : 'rgba(168,85,247,0.04)',
+              border: `1px solid ${hideWriter ? 'var(--border)' : 'rgba(168,85,247,0.25)'}`,
+              borderRadius: 'var(--radius-md)',
+              transition: 'all 0.3s ease',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.2rem' }}>✍️</span>
+                <div>
+                  <div style={{ fontWeight: 600, color: hideWriter ? 'var(--text-muted)' : '#e8eeff', fontSize: '0.85rem' }}>
+                    Legal Description Writer Tab
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                    Generate professional registry legal text
+                  </div>
+                </div>
+              </div>
+
+              <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!hideWriter}
+                  onChange={e => setHideWriter(!e.target.checked)}
+                  style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                />
+                <div style={{
+                  width: '40px', height: '20px', borderRadius: '10px',
+                  background: !hideWriter ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(255,255,255,0.1)',
+                  border: `1px solid ${!hideWriter ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                  position: 'relative', transition: 'all 0.25s ease',
+                  boxShadow: !hideWriter ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
+                }}>
+                  <div style={{
+                    width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+                    position: 'absolute', top: '2px', left: !hideWriter ? '22px' : '3px',
+                    transition: 'left 0.25s ease',
+                  }} />
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       </div>

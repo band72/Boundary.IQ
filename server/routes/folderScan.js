@@ -45,15 +45,14 @@ const SKIP_KEYWORDS = [
   'Memo of Lease', 'Short Form Lease', 'Operating Agreement', 'Administrative Fine',
   'Adminstrative Fine', 'Lis Pendens', 'Bankruptcy', 'Letters of Administration',
   'Order Admitting Will', 'Petition for Administration', 'Memo of Management',
-  'Memo of ROFR', 'Memo of Transfer', 'Affidavit', 'Aff-Cert', 'Commitment',
-  'Committment', 'Electric Service', 'Assign & Assump', 'REA Assign',
-  'Agreement Concerning Lease', 'Fourth Amendment', '2nd Amend', "Vendor_s Lien",
-  'Certificate', 'Contribution Agreement', 'Utility Agreement', 'Dec of Expiration',
+  'Memo of ROFR', 'Memo of Transfer', 'Affidavit', 'Aff-Cert', 'Electric Service',
+  'Assign & Assump', 'REA Assign', 'Agreement Concerning Lease', 'Fourth Amendment',
+  '2nd Amend', "Vendor_s Lien", 'Certificate', 'Contribution Agreement',
+  'Utility Agreement', 'Dec of Expiration',
   // NOTE: 'CERT', 'CERTIFICATION' intentionally NOT in this list —
   // a deed file may be named with CERT but still contain valid THENCE courses.
   // Content-based filtering below handles pure cert-only documents.
-  'TITLE COMMITMENT', 'TITLE OPINION', 'ELEVATION CERT', 'FLOOD CERT',
-  'ENCROACHMENT',
+  'TITLE OPINION', 'ELEVATION CERT', 'FLOOD CERT', 'ENCROACHMENT',
 ];
 
 function containsWord(source, word) {
@@ -79,40 +78,15 @@ function classifyByFilename(fileName) {
   if (upper.includes('ORDER OF TAKING')) return 'CONDEMNATION';
   if (upper.includes('ROAD') || upper.includes('BLVD')) return 'ROAD_CLOSING';
   if (upper.includes('DEED') || upper.includes('GRANT')) return 'DEED';
+  if (upper.includes('COMMITMENT') || upper.includes('COMMITTMENT')) return 'DEED';
   return 'SKIP';
 }
 
 function getDocType(filePath, fileName) {
-  // For Word docs: filename keyword check first, then companion .txt content if available
-  if (isWordDocument(fileName)) {
-    const upper = fileName.toUpperCase();
-    for (const skip of SKIP_KEYWORDS) if (upper.includes(skip.toUpperCase())) return 'SKIP';
-
-    // Check companion _extracted/*.txt for content-based classification
-    const dir = path.dirname(filePath);
-    const base = path.parse(fileName).name;
-    const extractedTxt = path.join(dir, '_extracted', base + '.txt');
-    if (fs.existsSync(extractedTxt)) {
-      try {
-        const raw = fs.readFileSync(extractedTxt, 'utf-8');
-        const txt = raw.toUpperCase();
-        if (raw.trim().length < 80) return 'SKIP';  // stub/cover page
-        // Skip ONLY if it's a pure certification doc with NO boundary courses
-        if ((txt.includes('DOES HEREBY CERTIFY') || txt.includes('I HEREBY CERTIFY') ||
-             txt.includes('ALTA/ACSM') || txt.includes('ELEVATION CERTIFICATE') ||
-             txt.includes('FLOOD INSURANCE')) && !txt.includes('THENCE')) return 'SKIP';
-        // Must have at least one boundary keyword to be a deed
-        if (!txt.includes('THENCE') && !txt.includes('BEGINNING AT')) return 'SKIP';
-      } catch {}
-    }
-
-    return 'DEED';
-  }
-
-  // For PDFs: try to find companion .txt file in _extracted/ for content pre-screen
   const dir = path.dirname(filePath);
   const base = path.parse(fileName).name;
   const extractedTxt = path.join(dir, '_extracted', base + '.txt');
+
   if (fs.existsSync(extractedTxt)) {
     try {
       const raw = fs.readFileSync(extractedTxt, 'utf-8');
@@ -133,11 +107,19 @@ function getDocType(filePath, fileName) {
         console.log(`classifyDocument: SKIP — pure certification, no boundary courses: ${fileName}`);
         return 'SKIP';
       }
-      // Must have at least one THENCE to be a deed
-      if (!txt.includes('THENCE') && !txt.includes('BEGINNING AT')) {
-        return 'SKIP';
+
+      // If the content explicitly contains boundary geometry, immediately return 'DEED' to bypass filename check!
+      if (txt.includes('THENCE') || txt.includes('BEGINNING AT')) {
+        return 'DEED';
       }
     } catch {}
+  }
+
+  // Word docs fallback
+  if (isWordDocument(fileName)) {
+    const upper = fileName.toUpperCase();
+    for (const skip of SKIP_KEYWORDS) if (upper.includes(skip.toUpperCase())) return 'SKIP';
+    return 'DEED';
   }
 
   return classifyByFilename(fileName);
@@ -253,6 +235,7 @@ router.post('/reset-lock', (req, res) => {
 
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
+  let keepAlive = null;
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
@@ -277,6 +260,26 @@ router.post('/process-batch', async (req, res) => {
 
     const totalBatches = Math.ceil(allProcessable.length / 20);
     if (batchIndex >= totalBatches) return res.status(400).json({ error: `batchIndex ${batchIndex} out of range (0–${totalBatches - 1}).` });
+
+    // Start keepalive heartbeat immediately to prevent idle connection timeout
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    keepAlive = setInterval(() => {
+      if (res.writableEnded || res.destroyed) {
+        clearInterval(keepAlive);
+        return;
+      }
+      try {
+        res.write(' '); // write standard whitespace spacer to keep connection active
+        if (res.flush) res.flush();
+      } catch {
+        clearInterval(keepAlive);
+      }
+    }, 15000);
 
     const batch = allProcessable.slice(batchIndex * 20, (batchIndex + 1) * 20);
     const batchId = uuidv4();
@@ -323,10 +326,6 @@ router.post('/process-batch', async (req, res) => {
         const pob = { northing: pobN, easting: pobE };
 
         // ── Multi-Parcel Fan-Out ───────────────────────────────────────────────
-        // If _extracted/<base>.txt exists and contains labeled "Parcel A" / "Parcel B"
-        // sections, process each parcel independently and save separate DB records
-        // named <filename>__A and <filename>__B.
-        // The original file is still processed below as a "container" record.
         const extractedTxtPath = path.join(validPath, '_extracted', path.parse(fileName).name + '.txt');
         let rawDocText = '';
         try {
@@ -339,13 +338,12 @@ router.post('/process-batch', async (req, res) => {
         if (namedParcels && namedParcels.length >= 2) {
           console.log(`FolderScan: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels: ${namedParcels.map(p => p.label).join(', ')}`);
           for (const { label, text: parcelText } of namedParcels) {
-            const ext = path.extname(fileName);       // e.g. '.pdf'
-            const base = path.parse(fileName).name;   // e.g. '2525.894 - Monument Road'
-            const parcelFileName = `${base}__${label}${ext}`;  // e.g. '2525.894 - Monument Road__A.pdf'
+            const ext = path.extname(fileName);
+            const base = path.parse(fileName).name;
+            const parcelFileName = `${base}__${label}${ext}`;
             const isOE = detectOpenEnded(parcelText, parcelFileName, false);
             console.log(`FolderScan: Processing parcel ${label} → ${parcelFileName} (isOpenEnded=${isOE})`);
             try {
-              // Re-run repair pipeline on full image but with parcel context in fileName
               const pResult = await runRepairPipeline(imageBytes, mime, pob, units, isOE, parcelFileName);
               const pEx = pResult.finalExtraction;
               const pTr = pResult.finalTraverse;
@@ -369,7 +367,6 @@ router.post('/process-batch', async (req, res) => {
               console.warn(`FolderScan: Parcel ${label} (${parcelFileName}) failed:`, parcelEx.message);
             }
           }
-          // Fall through to also save the original file as-is (container record)
         }
 
         const repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName);
@@ -421,7 +418,6 @@ router.post('/process-batch', async (req, res) => {
             console.warn(`PlatLookup batch failed for ${fileName}: ${platEx.message}`);
           }
 
-          // All tiers failed — fall through to original SKIP
           console.log(`FolderScan batch: ${fileName} — SKIPPED (${extraction.classification})`);
           results[index] = {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
@@ -432,7 +428,6 @@ router.post('/process-batch', async (req, res) => {
           return;
         }
 
-        // Original SKIP for PLAT type (no geometry possible)
         const isNonTraversable = (!extraction.courses || extraction.courses.length === 0) &&
           (extraction.classification === 'PLAT' ||
            (repairResult.traverseError || '').toLowerCase().includes('no traversable'));
@@ -486,16 +481,25 @@ router.post('/process-batch', async (req, res) => {
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 
-    res.json({ batchId, batchIndex, totalBatches, filesInBatch: batch.length, outputFolder, results: { results, totalProcessed: results.length, succeeded, failed: results.length - succeeded } });
+    if (keepAlive) clearInterval(keepAlive);
+    const payload = { batchId, batchIndex, totalBatches, filesInBatch: batch.length, outputFolder, results: { results, totalProcessed: results.length, succeeded, failed: results.length - succeeded } };
+    res.write(JSON.stringify(payload));
+    res.end();
   } catch (ex) {
+    if (keepAlive) clearInterval(keepAlive);
     console.error('FolderScan process-batch error:', ex);
-    res.status(500).json({ error: ex.message });
+    if (res.headersSent) {
+      res.write(JSON.stringify({ error: ex.message }));
+      res.end();
+    } else {
+      res.status(500).json({ error: ex.message });
+    }
   }
-
 });
 
 // POST /api/folderscan/process-file
 router.post('/process-file', async (req, res) => {
+  let keepAlive = null;
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
@@ -513,9 +517,29 @@ router.post('/process-file', async (req, res) => {
     const county = req.query.county || null;
     const state = req.query.state || null;
     const batchId = req.query.batchId || uuidv4();
-    db.saveBatchRun(batchId, 1, 0.0);
     const autoOutput = req.query.autoOutput === 'true';
 
+    // Start keepalive heartbeat immediately to prevent idle connection timeout
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    keepAlive = setInterval(() => {
+      if (res.writableEnded || res.destroyed) {
+        clearInterval(keepAlive);
+        return;
+      }
+      try {
+        res.write(' ');
+        if (res.flush) res.flush();
+      } catch {
+        clearInterval(keepAlive);
+      }
+    }, 15000);
+
+    db.saveBatchRun(batchId, 1, 0.0);
     console.log(`FolderScan processing single file: ${fileName}`);
 
     // Check cache (unless forced)
@@ -552,7 +576,11 @@ router.post('/process-file', async (req, res) => {
           courses.length, linErr,
           parsePrecisionRatio(precRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved',
           solvedCase.extractionJson, solvedCase.traverseJson);
-        return res.json({ status: 'success', result });
+
+        if (keepAlive) clearInterval(keepAlive);
+        res.write(JSON.stringify({ status: 'success', result }));
+        res.end();
+        return;
       }
     }
 
@@ -600,7 +628,11 @@ router.post('/process-file', async (req, res) => {
       };
       db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
         'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
-      return res.json({ status: 'skipped', result });
+
+      if (keepAlive) clearInterval(keepAlive);
+      res.write(JSON.stringify({ status: 'skipped', result }));
+      res.end();
+      return;
     }
 
     const result = { fileName, status: status === 'PASS' ? 'success' : 'error', extraction, traverse, legalDescription: writeResult, error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction, cached: false, solutionSteps: repairResult.solutionSteps || null };
@@ -618,10 +650,18 @@ router.post('/process-file', async (req, res) => {
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 
-    res.json({ status: status === 'PASS' ? 'success' : 'error', result });
+    if (keepAlive) clearInterval(keepAlive);
+    res.write(JSON.stringify({ status: status === 'PASS' ? 'success' : 'error', result }));
+    res.end();
   } catch (ex) {
+    if (keepAlive) clearInterval(keepAlive);
     console.error(`FolderScan item failed: ${req.query.file}`, ex.message);
-    res.status(500).json({ error: ex.message });
+    if (res.headersSent) {
+      res.write(JSON.stringify({ error: ex.message }));
+      res.end();
+    } else {
+      res.status(500).json({ error: ex.message });
+    }
   }
 });
 
