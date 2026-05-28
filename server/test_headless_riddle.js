@@ -34,6 +34,7 @@ console.log(`Backtracking check: ${hasBack1 ? 'DETECTED (✓ Correct)' : 'NOT DE
 
 const res1 = trySurveyorShapeCorrection(degenerateRiddleWithMissing);
 console.log(`Reconstruction Message: ${res1.message}`);
+console.log('Case 1 Resolved Courses:', JSON.stringify(res1.courses, null, 2));
 
 const t1 = traverseSvc.compute({ pointOfBeginning: pob, courses: res1.courses, units: 'Feet', isOpenEnded: false });
 console.log(`Linear Closure Error: ${t1.closure.linearError.toFixed(4)} ft`);
@@ -53,6 +54,7 @@ console.log(`Backtracking check: ${hasBack2 ? 'DETECTED (✓ Correct)' : 'NOT DE
 
 const res2 = trySurveyorShapeCorrection(degenerateRiddleWithNA);
 console.log(`Reconstruction Message: ${res2.message}`);
+console.log('Case 2 Resolved Courses:', JSON.stringify(res2.courses, null, 2));
 
 const t2 = traverseSvc.compute({ pointOfBeginning: pob, courses: res2.courses, units: 'Feet', isOpenEnded: false });
 console.log(`Linear Closure Error: ${t2.closure.linearError.toFixed(4)} ft`);
@@ -60,8 +62,10 @@ console.log(`Shoelace Area: ${t2.areaSqFt.toFixed(2)} sq ft`);
 
 const isBox2Correct = 
   res2.courses.length === 4 &&
-  res2.courses[1].bearing.includes('S44°37\'50') && 
-  res2.courses[3].bearing.includes('N44°37\'50') &&
+  res2.courses[0].bearing.includes('N45°22') && 
+  res2.courses[1].bearing.includes('S45°22') && 
+  res2.courses[2].bearing.includes('S45°22') && 
+  res2.courses[3].bearing.includes('N45°22') &&
   res2.courses[3].distance === 150.25 && // Confirm healed distance!
   t2.closure.linearError < 0.30;
 

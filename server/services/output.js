@@ -100,7 +100,7 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
         console.warn(`Output: DXF generation failed for ${sourceFileName}:`, dxfEx.message);
       }
 
-      // 5. PNG boundary sketch — letter-landscape at 2× resolution
+      // 5. PNG boundary sketches — 5 pages mirroring the multi-page PDF layout
       try {
         const skMeta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
@@ -112,9 +112,23 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
           basisOfBearings: result.extraction?.basisOfBearings  || null,
           status:          result.status                       || null,
         };
-        const pngBuf = sketch.renderSketchPng(stations, adjusted, courses, skMeta);
-        fs.writeFileSync(path.join(outputFolder, `${baseName}_sketch.png`), pngBuf);
-        console.log(`Output: wrote PNG sketch — ${baseName}_sketch.png`);
+        const closure          = result.traverse?.closure          || null;
+        const legalDesc        = writeResult?.legalDescription     || null;
+        const origLegalDesc    = result.originalExtraction?.legalDescription ||
+                                 result.legalDescription?.legalDescription   || legalDesc;
+        const origCourses      = result.originalExtraction?.courses          || null;
+
+        const pages = sketch.renderSketchPages(
+          stations, adjusted, courses, skMeta,
+          closure, legalDesc, origLegalDesc, origCourses,
+        );
+
+        const pageLabels = ['sketch_p1', 'sketch_p2', 'sketch_p3', 'sketch_p4', 'sketch_p5'];
+        Object.entries(pages).forEach(([key, buf], i) => {
+          const outPath = path.join(outputFolder, `${baseName}_${pageLabels[i]}.png`);
+          fs.writeFileSync(outPath, buf);
+          console.log(`Output: wrote PNG page ${i + 1} — ${path.basename(outPath)}`);
+        });
       } catch (pngEx) {
         console.warn(`Output: PNG sketch failed for ${sourceFileName}:`, pngEx.message);
       }

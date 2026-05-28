@@ -164,6 +164,7 @@ export function applyDeflection(incomingAzDeg, deflAngleDeg, direction) {
  * @returns {number|null} Azimuth in degrees, or null if unrecognised
  */
 export function parseCardinalAzimuth(word) {
+  if (!word || /\d/.test(word)) return null;
   const CARDINAL_MAP = {
     // 8 primary directions
     'N': 0,   'NORTH': 0,     'NORTHERLY': 0,
@@ -184,6 +185,6 @@ export function parseCardinalAzimuth(word) {
     'WNW': 292.5, 'WESTNORTHWEST': 292.5,
     'NNW': 337.5, 'NORTHNORTHWEST': 337.5,
   };
-  const key = (word || '').toUpperCase().replace(/[^A-Z]/g, '');
+  const key = word.toUpperCase().replace(/[^A-Z]/g, '');
   return key in CARDINAL_MAP ? CARDINAL_MAP[key] : null;
 }

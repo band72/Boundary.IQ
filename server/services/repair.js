@@ -1229,14 +1229,14 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
         console.log(`Stage 1.5: Rectangular Scrivener Solver corrected via candidate: "${cand.message}"!`);
         return {
           ...original,
-          courses: cand.courses,
-          rawJson: JSON.stringify(cand.courses),
+          courses: testEval.courses,
+          rawJson: JSON.stringify(testEval.courses),
           message: cand.message
         };
       }
       
       if (!testEval.hasIntersection && testEval.linearError < bestEval.linearError) {
-        bestCourses = cand.courses;
+        bestCourses = testEval.courses;
         bestEval = testEval;
         bestMessage = cand.message;
       }
@@ -1246,8 +1246,8 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
       console.log(`Stage 1.5: Rectangular Scrivener Solver improved error from ${originalEval.linearError.toFixed(2)} to ${bestEval.linearError.toFixed(2)} via: "${bestMessage}"`);
       return {
         ...original,
-        courses: bestCourses,
-        rawJson: JSON.stringify(bestCourses),
+        courses: bestEval.courses,
+        rawJson: JSON.stringify(bestEval.courses),
         message: bestMessage
       };
     }

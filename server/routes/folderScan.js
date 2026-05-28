@@ -237,6 +237,20 @@ router.get('/status', (req, res) => {
   res.json({ busy: false });
 });
 
+// POST /api/folderscan/reset-lock — force-release the processing lock
+router.post('/reset-lock', (req, res) => {
+  const wasLocked = _processingLock;
+  const previousInfo = _processingInfo;
+  releaseLock();
+  console.log('🔓 Processing lock was force-released by manual client request.');
+  res.json({
+    success: true,
+    message: wasLocked
+      ? `Processing lock for '${previousInfo?.type || 'unknown'}' was successfully released.`
+      : 'Server was not locked, but processing state has been reset.',
+  });
+});
+
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
   try {
@@ -805,6 +819,14 @@ router.post('/retry-failed', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+
+  // Auto-release lock on premature disconnect / abort
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      console.log('🔌 Client disconnected from /retry-failed — releasing processing lock...');
+      releaseLock();
+    }
+  });
 
   // Guard all writes — never throw if the client disconnected
   const send = (event, data) => {

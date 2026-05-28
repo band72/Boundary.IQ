@@ -35,6 +35,7 @@ export default function BatchDeedTab() {
   const [heuristics, setHeuristics] = useState([]);
   const [recentBatches, setRecentBatches] = useState([]);
   const [expandedBatch, setExpandedBatch] = useState(null); // batchId string
+  const [failedCount, setFailedCount]     = useState(null);
 
   const lastFileRef = useRef('');
 
@@ -70,6 +71,8 @@ export default function BatchDeedTab() {
   const [retryStats, setRetryStats] = useState(null); // {total,fixed,stillFailing,notFound}
   const [retryAbort, setRetryAbort] = useState(null); // AbortController
   const retryLogRef = useRef(null);
+  const [serverLocked, setServerLocked] = useState(false);
+  const [lockElapsed, setLockElapsed]   = useState(0);
 
   // Adjacent lot chaining
   const [adjacentDeedText, setAdjacentDeedText] = useState('');
@@ -101,6 +104,16 @@ export default function BatchDeedTab() {
     } catch (e) { console.error(e); }
   };
 
+  const fetchFailedCount = async () => {
+    try {
+      const res = await fetch(`${API}/diagnostics/failed-deeds?limit=1000`);
+      if (res.ok) {
+        const data = await res.json();
+        setFailedCount(data.length);
+      }
+    } catch (e) { console.error('Failed to fetch failed deeds count', e); }
+  };
+
   const searchDatabase = async () => {
     setDbLoading(true);
     try {
@@ -114,8 +127,40 @@ export default function BatchDeedTab() {
         const data = await res.json();
         setDbLogs(data);
       }
+      fetchFailedCount();
     } catch (e) { console.error(e); }
     finally { setDbLoading(false); }
+  };
+
+  const checkServerLockStatus = async () => {
+    try {
+      const res = await fetch(`${API}/folderscan/status`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.busy) {
+          setServerLocked(true);
+          setLockElapsed(data.elapsedSec);
+        } else {
+          setServerLocked(false);
+        }
+      }
+    } catch (e) { console.error('Failed to check server lock status:', e); }
+  };
+
+  const handleResetLock = async () => {
+    try {
+      const res = await fetch(`${API}/folderscan/reset-lock`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setServerLocked(false);
+        fetchFailedCount();
+        setRetryLog(prev => [...prev, { type: 'pass', text: `✓ ${data.message}`, ts: Date.now() }]);
+      } else {
+        alert('Failed to reset lock.');
+      }
+    } catch (e) {
+      alert('Error resetting lock: ' + e.message);
+    }
   };
 
   // Initial load
@@ -123,6 +168,10 @@ export default function BatchDeedTab() {
     fetchHeuristics();
     searchDatabase();
     fetchRecentBatches();
+    fetchFailedCount();
+    checkServerLockStatus();
+    const interval = setInterval(checkServerLockStatus, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   // Recursively convert PascalCase keys to camelCase (DB stores PascalCase, UI expects camelCase)
@@ -639,6 +688,11 @@ export default function BatchDeedTab() {
 
       if (!res.ok) {
         const e = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        if (res.status === 503) {
+          setServerLocked(true);
+          const match = e.error?.match(/(\d+)s elapsed/);
+          if (match) setLockElapsed(parseInt(match[1]));
+        }
         throw new Error(e.error || `HTTP ${res.status}`);
       }
 
@@ -895,7 +949,14 @@ export default function BatchDeedTab() {
       {/* ── Retry Failed — Local LLMs ──────────────────────────────────────── */}
       <div className="card" style={{ borderColor: retryRunning ? 'var(--accent)' : undefined }}>
         <div className="card-header">
-          <div className="card-title">🔁 Retry All Failed — Local LLMs Only</div>
+          <div className="card-title">
+            🔁 Retry All Failed — Local LLMs Only
+            {failedCount !== null && (
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: '0.6rem', fontWeight: 'normal' }}>
+                ({failedCount} unresolved failure{failedCount !== 1 ? 's' : ''})
+              </span>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             {retryStats && (
               <>
@@ -907,11 +968,32 @@ export default function BatchDeedTab() {
             {retryRunning
               ? <button className="btn btn-danger btn-sm" onClick={() => retryAbort?.abort()}>⏹ Stop</button>
               : <button className="btn btn-primary btn-sm" onClick={handleRetryFailed} disabled={folderBatchLoading}>
-                  🔁 Select All Failed &amp; Retry with Local LLMs
+                  🔁 Select All Failed &amp; Retry with Local LLMs {failedCount !== null && `(${failedCount})`}
                 </button>
             }
           </div>
         </div>
+
+        {serverLocked && (
+          <div className="alert" style={{ margin: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', border: '1px solid rgba(255, 170, 0, 0.35)', background: 'rgba(255, 170, 0, 0.06)', color: '#ffb74d' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%' }}>
+              <span className="spinner" style={{ width: 14, height: 14, borderTopColor: '#ffb74d', flexShrink: 0 }} />
+              <span style={{ fontSize: '0.85rem' }}>
+                <strong>System Lock Active:</strong> Server is currently processing a batch or retry run ({lockElapsed}s elapsed).
+              </span>
+              <button
+                className="btn btn-sm"
+                onClick={handleResetLock}
+                style={{ marginLeft: 'auto', background: 'rgba(255, 170, 0, 0.15)', color: '#fff', border: '1px solid rgba(255, 170, 0, 0.35)', padding: '0.25rem 0.85rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: 'var(--radius-sm)' }}
+              >
+                🔓 Force Reset Lock
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', lineHeight: 1.4 }}>
+              If a previous process disconnected or crashed, the server might remain locked. Force-resetting will clear the lock immediately so you can resume.
+            </p>
+          </div>
+        )}
 
         {/* Model cascade legend */}
         <div style={{ padding: '0 1rem 0.6rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>

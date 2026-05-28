@@ -138,5 +138,6 @@ const server = app.listen(PORT, async () => {
 
 // Configure server timeouts to 30 minutes to support local CPU LLM inference
 server.timeout = 1800000;
+server.requestTimeout = 1800000;
 server.keepAliveTimeout = 1800000;
 server.headersTimeout = 1805000;

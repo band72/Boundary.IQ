@@ -50,15 +50,15 @@ echo "  API PID: $API_PID"
 # ── Start Vite client ─────────────────────────────────────────────────────────
 sleep 1
 echo ""
-echo "▶ Starting Vite dev client  →  http://localhost:5173"
-"$NODE_BIN" "$VITE_BIN" --port 5173 &
+echo "▶ Starting Vite dev client  →  http://localhost:5174"
+(cd "$PROJECT_DIR/client" && "$NODE_BIN" "$VITE_BIN" --port 5174) &
 CLIENT_PID=$!
 echo "  Client PID: $CLIENT_PID"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Boundary.IQ running!"
-echo "  Frontend: http://localhost:5173"
+echo "  Frontend: http://localhost:5174"
 echo "  Backend:  http://localhost:5050"
 echo "  Press Ctrl+C to stop both services."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

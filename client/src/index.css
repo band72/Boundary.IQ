@@ -407,6 +407,30 @@ select option { background: var(--bg-elevated); }
 @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideInRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
 
+/* ── Infinite Progress Bar ───────────────────────────────────────────── */
+.progress-bar-container {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  height: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 50%, var(--success) 100%);
+  width: 40%;
+  border-radius: 2px;
+  position: absolute;
+  left: -40%;
+  animation: shimmerProgress 1.6s infinite ease-in-out;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+@keyframes shimmerProgress {
+  0% { left: -40%; }
+  50% { left: 40%; width: 60%; }
+  100% { left: 100%; }
+}
+
 /* ── Alerts ──────────────────────────────────────────────────────────── */
 .alert {
   padding: 0.75rem 1rem;

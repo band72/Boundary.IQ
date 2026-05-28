@@ -17,17 +17,22 @@ export default function SettingsTab() {
 
   // ── AI Model Provider state ────────────────────────────────────
   const [modelConfig, setModelConfig]   = useState(null);
-  const [modelLoading, setModelLoading] = useState(false);
+  const [modelLoading, setModelLoading] = useState(true);
   const [modelMsg, setModelMsg]         = useState('');
   const [switchingTo, setSwitchingTo]   = useState(null);
   const [startingOllama, setStartingOllama] = useState(false);
   const [openaiBaseUrl, setOpenaiBaseUrl] = useLocalStorage('boundaryiq_openai_base_url', 'http://127.0.0.1:11434/v1');
 
   const fetchModelConfig = useCallback(async () => {
+    setModelLoading(true);
     try {
       const res = await fetch(`${API}/settings/model`);
       if (res.ok) setModelConfig(await res.json());
-    } catch (e) { console.error('Failed to fetch model config:', e); }
+    } catch (e) {
+      console.error('Failed to fetch model config:', e);
+    } finally {
+      setModelLoading(false);
+    }
   }, []);
 
   const switchModel = async (provider, model) => {
@@ -175,7 +180,28 @@ export default function SettingsTab() {
           </div>
         </div>
 
+        {/* Dynamic Card-level Shimmer Progress Bar */}
+        {(modelLoading || startingOllama) && (
+          <div className="progress-bar-container">
+            <div className="progress-bar-fill" />
+          </div>
+        )}
+
         <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {startingOllama && (
+            <div className="alert alert-info" style={{ animation: 'slideDown 0.2s ease', display: 'flex', alignItems: 'center' }}>
+              <span className="spinner" style={{ width: 14, height: 14, marginRight: '0.6rem', flexShrink: 0 }} />
+              <span><strong>Server Initialization in Progress:</strong> Spawning local Ollama backend & loading system drivers...</span>
+            </div>
+          )}
+
+          {!modelConfig && modelLoading && (
+            <div className="alert alert-info" style={{ animation: 'slideDown 0.2s ease', display: 'flex', alignItems: 'center' }}>
+              <span className="spinner" style={{ width: 14, height: 14, marginRight: '0.6rem', flexShrink: 0 }} />
+              <span><strong>Loading AI Model Configurations:</strong> Probing local and cloud LLM providers...</span>
+            </div>
+          )}
 
           {/* Active Model Badge */}
           {modelConfig && (
