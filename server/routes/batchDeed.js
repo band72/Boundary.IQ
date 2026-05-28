@@ -6,6 +6,7 @@ import { runRepairPipeline } from '../services/repair.js';
 import * as legalWriter from '../services/legalWriter.js';
 import * as db from '../services/diagnosticsDb.js';
 import { isWordDocument, convertToPdf } from '../services/docConversion.js';
+import * as geminiVision from '../services/geminiVision.js';
 const router = Router();
 
 const upload = multer({ limits: { fileSize: 51 * 1024 * 1024 } }); // 51MB per file
@@ -37,8 +38,8 @@ function parsePrecisionRatio(precisionStr) {
   return 0;
 }
 
-// POST /api/batchdeed/process
 router.post('/process', upload.array('images', 20), async (req, res) => {
+  let keepAlive = null;
   try {
     const files = req.files;
     if (!files || files.length === 0) return res.status(400).json({ error: 'No images provided.' });
@@ -49,13 +50,40 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     const units = req.query.units || 'Feet';
     const county = req.query.county || null;
     const state = req.query.state || null;
-    const concurrency = parseInt(req.query.concurrency) || 5;
     const maxTurns = Math.max(1, Math.min(5, parseInt(req.query.maxTurns) || 3)); // Fix #5
+
+    const activeProvider = geminiVision.getActiveProvider();
+    const isLocalLLM = activeProvider === 'ollama' || activeProvider === 'openai';
+    const concurrency = isLocalLLM ? 1 : (parseInt(req.query.concurrency) || 5);
+
+    if (isLocalLLM && parseInt(req.query.concurrency) > 1) {
+      console.log(`⚠️ Local provider "${activeProvider}" is active. Capping BatchDeed concurrency limit from ${req.query.concurrency} to 1 to prevent OOM/timeouts.`);
+    }
 
     const batchId = uuidv4();
     const results = new Array(files.length);
 
     db.saveBatchRun(batchId, files.length, 0.0);
+
+    // Start keepalive heartbeat immediately to prevent idle connection timeout
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    keepAlive = setInterval(() => {
+      if (res.writableEnded || res.destroyed) {
+        clearInterval(keepAlive);
+        return;
+      }
+      try {
+        res.write(' '); // write standard whitespace spacer to keep connection active
+        if (res.flush) res.flush();
+      } catch {
+        clearInterval(keepAlive);
+      }
+    }, 15000);
 
     // Process with concurrency limiter
     let active = 0;
@@ -175,10 +203,18 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     const passRate = results.length > 0 ? succeeded / results.length : 0;
     db.saveBatchRun(batchId, results.length, passRate);
 
-    res.json({ results, totalProcessed: results.length, succeeded, failed: results.length - succeeded });
+    if (keepAlive) clearInterval(keepAlive);
+    res.write(JSON.stringify({ results, totalProcessed: results.length, succeeded, failed: results.length - succeeded }));
+    res.end();
   } catch (ex) {
+    if (keepAlive) clearInterval(keepAlive);
     console.error('Batch process error:', ex);
-    res.status(500).json({ error: ex.message });
+    if (res.headersSent) {
+      res.write(JSON.stringify({ error: ex.message }));
+      res.end();
+    } else {
+      res.status(500).json({ error: ex.message });
+    }
   }
 });
 

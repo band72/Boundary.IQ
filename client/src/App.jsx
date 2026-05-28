@@ -29,20 +29,13 @@ export default function App() {
   // Auto-redirect if currently active tab gets hidden
   useEffect(() => {
     if (hideTraverse && tab === 'traverse') {
-      setTab('batch');
+      setTimeout(() => setTab('batch'), 0);
     } else if (hidePlat && tab === 'plat') {
-      setTab('batch');
+      setTimeout(() => setTab('batch'), 0);
     } else if (hideWriter && tab === 'writer') {
-      setTab('batch');
+      setTimeout(() => setTab('batch'), 0);
     }
   }, [hideTraverse, hidePlat, hideWriter, tab]);
-
-  // If the initial default 'traverse' tab is hidden on startup, redirect to 'batch'
-  useEffect(() => {
-    if (tab === 'traverse' && hideTraverse) {
-      setTab('batch');
-    }
-  }, [hideTraverse]);
 
   const visibleTabs = TABS.filter(t => {
     if (t.id === 'traverse' && hideTraverse) return false;

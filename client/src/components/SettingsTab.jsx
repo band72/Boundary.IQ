@@ -570,6 +570,12 @@ export default function SettingsTab({
             <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               Defines the maximum number of computational vision and geometric translation agents operating simultaneously. Increasing this value speeds up batch deed conversions but might exceed API quota and throughput rate limits.
             </p>
+
+            {(modelConfig?.activeProvider === 'ollama' || modelConfig?.activeProvider === 'openai') && concurrentAgents > 1 && (
+              <div className="alert alert-error" style={{ marginTop: '0.75rem', animation: 'slideDown 0.2s ease', fontSize: '0.78rem', padding: '0.6rem 0.85rem' }}>
+                ⚠️ <strong>Local LLM Performance Notice:</strong> Concurrency of {concurrentAgents} parallel requests will exceed standard local CPU/GPU capability, causing slow prompt processing, OOM crashes, or timeouts. The system will automatically run these requests sequentially (concurrency capped to 1) to ensure stability.
+              </div>
+            )}
           </div>
 
           <div className="divider" style={{ margin: '0.5rem 0' }} />

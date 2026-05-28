@@ -247,7 +247,15 @@ router.post('/process-batch', async (req, res) => {
     const units = req.query.units || 'Feet';
     const county = req.query.county || null;
     const state = req.query.state || null;
-    const concurrency = parseInt(req.query.concurrency) || 5;
+    
+    const activeProvider = geminiVision.getActiveProvider();
+    const isLocalLLM = activeProvider === 'ollama' || activeProvider === 'openai';
+    const concurrency = isLocalLLM ? 1 : (parseInt(req.query.concurrency) || 5);
+
+    if (isLocalLLM && parseInt(req.query.concurrency) > 1) {
+      console.log(`⚠️ Local provider "${activeProvider}" is active. Capping FolderScan concurrency limit from ${req.query.concurrency} to 1 to prevent OOM/timeouts.`);
+    }
+
     const autoOutput = req.query.autoOutput === 'true';
 
     const allProcessable = getSupportedFiles(validPath).filter(f => {

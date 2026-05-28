@@ -52,7 +52,7 @@ async function runTests() {
     console.log(`✓ Detected running server on port ${PORT}. Testing active instance...`);
   } else {
     console.log(`⏳ Server not detected on port ${PORT}. Starting server programmatically...`);
-    spawnedProcess = spawn('node', ['index.js'], {
+    spawnedProcess = spawn(process.execPath, ['index.js'], {
       stdio: 'inherit',
       env: { ...process.env, PORT: PORT.toString() }
     });
