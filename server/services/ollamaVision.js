@@ -111,21 +111,24 @@ export async function getStatusOpenAI(baseUrl) {
 // ── Vision model path: /api/chat with image content blocks ────────────────────
 
 async function generateVisionChat(buffer, model, prompt) {
-  // Build multimodal user message
-  const userContent = [];
+  // Ollama native /api/chat format:
+  //   messages[].content  = plain string (the text prompt)
+  //   messages[].images   = array of base64-encoded image strings (no data URI prefix)
+  // Note: do NOT use OpenAI-style content-block arrays — Ollama rejects them with 400.
+  const message = { role: 'user', content: prompt };
   if (buffer && buffer.length > 0) {
-    userContent.push({ type: 'image', data: buffer.toString('base64') });
+    message.images = [buffer.toString('base64')];
   }
-  userContent.push({ type: 'text', text: prompt });
 
   const payload = {
     model,
-    messages: [{ role: 'user', content: userContent }],
+    messages: [message],
     stream: false,
     options: { temperature: 0.1, num_predict: 8192 },
     // NOTE: Do NOT set format:'json' — vision models may not honor it and it
     // can suppress the entire response. Rely on prompt instructions instead.
   };
+
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {

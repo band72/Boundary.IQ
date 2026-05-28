@@ -16,7 +16,7 @@ const EXAMPLE_COURSES = [
 /** Parse bearing string like "N45-30-00E" or "N45°30'00\"E" into azimuth radians. */
 function parseBearing(b) {
   if (!b) return null;
-  const m = b.trim().match(/^([NSns])\s*(\d+)[°\-\s](\d+)['\'\-\s](\d+(?:\.\d+)?)["\"\s]*([EWew])/);
+  const m = b.trim().match(/^([NSns])\s*(\d+)[°\-\s](\d+)['\-\s](\d+(?:\.\d+)?)["\s]*([EWew])/);
   if (!m) return null;
   const [, ns, deg, min, sec, ew] = m;
   const decDeg = +deg + +min / 60 + +sec / 3600;
@@ -73,6 +73,7 @@ export default function TraverseTab() {
 
   // ── Typo Assist: run after every failed result ────────────────────────────────────
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTypoHint(null);
     if (!result || result.closure?.status?.startsWith('✓')) return;
     const pobN = parseFloat(pob.northing);
@@ -90,7 +91,7 @@ export default function TraverseTab() {
       }
     });
     if (best) setTypoHint(best);
-  }, [result]);
+  }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addCourse = () => setCourses(c => [...c, { ...BLANK_COURSE }]);
   const removeCourse = i => setCourses(c => c.filter((_, idx) => idx !== i));
@@ -315,7 +316,6 @@ export default function TraverseTab() {
                       {fixDeedResult.correctionTable?.map((c, i) => {
                         const isFixed   = c.status === 'CORRECTED';
                         const isSolved  = c.status === 'SOLVED-BY-INVERSE';
-                        const isOrig    = c.status === 'ORIGINAL';
                         const rowColor  = isFixed ? 'rgba(255,170,0,0.10)' : isSolved ? 'rgba(0,180,255,0.10)' : undefined;
                         return (
                           <tr key={i} style={{ background: rowColor }}>
@@ -492,9 +492,9 @@ export default function TraverseTab() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '0.55rem', gap: '0.75rem', flexWrap: 'wrap' }}>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Flipping this bearing reduces linear error by 
+                    Flipping this bearing reduces linear error by {' '}
                     <strong style={{ color: '#c97a00' }}>{typoHint.improvement.toFixed(4)} ft</strong>
-                     (from {result.closure.linearError.toFixed(4)} ft → ≈{typoHint.newError.toFixed(4)} ft)
+                    {' '}(from {result.closure.linearError.toFixed(4)} ft → ≈{typoHint.newError.toFixed(4)} ft)
                   </div>
                   <button
                     className="btn btn-sm"

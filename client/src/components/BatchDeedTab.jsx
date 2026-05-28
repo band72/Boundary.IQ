@@ -9,15 +9,15 @@ export default function BatchDeedTab() {
   const { triggerStatsRefresh } = useStatsRefresh();
   const [files, setFiles]       = useState([]);     // File[]
   const [drag, setDrag]         = useState(false);
-  const [pobN, setPobN]         = useLocalStorage('boundaryiq_batch_pobn', '5000.00');
-  const [pobE, setPobE]         = useLocalStorage('boundaryiq_batch_pobe', '5000.00');
-  const [county, setCounty]     = useLocalStorage('boundaryiq_batch_county', '');
-  const [stateVal, setStateVal] = useLocalStorage('boundaryiq_batch_state', '');
+  const [pobN]         = useLocalStorage('boundaryiq_batch_pobn', '5000.00');
+  const [pobE]         = useLocalStorage('boundaryiq_batch_pobe', '5000.00');
+  const [county]     = useLocalStorage('boundaryiq_batch_county', '');
+  const [stateVal] = useLocalStorage('boundaryiq_batch_state', '');
   const [concurrentAgents]      = useLocalStorage('boundaryiq_concurrent_agents', 5);
   const [loading, setLoading]   = useState(false);
   const [results, setResults]   = useState(null);   // BatchDeedResult | null
   const [error, setError]       = useState('');
-  const [expanded, setExpanded] = useState({});
+  const [, setExpanded] = useState({});
   const [activeIdx, setActiveIdx] = useState(0);
   const [showPrint, setShowPrint] = useState(false);
   
@@ -450,7 +450,7 @@ export default function BatchDeedTab() {
     }
   };
 
-  const toggle = i => setExpanded(e => ({ ...e, [i]: !e[i] }));
+  // Note: toggle is used inline via setExpanded
 
   const downloadAll = () => {
     if (!results?.results?.length) return;
@@ -1094,11 +1094,15 @@ export default function BatchDeedTab() {
           }}>
             {results.results.map((r, i) => {
               const success = r.status === 'success';
+              const ts = r.trustScore;
+              const trustLevel = r.trustLevel || (ts >= 80 ? 'HIGH' : ts >= 55 ? 'MED' : 'LOW');
+              const trustColor = trustLevel === 'HIGH' ? '#00d4a8' : trustLevel === 'MED' ? '#c97a00' : '#dc3232';
               return (
                 <button
                   key={i}
                   className={`btn ${activeIdx === i ? 'btn-primary' : 'btn-ghost'}`}
                   onClick={() => setActiveIdx(i)}
+                  title={r.trustFlags?.length > 0 ? r.trustFlags.join('\n') : undefined}
                   style={{
                     whiteSpace: 'nowrap',
                     padding: '0.4rem 0.8rem',
@@ -1114,6 +1118,17 @@ export default function BatchDeedTab() {
                 >
                   <span>{success ? '✅' : '❌'}</span>
                   <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{r.fileName}</span>
+                  {ts != null && (
+                    <span style={{
+                      fontSize: '0.62rem', fontWeight: 700, padding: '1px 5px',
+                      borderRadius: '3px', flexShrink: 0,
+                      background: `${trustColor}22`,
+                      border: `1px solid ${trustColor}66`,
+                      color: trustColor,
+                    }}>
+                      {trustLevel === 'MED' ? 'MED' : trustLevel} {ts}
+                    </span>
+                  )}
                 </button>
               );
             })}

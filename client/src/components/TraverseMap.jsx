@@ -15,7 +15,7 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
 
     // Parse bearing (e.g. "N45-30-00E" or "S12°34'56\"W")
     let match = bearingStr.toUpperCase().match(/([NS])\s*(\d+(?:\.\d+)?)(?:\D+(\d+(?:\.\d+)?))?(?:\D+(\d+(?:\.\d+)?))?[^EW]*([EW])/i);
-    let angleRad = 0;
+    let angleRad;
     if (match) {
       let ns = match[1];
       let deg = parseFloat(match[2]);

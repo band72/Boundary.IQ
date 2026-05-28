@@ -269,12 +269,7 @@ router.post('/process-batch', async (req, res) => {
     const results = new Array(batch.length);
 
     db.saveBatchRun(batchId, batch.length, 0.0);
-    console.log(`FolderScan batch ${batchIndex}/${totalBatches - 1}: ${batch.length} files from ${req.query.path}`);
-
-    // Force fast vision model — process-batch must not use slow text models
-    const _origProvider = geminiVision.getActiveProvider ? geminiVision.getActiveProvider() : 'ollama';
-    const _origModel    = geminiVision.getActiveModel();
-    geminiVision.setProvider('ollama', 'gemma4:e2b');
+    console.log(`FolderScan batch ${batchIndex}/${totalBatches - 1}: ${batch.length} files from ${req.query.path} using ${geminiVision.getActiveProvider()}/${geminiVision.getActiveModel()}`);
 
     const semaphore = { current: 0, max: concurrency };
     const tasks = batch.map((filePath, index) => async () => {
@@ -481,8 +476,6 @@ router.post('/process-batch', async (req, res) => {
   } catch (ex) {
     console.error('FolderScan process-batch error:', ex);
     res.status(500).json({ error: ex.message });
-  } finally {
-    try { geminiVision.setProvider(_origProvider, _origModel); } catch {}
   }
 
 });

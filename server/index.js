@@ -18,6 +18,8 @@ import cors from 'cors';
 // Initialize services
 import * as gemini from './services/geminiVision.js';
 import * as diagnosticsDb from './services/diagnosticsDb.js';
+import * as ollamaSvc from './services/ollamaVision.js';
+import { spawn } from 'child_process';
 
 // Route modules
 import healthRouter from './routes/health.js';
@@ -99,11 +101,39 @@ app.use((err, req, res, next) => {
 });
 
 // ── Start ───────────────────────────────────────────────────────────────────
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   console.log(`\n🌐 Boundary.IQ API (Node.js) listening on http://localhost:${PORT}`);
   console.log(`   Health check:  http://localhost:${PORT}/api/health`);
   console.log(`   Diagnostics:   http://localhost:${PORT}/api/diagnostics/stats`);
   console.log(`   Deed Solver:   http://localhost:${PORT}/api/deed/models (local LLM endpoint)\n`);
+
+  // ── Auto-start Ollama if not running ─────────────────────────────────────
+  try {
+    const ollamaStatus = await ollamaSvc.getStatus();
+    if (ollamaStatus.online) {
+      console.log(`✓ Ollama online — ${ollamaStatus.models.length} model(s): ${ollamaStatus.models.join(', ')}`);
+    } else {
+      console.log('⏳ Ollama offline — attempting auto-start (ollama serve)…');
+      const ollamaPath = process.env.OLLAMA_PATH || 'ollama';
+      const child = spawn(ollamaPath, ['serve'], { detached: true, stdio: 'ignore' });
+      child.unref();
+      // Poll for up to 10s
+      let waited = 0;
+      const pollInterval = setInterval(async () => {
+        waited += 2000;
+        const s = await ollamaSvc.getStatus();
+        if (s.online) {
+          clearInterval(pollInterval);
+          console.log(`✓ Ollama auto-started — ${s.models.length} model(s): ${s.models.join(', ')}`);
+        } else if (waited >= 10000) {
+          clearInterval(pollInterval);
+          console.warn('⚠ Ollama did not respond after 10s. Start manually with: ollama serve');
+        }
+      }, 2000);
+    }
+  } catch (ex) {
+    console.warn('⚠ Ollama auto-start check failed:', ex.message);
+  }
 });
 
 // Configure server timeouts to 30 minutes to support local CPU LLM inference

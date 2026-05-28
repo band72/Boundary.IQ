@@ -28,6 +28,7 @@ export function StatsRefreshProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useStatsRefresh() {
   return useContext(StatsRefreshContext);
 }

@@ -97,6 +97,7 @@ export default function SettingsTab() {
     } catch (e) { console.error('Failed to fetch DB stats:', e); }
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchStats(); fetchModelConfig(); }, [fetchStats, fetchModelConfig]);
 
   const dbAction = async (url, label) => {
@@ -117,7 +118,7 @@ export default function SettingsTab() {
     openai: { color: '#a855f7', icon: '🔌', gradient: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)', label: 'Compat' },
   };
 
-  const isOllamaOffline = modelConfig && !modelConfig.ollama.online;
+  // isOllamaOffline is derived below inline where needed
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -360,7 +361,7 @@ export default function SettingsTab() {
           {/* OpenAI-Compat Status Row */}
           {modelConfig?.openaiCompat && (
             <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              display: 'flex', alignItems: 'center',
               padding: '0.6rem 1rem',
               background: modelConfig.openaiCompat.online ? 'rgba(168,85,247,0.06)' : 'rgba(100,100,120,0.06)',
               border: `1px solid ${modelConfig.openaiCompat.online ? 'rgba(168,85,247,0.25)' : 'var(--border)'}`,

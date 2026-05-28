@@ -58,7 +58,7 @@ export default function DashboardTab() {
     if (!raw) return null;
     // If RawJson is embedded parse it for MentalMapSummary
     let rawParsed = null;
-    try { rawParsed = typeof raw.RawJson === 'string' ? JSON.parse(raw.RawJson) : raw.RawJson; } catch {}
+    try { rawParsed = typeof raw.RawJson === 'string' ? JSON.parse(raw.RawJson) : raw.RawJson; } catch { /* invalid JSON, ignore */ }
     return {
       courses:          raw.courses        || raw.Courses        || rawParsed?.Segments || rawParsed?.segments || [],
       message:          raw.message        || raw.Message        || '',
@@ -74,7 +74,7 @@ export default function DashboardTab() {
       const url = `${API}/diagnostics/failed-deeds${bucket ? `?bucket=${bucket}` : ''}`;
       const res = await fetch(url);
       if (res.ok) setFailedDeeds(await res.json());
-    } catch {}
+    } catch (e) { console.error('Failed to fetch failed deeds:', e); }
     finally { setFailedLoading(false); }
   };
 
@@ -109,8 +109,10 @@ export default function DashboardTab() {
 
   // Fetch on mount AND whenever any tab triggers a global stats refresh
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStats();
     if (drawerOpen) fetchFailedDeeds(activeBucket);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchStats, statsRefreshKey]);
 
   const runDbAction = async (endpoint, label) => {

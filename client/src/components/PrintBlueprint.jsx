@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { API } from '../config';
 const PAD = 50;
@@ -16,7 +16,7 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
 
     // Parse bearing (e.g. "N45-30-00E" or "S12°34'56\"W")
     let match = bearingStr.toUpperCase().match(/([NS])\s*(\d+(?:\.\d+)?)(?:\D+(\d+(?:\.\d+)?))?(?:\D+(\d+(?:\.\d+)?))?[^EW]*([EW])/i);
-    let angleRad = 0;
+    let angleRad;
     if (match) {
       let ns = match[1];
       let deg = parseFloat(match[2]);
@@ -257,6 +257,7 @@ export default function PrintBlueprint({
   );
 
   // Main drawing logic
+  // eslint-disable-next-line react-hooks/immutability
   useEffect(() => {
     const draw = (canvas) => {
       if (!canvas) return;
@@ -403,16 +404,11 @@ export default function PrintBlueprint({
           const cpy = cdx / clen;
 
           // Find matching label ID
-          let labelId = '';
-          if (c.type === 'Curve') {
-            const cMatch = curvesList.find(item => item.idx === i);
-            labelId = cMatch ? cMatch.id : '';
-          } else {
-            const lMatch = linesList.find(item => item.idx === i);
-            labelId = lMatch ? lMatch.id : '';
-          }
+          const matchedId = c.type === 'Curve'
+            ? (curvesList.find(item => item.idx === i)?.id ?? '')
+            : (linesList.find(item => item.idx === i)?.id ?? '');
 
-          if (labelId) {
+          if (matchedId) {
             // Offset text by 12 pixels perpendicular
             const lx = mx + cpx * 12;
             const ly = my + cpy * 12;
@@ -420,12 +416,12 @@ export default function PrintBlueprint({
             // Draw small white badge behind label for legibility if grid is enabled
             ctx.save();
             ctx.fillStyle = '#ffffff';
-            const txtWidth = ctx.measureText(labelId).width;
+            const txtWidth = ctx.measureText(matchedId).width;
             ctx.fillRect(lx - txtWidth / 2 - 2, ly - 6, txtWidth + 4, 12);
             ctx.restore();
 
             ctx.fillStyle = '#000000';
-            ctx.fillText(labelId, lx, ly);
+            ctx.fillText(matchedId, lx, ly);
           }
         });
       }
@@ -511,7 +507,9 @@ export default function PrintBlueprint({
       ctx.restore();
     };
 
+    // eslint-disable-next-line react-hooks/immutability
     draw(canvasElement);
+    // eslint-disable-next-line react-hooks/immutability
     draw(printCanvasElement);
 
   }, [canvasElement, printCanvasElement, courses, stations, adjusted, units, showGrid, showLabels, showRaw, showAdjusted]);
@@ -528,6 +526,7 @@ export default function PrintBlueprint({
 
     const ctx = canvas.getContext('2d');
     const W = 720, H = 480;
+    // eslint-disable-next-line react-hooks/immutability
     canvas.width = W * 2;
     canvas.height = H * 2;
     ctx.scale(2, 2);

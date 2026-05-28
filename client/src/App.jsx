@@ -5,6 +5,7 @@ import WriterTab from './components/WriterTab';
 import BatchDeedTab from './components/BatchDeedTab';
 import DashboardTab from './components/DashboardTab';
 import SettingsTab from './components/SettingsTab';
+import HelpModal from './components/HelpModal';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 
 const TABS = [
@@ -18,6 +19,7 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState('traverse');
+  const [helpOpen, setHelpOpen] = useState(false);
 
   return (
     <StatsRefreshProvider>
@@ -51,11 +53,32 @@ export default function App() {
 
             <div className="divider" style={{ margin: '1rem 1.25rem' }} />
             <div className="nav-section">Resources</div>
-            <button className="nav-item">
-              <span className="nav-icon">📖</span> API Docs
+
+            {/* Help / Docs button */}
+            <button
+              className="nav-item"
+              onClick={() => setHelpOpen(true)}
+              style={{ position: 'relative' }}
+            >
+              <span className="nav-icon">📖</span>
+              Help &amp; Docs
+              <span style={{
+                marginLeft: 'auto',
+                fontSize: '0.58rem',
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                background: 'rgba(61,127,255,0.15)',
+                border: '1px solid rgba(61,127,255,0.35)',
+                color: 'var(--accent)',
+                padding: '1px 5px',
+                borderRadius: 3,
+                flexShrink: 0,
+              }}>README</span>
             </button>
+
             <button className="nav-item">
-              <span className="nav-icon">⚡</span> Health Status
+              <span className="nav-icon">⚡</span>
+              Health Status
             </button>
 
             {/* Engine badge */}
@@ -89,6 +112,9 @@ export default function App() {
           </main>
         </div>
       </div>
+
+      {/* Help Modal — rendered outside the app-shell so it overlays everything */}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </StatsRefreshProvider>
   );
 }
