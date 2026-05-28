@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import crypto from 'crypto';
 
 let db = null;
 let dbPath = '';
@@ -55,6 +56,21 @@ function initializeDatabase() {
       ProblemName TEXT NOT NULL,
       SolutionApplied TEXT NOT NULL,
       SuccessCount INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS Users (
+      Id INTEGER PRIMARY KEY AUTOINCREMENT,
+      Username TEXT UNIQUE NOT NULL,
+      PasswordHash TEXT NOT NULL,
+      Role TEXT NOT NULL DEFAULT 'user',
+      Timestamp TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS Sessions (
+      Token TEXT PRIMARY KEY,
+      UserId INTEGER NOT NULL,
+      ExpiresAt TEXT NOT NULL,
+      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
     );
   `);
 
@@ -406,15 +422,15 @@ export function getDatabaseStats() {
     fileSizeMb: Math.round(fileSizeBytes / 1048576 * 100) / 100,
     fileSizeBytes,
     deedLogCount, passCount, failCount, meanderCount, errorCount, batchRunCount, heuristicCount,
-    oldestTimestamp: range?.oldest || null,
-    newestTimestamp: range?.newest || null,
+    oldestTimestamp: (range ? range.oldest : null) || null,
+    newestTimestamp: (range ? range.newest : null) || null,
     classifications,
     repairStages,
     errorDistribution: {
-      nearClosed: errors?.nearClosed || 0,
-      minorError: errors?.minorError || 0,
-      moderateError: errors?.moderateError || 0,
-      majorError: errors?.majorError || 0
+      nearClosed: (errors ? errors.nearClosed : 0) || 0,
+      minorError: (errors ? errors.minorError : 0) || 0,
+      moderateError: (errors ? errors.moderateError : 0) || 0,
+      majorError: (errors ? errors.majorError : 0) || 0
     }
   };
 }
@@ -494,27 +510,27 @@ export function getBatchStats(batchId) {
   return {
     batchId,
     counts: {
-      total:    counts?.total    || 0,
-      passed:   counts?.passed   || 0,
-      failed:   counts?.failed   || 0,
-      errors:   counts?.errors   || 0,
-      meanders: counts?.meanders || 0,
-      skipped:  counts?.skipped  || 0,
+      total:    (counts ? counts.total : 0)    || 0,
+      passed:   (counts ? counts.passed : 0)   || 0,
+      failed:   (counts ? counts.failed : 0)   || 0,
+      errors:   (counts ? counts.errors : 0)   || 0,
+      meanders: (counts ? counts.meanders : 0) || 0,
+      skipped:  (counts ? counts.skipped : 0)  || 0,
     },
-    passRate: counts?.total > 0 ? (counts.passed / counts.total) : 0,
+    passRate: (counts && counts.total > 0) ? (counts.passed / counts.total) : 0,
     precision: {
-      avg:       counts?.avgPrecision  || 0,
-      best:      counts?.bestPrecision || 0,
-      excellent: precisionBuckets?.excellent || 0,
-      good:      precisionBuckets?.good      || 0,
-      fair:      precisionBuckets?.fair      || 0,
-      poor:      precisionBuckets?.poor      || 0,
+      avg:       (counts ? counts.avgPrecision : 0)  || 0,
+      best:      (counts ? counts.bestPrecision : 0) || 0,
+      excellent: (precisionBuckets ? precisionBuckets.excellent : 0) || 0,
+      good:      (precisionBuckets ? precisionBuckets.good : 0)      || 0,
+      fair:      (precisionBuckets ? precisionBuckets.fair : 0)      || 0,
+      poor:      (precisionBuckets ? precisionBuckets.poor : 0)      || 0,
     },
     closure: {
-      avgLinearErr: counts?.avgLinearErr  || 0,
-      maxLinearErr: counts?.maxLinearErr  || 0,
+      avgLinearErr: (counts ? counts.avgLinearErr : 0)  || 0,
+      maxLinearErr: (counts ? counts.maxLinearErr : 0)  || 0,
     },
-    avgTrustScore: counts?.avgTrustScore || null,
+    avgTrustScore: (counts ? counts.avgTrustScore : null) || null,
     stages,
     failedFiles,
   };
@@ -547,7 +563,7 @@ function mapDeedLog(r) {
     status: r.Status, repairStageUsed: r.RepairStageUsed, timestamp: r.Timestamp,
     extractionJson: r.ExtractionJson, traverseJson: r.TraverseJson,
     agentTurnsJson: r.AgentTurnsJson, trustScore: r.TrustScore,
-    solutionStepsJson: r.SolutionStepsJson ?? null,
+    solutionStepsJson: (r.SolutionStepsJson !== undefined && r.SolutionStepsJson !== null ? r.SolutionStepsJson : null),
   };
 }
 
@@ -572,3 +588,90 @@ export function getSolutionSteps(fileName) {
     };
   } catch { return null; }
 }
+
+// ─── Cryptography & Auth Helpers ─────────────────────────────────────────────
+
+export function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password, storedHash) {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [salt, originalHash] = storedHash.split(':');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return hash === originalHash;
+}
+
+export function createUser(username, password, role = 'user') {
+  // Check if duplicate user exists
+  const existing = db.prepare('SELECT Id FROM Users WHERE Username = ?').get(username);
+  if (existing) {
+    throw new Error('Username already exists');
+  }
+  const passwordHash = hashPassword(password);
+  const result = db.prepare('INSERT INTO Users (Username, PasswordHash, Role, Timestamp) VALUES (?, ?, ?, ?)')
+    .run(username, passwordHash, role, now());
+  
+  return {
+    id: result.lastInsertRowid,
+    username,
+    role
+  };
+}
+
+export function verifyUser(username, password) {
+  const row = db.prepare('SELECT * FROM Users WHERE Username = ?').get(username);
+  if (!row) return null;
+  const isValid = verifyPassword(password, row.PasswordHash);
+  if (!isValid) return null;
+  return {
+    id: row.Id,
+    username: row.Username,
+    role: row.Role
+  };
+}
+
+export function createSession(userId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  // Expires in 7 days
+  const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString().replace('T', ' ').slice(0, 19);
+  db.prepare('INSERT INTO Sessions (Token, UserId, ExpiresAt) VALUES (?, ?, ?)')
+    .run(token, userId, expiresAt);
+  return token;
+}
+
+export function getSession(token) {
+  const row = db.prepare(`
+    SELECT s.Token, s.ExpiresAt, u.Id as UserId, u.Username, u.Role
+    FROM Sessions s
+    INNER JOIN Users u ON s.UserId = u.Id
+    WHERE s.Token = ?
+  `).get(token);
+
+  if (!row) return null;
+
+  // Check expiration
+  const nowStr = now();
+  if (row.ExpiresAt < nowStr) {
+    db.prepare('DELETE FROM Sessions WHERE Token = ?').run(token);
+    return null;
+  }
+
+  return {
+    userId: row.UserId,
+    username: row.Username,
+    role: row.Role
+  };
+}
+
+export function deleteSession(token) {
+  db.prepare('DELETE FROM Sessions WHERE Token = ?').run(token);
+}
+
+export function findUserByUsername(username) {
+  const row = db.prepare('SELECT Id as id, Username as username, Role as role FROM Users WHERE Username = ?').get(username);
+  return row ? { id: row.id, username: row.username, role: row.role } : null;
+}
+

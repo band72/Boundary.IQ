@@ -32,6 +32,7 @@ import batchDeedRouter from './routes/batchDeed.js';
 import folderScanRouter from './routes/folderScan.js';
 import settingsRouter from './routes/settings.js';
 import deedRouter from './routes/deed.js';
+import authRouter from './routes/auth.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '5050');
@@ -93,6 +94,7 @@ app.use('/api/batchdeed', batchDeedRouter);
 app.use('/api/folderscan', folderScanRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/deed', deedRouter);
+app.use('/api/auth', authRouter);
 
 // ── Error handling ──────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {

@@ -52,7 +52,7 @@ function SectionOverview() {
       </Callout>
 
       <Section title="Core Technology Stack">
-        <Row label="COGO Engine" value="RCS Coordinate Geometry — Forward projection, Compass Rule, Shoelace area" />
+        <Row label="COGO Engine" value="Coordinate Geometry — Forward projection, Compass Rule, Shoelace area" />
         <Row label="AI Vision" value="Google Gemini 3.5 Flash (cloud) | Ollama gemma4/qwen2.5/deepseek (local)" />
         <Row label="Repair Pipeline" value="7-stage agentic system: Bowtie, Scrivener, Compass, Meander, Multi-agent" />
         <Row label="Export" value="DXF, GeoJSON, legal description TXT, print blueprint PDF" />

@@ -6,6 +6,7 @@ import BatchDeedTab from './components/BatchDeedTab';
 import DashboardTab from './components/DashboardTab';
 import SettingsTab from './components/SettingsTab';
 import HelpModal from './components/HelpModal';
+import LoginScreen from './components/LoginScreen';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
@@ -26,6 +27,61 @@ export default function App() {
   const [tab, setTab] = useState('traverse');
   const [helpOpen, setHelpOpen] = useState(false);
 
+  // Authentication State
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Verify active session on load
+  useEffect(() => {
+    const token = localStorage.getItem('boundaryiq_auth_token');
+    if (token) {
+      fetch('/api/auth/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Session invalid');
+        return res.json();
+      })
+      .then(data => {
+        setUser(data);
+      })
+      .catch(() => {
+        localStorage.removeItem('boundaryiq_auth_token');
+      })
+      .finally(() => {
+        setAuthLoading(false);
+      });
+    } else {
+      setAuthLoading(false);
+    }
+  }, []);
+
+  const handleAuthSuccess = (payload) => {
+    localStorage.setItem('boundaryiq_auth_token', payload.token);
+    setUser({ username: payload.username, role: payload.role });
+  };
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem('boundaryiq_auth_token');
+    localStorage.removeItem('boundaryiq_auth_token');
+    setUser(null);
+
+    if (token) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      } catch (err) {
+        console.error('Revoke session failed:', err.message);
+      }
+    }
+  };
+
   // Auto-redirect if currently active tab gets hidden
   useEffect(() => {
     if (hideTraverse && tab === 'traverse') {
@@ -44,6 +100,28 @@ export default function App() {
     return true;
   });
 
+  if (authLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: '#090e1a',
+        gap: '1rem',
+        color: 'var(--text-secondary)'
+      }}>
+        <span className="spinner" style={{ width: 40, height: 40, borderWidth: 3 }}></span>
+        <span style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>Verifying Engine Authorization...</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen onAuthSuccess={handleAuthSuccess} />;
+  }
+
   return (
     <StatsRefreshProvider>
       <div className="app-shell">
@@ -56,7 +134,18 @@ export default function App() {
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
             Survey Intelligence Platform
           </span>
-          <div className="header-badge">BETA · v1.0</div>
+          <div className="header-badge" style={{ marginRight: '1rem' }}>BETA · v1.0</div>
+
+          {/* User Profile Badge */}
+          <div className="user-badge" style={{ marginLeft: 'auto' }}>
+            <div className="user-avatar">
+              {user.username.substring(0, 2).toUpperCase()}
+            </div>
+            <span className="user-name" title={user.username}>{user.username}</span>
+            <button className="logout-icon-btn" onClick={handleLogout} title="Sign Out">
+              🚪
+            </button>
+          </div>
         </header>
 
         <div className="main-content">
@@ -115,7 +204,7 @@ export default function App() {
                 color: 'var(--text-muted)',
                 lineHeight: 1.7
               }}>
-                <div style={{ color: 'var(--accent)', fontWeight: 600, marginBottom: '0.3rem' }}>RCS COGO Engine</div>
+                <div style={{ color: 'var(--accent)', fontWeight: 600, marginBottom: '0.3rem' }}>COGO Engine</div>
                 <div>GeometryEngine · Forward</div>
                 <div>Compass Rule Adjustment</div>
                 <div>Shoelace Area</div>
