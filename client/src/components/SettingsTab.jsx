@@ -27,7 +27,7 @@ export default function SettingsTab({
   const [parallelBatches, setParallelBatches]   = useLocalStorage('boundaryiq_parallel_batches', 1);
   const [maxFileSize, setMaxFileSize]           = useLocalStorage('boundaryiq_max_file_size', 51);
   const [retentionDays, setRetentionDays]       = useLocalStorage('boundaryiq_retention_days', 90);
-  const [autoOutput, setAutoOutput]             = useLocalStorage('boundaryiq_auto_output', false);
+  const [autoOutput, setAutoOutput]             = useLocalStorage('boundaryiq_auto_output', true);
 
   // Database stats
   const [dbStats, setDbStats]       = useState(null);
@@ -42,6 +42,53 @@ export default function SettingsTab({
   const [switchingTo, setSwitchingTo]   = useState(null);
   const [startingOllama, setStartingOllama] = useState(false);
   const [openaiBaseUrl, setOpenaiBaseUrl] = useLocalStorage('boundaryiq_openai_base_url', 'http://127.0.0.1:11434/v1');
+
+  // API Keys state
+  const [geminiKey, setGeminiKey] = useLocalStorage('boundaryiq_gemini_key', '');
+  const [openaiKey, setOpenaiKey] = useLocalStorage('boundaryiq_openai_key', '');
+  const [saveKeysLoading, setSaveKeysLoading] = useState(false);
+  const [keysMsg, setKeysMsg] = useState('');
+
+  // Dropdown selectors state
+  const [selectedVendor, setSelectedVendor] = useState('gemini');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash');
+
+  const saveKeysToBackend = async (gKey, oKey, silent = false) => {
+    if (!silent) setSaveKeysLoading(true);
+    try {
+      const res = await fetch(`${API}/settings/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geminiApiKey: gKey, openAiApiKey: oKey }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (!silent) setKeysMsg('✓ API keys saved and loaded on server memory.');
+        fetchModelConfig();
+      } else {
+        if (!silent) setKeysMsg(`✗ Error: ${data.error}`);
+      }
+    } catch (e) {
+      if (!silent) setKeysMsg(`✗ Connection Error: ${e.message}`);
+    } finally {
+      if (!silent) setSaveKeysLoading(false);
+    }
+  };
+
+  // Sync dropdown selectors with active config on load
+  useEffect(() => {
+    if (modelConfig) {
+      setSelectedVendor(modelConfig.activeProvider || 'gemini');
+      setSelectedModel(modelConfig.activeModel || 'gemini-3.5-flash');
+    }
+  }, [modelConfig]);
+
+  // Load API keys to backend on mount
+  useEffect(() => {
+    if (geminiKey || openaiKey) {
+      saveKeysToBackend(geminiKey, openaiKey, true);
+    }
+  }, []);
 
   const fetchModelConfig = useCallback(async () => {
     setModelLoading(true);
@@ -312,81 +359,199 @@ export default function SettingsTab({
             </div>
           )}
 
-          {/* Model Selector Grid */}
-          {modelConfig && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.65rem' }}>
-              {modelConfig.availableModels.map(m => {
-                const isActive = modelConfig.activeProvider === m.provider && modelConfig.activeModel === m.id;
-                const isSwitching = switchingTo === `${m.provider}/${m.id}`;
-                const needsOllama = m.provider === 'ollama' && !modelConfig.ollama.online;
-                const meta = providerMeta[m.provider] || providerMeta.gemini;
+          {/* API Keys Configuration Section */}
+          <div style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '1.25rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem',
+          }}>
+            <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.2rem' }}>
+              <span>🔑</span> API Keys & Credentials
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              {/* Gemini Key Input */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '240px' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Google Gemini API Key
+                </label>
+                <input
+                  type="password"
+                  placeholder="Paste your Gemini API Key here (starts with AIza...)"
+                  value={geminiKey}
+                  onChange={(e) => { setGeminiKey(e.target.value); setKeysMsg(''); }}
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.55rem 0.85rem',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'monospace',
+                    fontSize: '0.8rem',
+                  }}
+                />
+              </div>
+              {/* OpenAI Key Input */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '240px' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  OpenAI / Compatible API Key (optional)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Paste OpenAI API Key here (starts with sk-...)"
+                  value={openaiKey}
+                  onChange={(e) => { setOpenaiKey(e.target.value); setKeysMsg(''); }}
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.55rem 0.85rem',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'monospace',
+                    fontSize: '0.8rem',
+                  }}
+                />
+              </div>
+            </div>
 
-                return (
-                  <button
-                    key={`${m.provider}-${m.id}`}
-                    title={needsOllama ? 'Start Ollama first to use this model' : undefined}
-                    disabled={isActive || modelLoading}
-                    onClick={() => needsOllama ? startOllama() : switchModel(m.provider, m.id)}
-                    style={{
-                      background: isActive
-                        ? `linear-gradient(135deg, ${meta.color}18 0%, ${meta.color}08 100%)`
-                        : needsOllama ? 'rgba(220,50,50,0.04)' : 'var(--bg-elevated)',
-                      border: `1px solid ${isActive ? meta.color + '60' : needsOllama ? 'rgba(220,50,50,0.25)' : 'var(--border)'}`,
-                      borderRadius: 'var(--radius-md)',
-                      padding: '0.85rem 1rem',
-                      cursor: isActive ? 'default' : needsOllama ? 'pointer' : 'pointer',
-                      opacity: needsOllama ? 0.65 : 1,
-                      transition: 'all 0.25s ease',
-                      textAlign: 'left',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.3rem',
-                      position: 'relative',
-                      boxShadow: isActive ? `0 0 16px ${meta.color}20` : 'none',
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                🔒 Credentials are saved securely in your browser and automatically loaded to server memory on startup.
+              </span>
+              <button
+                onClick={() => saveKeysToBackend(geminiKey, openaiKey)}
+                disabled={saveKeysLoading}
+                className="btn btn-primary"
+                style={{
+                  padding: '0.55rem 1.25rem',
+                  fontSize: '0.78rem',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                {saveKeysLoading ? '⏳ Saving…' : '💾 Save API Keys'}
+              </button>
+            </div>
+
+            {keysMsg && (
+              <div style={{
+                padding: '0.45rem 0.75rem',
+                borderRadius: 'var(--radius-sm)',
+                background: keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)',
+                border: `1px solid ${keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
+                color: keysMsg.startsWith('✓') ? 'var(--success)' : '#dc3232',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+              }}>
+                {keysMsg}
+              </div>
+            )}
+          </div>
+
+          {/* Model & Vendor Dropdown Selector */}
+          {modelConfig && (
+            <div style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              marginTop: '0.2rem',
+            }}>
+              <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.2rem' }}>
+                <span>🤖</span> Vendor & Model Selector
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                {/* Vendor Dropdown */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '200px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Vendor</label>
+                  <select
+                    value={selectedVendor}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSelectedVendor(v);
+                      const firstModel = modelConfig?.availableModels.find(m => m.provider === v)?.id || '';
+                      setSelectedModel(firstModel);
                     }}
-                    onMouseEnter={e => { if (!isActive) { e.currentTarget.style.borderColor = needsOllama ? 'rgba(220,50,50,0.5)' : meta.color + '50'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-                    onMouseLeave={e => { if (!isActive) { e.currentTarget.style.borderColor = needsOllama ? 'rgba(220,50,50,0.25)' : 'var(--border)'; e.currentTarget.style.transform = 'none'; } }}
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.55rem 0.85rem',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      height: '38px',
+                    }}
                   >
-                    {/* Provider tag */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{
-                        fontSize: '0.65rem',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em',
-                        color: meta.color,
-                        background: meta.color + '15',
-                        padding: '1px 6px',
-                        borderRadius: '3px',
-                      }}>
-                        {meta.icon} {m.provider}
-                      </span>
-                      {isActive && (
-                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--success)' }}>✓ ACTIVE</span>
-                      )}
-                      {needsOllama && !isActive && (
-                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#dc3232' }}>▶ Start</span>
-                      )}
-                      {isSwitching && (
-                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#c97a00', animation: 'pulse 0.6s infinite' }}>⏳</span>
-                      )}
-                    </div>
-                    {/* Model name */}
-                    <span style={{
-                      fontSize: '0.88rem',
-                      fontWeight: 700,
-                      color: isActive ? '#fff' : 'var(--text-primary)',
+                    <option value="gemini">☁️ Google Gemini (Cloud)</option>
+                    <option value="ollama">🖥️ Ollama (Local/Offline)</option>
+                    <option value="openai">🔌 OpenAI-Compatible (Custom Endpoint)</option>
+                  </select>
+                </div>
+
+                {/* Model Dropdown */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1.5, minWidth: '240px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Model</label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.55rem 0.85rem',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8rem',
                       fontFamily: 'JetBrains Mono, monospace',
-                    }}>
-                      {m.name}
-                    </span>
-                    {/* Description */}
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                      {m.description}
-                    </span>
-                  </button>
-                );
-              })}
+                      cursor: 'pointer',
+                      height: '38px',
+                    }}
+                  >
+                    {modelConfig?.availableModels
+                      .filter(m => m.provider === selectedVendor)
+                      .map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.id})
+                        </option>
+                      ))
+                    }
+                    {selectedVendor === 'openai' && modelConfig?.availableModels.filter(m => m.provider === 'openai').length === 0 && (
+                      <option value="llama3">Default Llama 3 (compat)</option>
+                    )}
+                  </select>
+                </div>
+
+                {/* Switch button */}
+                <button
+                  className="btn btn-primary"
+                  disabled={modelLoading || !selectedModel || (modelConfig?.activeProvider === selectedVendor && modelConfig?.activeModel === selectedModel)}
+                  onClick={() => {
+                    if (selectedVendor === 'ollama' && !modelConfig?.ollama?.online) {
+                      startOllama();
+                    } else {
+                      switchModel(selectedVendor, selectedModel);
+                    }
+                  }}
+                  style={{
+                    height: '38px',
+                    padding: '0 1.5rem',
+                    background: providerMeta[selectedVendor]?.gradient || 'var(--accent)',
+                    borderColor: 'transparent',
+                    boxShadow: `0 0 14px ${providerMeta[selectedVendor]?.color || 'var(--accent)'}22`,
+                    borderRadius: 'var(--radius-sm)',
+                    fontWeight: 700,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {switchingTo ? '⏳ Switching…' : '✓ Switch AI Driver'}
+                </button>
+              </div>
             </div>
           )}
 

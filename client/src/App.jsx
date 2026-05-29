@@ -27,8 +27,8 @@ export default function App() {
   const [tab, setTab] = useState('traverse');
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // Authentication State
-  const [user, setUser] = useState(null);
+  // Authentication State (Bypassed with Guest user by default)
+  const [user, setUser] = useState({ username: 'Guest', role: 'administrator' });
   const [authLoading, setAuthLoading] = useState(true);
 
   // Verify active session on load

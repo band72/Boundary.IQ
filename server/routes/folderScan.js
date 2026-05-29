@@ -1029,4 +1029,46 @@ router.post('/retry-failed', async (req, res) => {
   }
 });
 
+// GET /api/folderscan/browse - Safe directory browser for selection
+router.get('/browse', (req, res) => {
+  try {
+    const roots = getAllowedRoots();
+    let currentPath = req.query.path ? path.resolve(req.query.path) : roots[0];
+
+    // Validate path to prevent directory traversal
+    const validPath = validatePath(currentPath);
+    if (!validPath) {
+      return res.status(403).json({ error: 'Path is not allowed. Set BOUNDARY_SCAN_ROOTS env var to configure.' });
+    }
+
+    if (!fs.existsSync(validPath)) {
+      return res.status(404).json({ error: `Directory not found: ${validPath}` });
+    }
+
+    const stat = fs.statSync(validPath);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory.' });
+    }
+
+    const items = fs.readdirSync(validPath, { withFileTypes: true });
+    const subfolders = items
+      .filter(item => item.isDirectory() && !item.name.startsWith('.'))
+      .map(item => item.name)
+      .sort();
+
+    // Determine parent path (if it's still within allowed roots)
+    const parentPath = path.dirname(validPath);
+    const hasParent = validatePath(parentPath) !== null;
+
+    res.json({
+      currentPath: validPath,
+      parentPath: hasParent ? parentPath : null,
+      subfolders,
+      roots
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

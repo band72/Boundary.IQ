@@ -118,6 +118,9 @@ const server = app.listen(PORT, async () => {
       console.log('⏳ Ollama offline — attempting auto-start (ollama serve)…');
       const ollamaPath = process.env.OLLAMA_PATH || 'ollama';
       const child = spawn(ollamaPath, ['serve'], { detached: true, stdio: 'ignore' });
+      child.on('error', (err) => {
+        // Handle spawn errors (like ENOENT) gracefully without crashing
+      });
       child.unref();
       // Poll for up to 10s
       let waited = 0;

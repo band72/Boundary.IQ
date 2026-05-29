@@ -4,6 +4,7 @@ import PrintBlueprint from './PrintBlueprint';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useStatsRefresh } from '../hooks/useStatsRefresh.jsx';
 import { API } from '../config';
+import FolderBrowserModal from './FolderBrowserModal';
 
 export default function BatchDeedTab() {
   const { triggerStatsRefresh } = useStatsRefresh();
@@ -56,13 +57,15 @@ export default function BatchDeedTab() {
   }, [activeIdx, results]);
 
   // Folder Scan state
-  const [folderPath, setFolderPath] = useLocalStorage('boundaryiq_folder_path', '/home/friend/Downloads/TrainPDF/Regency-Title');
+  const [folderPath, setFolderPath] = useLocalStorage('boundaryiq_folder_path', '/home/bando/Downloads/TrainPDF/Regency-Title');
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [folderManifest, setFolderManifest] = useState(null);
   const [folderScanLoading, setFolderScanLoading] = useState(false);
   const [folderBatchLoading, setFolderBatchLoading] = useState(false);
   const [folderBatchProgress, setFolderBatchProgress] = useState(null);
   const [batchStatuses, setBatchStatuses] = useState([]);
   const [folderError, setFolderError] = useState('');
+  const [lastOutputFolder, setLastOutputFolder] = useState('');
   const [parallelBatches] = useLocalStorage('boundaryiq_parallel_batches', 1);
 
   // Retry failed state
@@ -589,11 +592,12 @@ export default function BatchDeedTab() {
     setFolderBatchLoading(true);
     setFolderBatchProgress({ current: 0, total, results: [], startTime: Date.now() });
     setFolderError('');
+    setLastOutputFolder('');
 
     // Read auto-output setting from localStorage
     const autoOutputEnabled = (() => {
-      try { return JSON.parse(localStorage.getItem('boundaryiq_auto_output') || 'false'); }
-      catch { return false; }
+      try { return JSON.parse(localStorage.getItem('boundaryiq_auto_output') || 'true'); }
+      catch { return true; }
     })();
 
     const baseParams = new URLSearchParams({
@@ -616,6 +620,10 @@ export default function BatchDeedTab() {
         const res  = await fetch(`${API}/folderscan/process-batch?${p}`, { method: 'POST' });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? `Batch ${i} error ${res.status}`);
+
+        if (data?.outputFolder) {
+          setLastOutputFolder(data.outputFolder);
+        }
 
         const batchResults = data.results?.results ?? [];
         allResults = [...allResults, ...batchResults];
@@ -790,7 +798,21 @@ export default function BatchDeedTab() {
           <div className="card-title">📁 Folder Scan — Process Entire Directory</div>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Point to a server-side folder · Auto-classifies · Skips non-boundary docs</span>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
+          <button
+            className="btn btn-ghost"
+            onClick={() => setBrowserOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.6rem 0.9rem',
+              height: '40px',
+              flexShrink: 0
+            }}
+          >
+            📁 Browse
+          </button>
           <input
             type="text"
             placeholder="/home/user/Downloads/TrainPDF/Regency-Title"
@@ -914,6 +936,49 @@ export default function BatchDeedTab() {
                 </div>
               );
             })()}
+
+            {lastOutputFolder && (
+              <div style={{
+                background: 'rgba(0, 212, 168, 0.06)',
+                border: '1px solid rgba(0, 212, 168, 0.25)',
+                borderRadius: '8px',
+                padding: '0.85rem 1.1rem',
+                margin: '1.2rem 0 0.5rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                fontSize: '0.82rem',
+                color: 'var(--success)',
+                animation: 'slideDown 0.3s ease-out'
+              }}>
+                <span style={{ fontSize: '1.2rem' }}>📂</span>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ color: '#fff', display: 'block', marginBottom: '0.15rem' }}>Outputs Auto-Saved Successfully!</strong>
+                  <span style={{ color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.76rem', wordBreak: 'break-all' }}>
+                    {lastOutputFolder}
+                  </span>
+                </div>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(lastOutputFolder);
+                    alert('Output folder path copied to clipboard!');
+                  }}
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    fontSize: '0.7rem',
+                    background: 'rgba(0, 212, 168, 0.12)',
+                    border: '1px solid rgba(0, 212, 168, 0.25)',
+                    color: '#fff',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  📋 Copy Path
+                </button>
+              </div>
+            )}
 
             {/* File manifest table */}
             <div className="data-table-wrap" style={{ maxHeight: '280px', overflowY: 'auto' }}>
@@ -2165,6 +2230,17 @@ export default function BatchDeedTab() {
             />
           );
         })()
+      )}
+
+      {browserOpen && (
+        <FolderBrowserModal
+          onClose={() => setBrowserOpen(false)}
+          onSelect={(selectedPath) => {
+            setFolderPath(selectedPath);
+            setFolderManifest(null);
+          }}
+          initialPath={folderPath}
+        />
       )}
     </div>
   );

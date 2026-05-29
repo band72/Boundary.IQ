@@ -110,6 +110,9 @@ router.post('/ollama/start', async (req, res) => {
       detached: true,
       stdio: 'ignore',
     });
+    child.on('error', (err) => {
+      // Handle spawn error gracefully without crashing
+    });
     child.unref(); // Let node exit without waiting for this process
 
     // Wait 2.5 s then verify it came up
@@ -125,6 +128,24 @@ router.post('/ollama/start', async (req, res) => {
   } catch (ex) {
     ollamaSpawnPending = false;
     res.status(500).json({ error: `Failed to spawn ollama: ${ex.message}` });
+  }
+});
+
+// POST /api/settings/keys — update API keys in memory
+router.post('/keys', (req, res) => {
+  try {
+    const { geminiApiKey, openAiApiKey } = req.body;
+    if (geminiApiKey) {
+      gemini.init(geminiApiKey);
+      console.log('✓ Gemini API key updated dynamically via settings.');
+    }
+    if (openAiApiKey) {
+      process.env.OPENAI_API_KEY = openAiApiKey;
+      console.log('✓ OpenAI API key updated dynamically via settings.');
+    }
+    res.json({ success: true, message: 'API keys updated successfully in server memory.' });
+  } catch (ex) {
+    res.status(500).json({ error: ex.message });
   }
 });
 
