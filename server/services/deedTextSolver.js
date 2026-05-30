@@ -180,7 +180,8 @@ function flipNS(bearing) {
 }
 
 
-function repairCourses(courses, pob, units) {
+function repairCourses(rawCourses, pob, units) {
+  const courses = traverseSvc.resolveDeflectionAngles(rawCourses);
   const steps = [];
 
   // ── Step 1: Detect and flag anomalies ────────────────────────────────────
@@ -383,7 +384,8 @@ export async function solveDeedText(deedText, model, options = {}) {
 
   // ── Try Plat Lookup for PLSS/Section descriptions first ───────────────────
   const plssParsed = plssParser.parsePlss(deedText);
-  if (plssParsed && plssParsed.township && plssParsed.range && plssParsed.section) {
+  const hasThence = /THENCE/i.test(deedText);
+  if (plssParsed && plssParsed.township && plssParsed.range && plssParsed.section && !hasThence) {
     console.log(`[DeedTextSolver] Detected PLSS description. Routing to PlatLookupService...`);
     try {
       const platResult = await platLookup.resolvePlss(plssParsed, pob);

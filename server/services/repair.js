@@ -585,7 +585,9 @@ function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
     const prev = prefixPts[i];
     const c = courses[i];
     const az = (() => { try { return bp.parse(c.bearing)?.azimuthDeg ?? null; } catch { return null; } })();
-    if (az == null || !c.distance) { prefixPts.push(null); continue; }
+    // Guard: if prev is null (prior course had no bearing/distance) or current course is invalid,
+    // propagate null so downstream Principle 2b skips this index safely.
+    if (!prev || az == null || !c.distance) { prefixPts.push(prev ?? null); continue; }
     const rad = (az * Math.PI) / 180;
     prefixPts.push({
       N: prev.N + c.distance * Math.cos(rad),

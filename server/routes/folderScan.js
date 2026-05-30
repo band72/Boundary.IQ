@@ -105,6 +105,16 @@ function getDocType(filePath, fileName) {
     try {
       const txt = raw.toUpperCase();
 
+      // Filename-level skip takes priority — even if content contains THENCE,
+      // known non-boundary instrument types must be excluded first.
+      const upperFileName = fileName.toUpperCase();
+      for (const skip of SKIP_KEYWORDS) {
+        if (upperFileName.includes(skip.toUpperCase())) {
+          console.log(`classifyDocument: SKIP — filename matches skip keyword "${skip}": ${fileName}`);
+          return 'SKIP';
+        }
+      }
+
       // Hard skip: stub documents (cover pages, stamps, annotations)
       if (raw.trim().length < 80) {
         console.log(`classifyDocument: SKIP — stub document (${raw.trim().length} chars): ${fileName}`);

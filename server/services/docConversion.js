@@ -48,7 +48,15 @@ export async function convertToPdf(docBytes, fileName) {
     await execFileAsync('libreoffice', [
       `-env:UserInstallation=file://${path.join(tempDir, 'user').replace(/\\/g, '/')}`,
       '--headless', '--convert-to', 'pdf', '--outdir', tempDir, inputPath
-    ], { timeout: 300000 }); // 5 min — LibreOffice can be slow on first launch
+    ], {
+      timeout: 300000, // 5 min — LibreOffice can be slow on first launch
+      env: {
+        ...process.env,
+        DISPLAY: '',          // prevent X11 connection attempt (causes hang)
+        HOME: os.homedir(),   // ensure stable home dir
+        TMPDIR: os.tmpdir(),  // explicit temp dir
+      },
+    });
 
     const baseName = path.basename(fileName, path.extname(fileName));
     const pdfPath = path.join(tempDir, baseName + '.pdf');
