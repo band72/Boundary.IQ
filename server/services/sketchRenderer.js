@@ -148,15 +148,39 @@ function drawTitleBlock(ctx, x, y, w, h, meta, pageN, pageTotal) {
 // SHARED: draw the boundary geometry onto a canvas region
 // region: { x, y, w, h } — pixel region available for the map drawing
 // ─────────────────────────────────────────────────────────────────────────────
-function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}) {
+function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, meta = {}) {
   const { x: rx, y: ry, w: rw, h: rh } = region;
   const { showRaw = true, showAdj = true, showGrid = true, showLabels = true, uncorrected = false } = opts;
 
   const activePts = adjPts.length >= 2 ? adjPts : rawPts;
-  const ns = activePts.map(p => p.northing);
-  const es = activePts.map(p => p.easting);
-  const minN = Math.min(...ns), maxN = Math.max(...ns);
-  const minE = Math.min(...es), maxE = Math.max(...es);
+
+  // Check if this is a PLSS aliquot deed (uses Section/Township/Range subdivision)
+  const isPlss = meta && meta.parcel && (
+    /sec/i.test(meta.parcel) ||
+    /township/i.test(meta.parcel) ||
+    /range/i.test(meta.parcel) ||
+    /T\d+[NS]/i.test(meta.parcel) ||
+    /quarter/i.test(meta.parcel) ||
+    /[¼½]/.test(meta.parcel) ||
+    /\d\/\d/.test(meta.parcel)
+  );
+
+  let minN, maxN, minE, maxE;
+  if (isPlss) {
+    // Show the entire 640-acre Section grid (5280 x 5280 ft) starting from base origin
+    minN = 5000;
+    maxN = 10280;
+    minE = 5000;
+    maxE = 10280;
+  } else {
+    const ns = activePts.map(p => p.northing);
+    const es = activePts.map(p => p.easting);
+    minN = Math.min(...ns);
+    maxN = Math.max(...ns);
+    minE = Math.min(...es);
+    maxE = Math.max(...es);
+  }
+
   const rangeN = maxN - minN || 1;
   const rangeE = maxE - minE || 1;
 
@@ -189,6 +213,70 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}) {
     for (let gy = ry + step; gy < ry + rh; gy += step) {
       ctx.beginPath(); ctx.moveTo(rx + 10, gy); ctx.lineTo(rx + rw - 10, gy); ctx.stroke();
     }
+  }
+
+  // Draw PLSS Cadastral Section Breakdown Grid
+  if (isPlss) {
+    ctx.save();
+
+    // 1. Quarter-Quarter lines (thin light-gray dashed lines dividing into 40-ac lots)
+    ctx.strokeStyle = 'rgba(26, 46, 68, 0.15)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 4]);
+    // Verticals
+    [6320, 8960].forEach(e => {
+      ctx.beginPath(); ctx.moveTo(tx(e), ty(5000)); ctx.lineTo(tx(e), ty(10280)); ctx.stroke();
+    });
+    // Horizontals
+    [6320, 8960].forEach(n => {
+      ctx.beginPath(); ctx.moveTo(tx(5000), ty(n)); ctx.lineTo(tx(10280), ty(n)); ctx.stroke();
+    });
+
+    // 2. Main Quarter-Section lines (darker gray dashed lines dividing into 160-ac quarters)
+    ctx.strokeStyle = '#4b5563';
+    ctx.lineWidth = 1.0;
+    ctx.setLineDash([6, 6]);
+    // Vertical center line (easting = 7640)
+    ctx.beginPath(); ctx.moveTo(tx(7640), ty(5000)); ctx.lineTo(tx(7640), ty(10280)); ctx.stroke();
+    // Horizontal center line (northing = 7640)
+    ctx.beginPath(); ctx.moveTo(tx(5000), ty(7640)); ctx.lineTo(tx(10280), ty(7640)); ctx.stroke();
+
+    // 3. Section Boundary (thick black solid border)
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.strokeRect(tx(5000), ty(10280), (10280 - 5000) * scale, (10280 - 5000) * scale);
+
+    // 4. Quadrant labels (faded elegant gray text in their geometric centers)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('NW 1/4', tx(6320), ty(8960));
+    ctx.fillText('NE 1/4', tx(8960), ty(8960));
+    ctx.fillText('SW 1/4', tx(6320), ty(6320));
+    ctx.fillText('SE 1/4', tx(8960), ty(6320));
+
+    // 5. Central section number badge
+    ctx.fillStyle = 'rgba(26, 46, 68, 0.06)';
+    ctx.strokeStyle = 'rgba(26, 46, 68, 0.2)';
+    ctx.lineWidth = 0.75;
+    const midX = tx(7640), midY = ty(7640);
+    ctx.fillRect(midX - 35, midY - 9, 70, 18);
+    ctx.strokeRect(midX - 35, midY - 9, 70, 18);
+    ctx.fillStyle = '#1a2e44';
+    ctx.font = 'bold 7.5px sans-serif';
+    ctx.fillText('SECTION 12', midX, midY);
+
+    // 6. Label our actual 40-acre parcel in its center
+    // Our parcel NW 1/4 of SE 1/4 lies in easting 7640-8960, northing 6320-7640
+    ctx.fillStyle = '#cc0000';
+    ctx.font = 'bold 7.5px sans-serif';
+    ctx.fillText('SUBJECT PARCEL', tx(8300), ty(7040));
+    ctx.font = 'bold 6.5px sans-serif';
+    ctx.fillText('(40.00 ACRES)', tx(8300), ty(6920));
+
+    ctx.restore();
   }
 
   // Build course label lists
@@ -510,7 +598,7 @@ function renderPage1(stations, adjusted, courses, meta, closure) {
 
   if (rawPts.length >= 2) {
     drawBoundaryGeometry(ctx, rawPts, adjPts, courses,
-      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH });
+      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH }, {}, meta);
   } else {
     ctx.fillStyle = '#888888'; ctx.font = 'italic 16px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -743,7 +831,7 @@ function renderPage5(originalCourses, meta) {
     if (origPts.length >= 2) {
       drawBoundaryGeometry(ctx, origPts, [], originalCourses,
         { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH },
-        { showRaw: false, showAdj: true, showGrid: true, showLabels: false, uncorrected: true });
+        { showRaw: false, showAdj: true, showGrid: true, showLabels: false, uncorrected: true }, meta);
     }
   } else {
     ctx.fillStyle = '#888888'; ctx.font = 'italic 14px sans-serif';

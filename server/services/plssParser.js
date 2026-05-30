@@ -104,14 +104,18 @@ function extractFractions(text, beforeIndex = text.length) {
 /**
  * Convert aliquot fractions to a sub-section bounding box (approximate).
  * Used as fallback when BLM API fails. Assumes a standard 5280×5280 ft section.
- * @param {string[]} fractions - e.g. ["NW¼", "SW¼"] (nested, inner first)
+ * @param {string[]} fractions - e.g. ["NW¼", "SW¼"] (written order: smallest first)
  * @param {{ minN, maxN, minE, maxE }} sectionBounds - section bounding box in local ft
  * @returns {{ vertices: [{northing, easting}], areaSqFt, areaAcres }}
  */
 export function fractionsToBounds(fractions, sectionBounds) {
   let { minN, maxN, minE, maxE } = sectionBounds;
 
-  for (const frac of fractions) {
+  // Standard PLSS written format goes from smallest (inner) to largest (outer).
+  // To resolve boundaries correctly, we must process them backwards (largest/outermost first).
+  const reversedFractions = [...fractions].reverse();
+
+  for (const frac of reversedFractions) {
     const upper = frac.toUpperCase();
     const midN = (minN + maxN) / 2;
     const midE = (minE + maxE) / 2;
