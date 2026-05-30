@@ -407,6 +407,42 @@ router.post('/process-batch', async (req, res) => {
           }
         }
 
+        // Check for PLSS description first to avoid Gemini API calls for .txt deeds
+        const plssParsedObj = plssParser.parsePlss(rawDocText);
+        if (plssParsedObj) {
+          console.log(`[FolderScan Intercept] Found PLSS in ${fileName} - bypassing LLM.`, plssParsedObj);
+          const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
+          if (platResult && !platResult.needsManual && platResult.courses?.length > 0) {
+            const extraction = {
+              courses: platResult.courses,
+              classification: 'SECTION_BREAKDOWN',
+              rawText: rawDocText,
+            };
+            const traverse = traverseSvc.compute({ pointOfBeginning: pob, courses: platResult.courses, units, isOpenEnded: false });
+            let writeResult = null;
+            try {
+              writeResult = {
+                legalDescription: legalWriter.write({
+                  courses: platResult.courses,
+                  pobNorthing: pobN,
+                  pobEasting: pobE,
+                  county,
+                  state,
+                  units: units.toLowerCase(),
+                  areaAcres: platResult.areaAcres,
+                  perimeter: traverse?.perimeter
+                }),
+                courseCount: platResult.courses.length
+              };
+            } catch {}
+
+            results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
+            const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
+            db.saveDeedLog(batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+            return;
+          }
+        }
+
         const repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName);
 
         const extraction = repairResult.finalExtraction;
@@ -635,6 +671,69 @@ router.post('/process-file', async (req, res) => {
     }
 
     const pob = { northing: pobN, easting: pobE };
+
+    // Check for PLSS description first to avoid Gemini API calls for .txt deeds
+    let rawDocText = '';
+    try {
+      const ext = path.extname(fileName).toLowerCase();
+      if (ext === '.txt') {
+        rawDocText = fs.readFileSync(filePath, 'utf-8');
+      } else {
+        const extractedTxtPath = path.join(validPath, '_extracted', path.parse(fileName).name + '.txt');
+        if (fs.existsSync(extractedTxtPath)) {
+          rawDocText = fs.readFileSync(extractedTxtPath, 'utf-8');
+        }
+      }
+    } catch {}
+
+    if (rawDocText) {
+      const plssParsedObj = plssParser.parsePlss(rawDocText);
+      if (plssParsedObj) {
+        console.log(`[FolderScan Intercept] Found PLSS in ${fileName} - bypassing LLM.`, plssParsedObj);
+        const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
+        if (platResult && !platResult.needsManual && platResult.courses?.length > 0) {
+          const extraction = {
+            courses: platResult.courses,
+            classification: 'SECTION_BREAKDOWN',
+            rawText: rawDocText,
+          };
+          const traverse = traverseSvc.compute({ pointOfBeginning: pob, courses: platResult.courses, units, isOpenEnded: false });
+          let writeResult = null;
+          try {
+            writeResult = {
+              legalDescription: legalWriter.write({
+                courses: platResult.courses,
+                pobNorthing: pobN,
+                pobEasting: pobE,
+                county,
+                state,
+                units: units.toLowerCase(),
+                areaAcres: platResult.areaAcres,
+                perimeter: traverse?.perimeter
+              }),
+              courseCount: platResult.courses.length
+            };
+          } catch {}
+
+          const result = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, cached: false, platLookup: platResult };
+          const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
+          db.saveDeedLog(batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+          
+          if (autoOutput) {
+            try {
+              const outputFolder = output.createOutputFolder(validPath);
+              output.writeResultFiles(outputFolder, fileName, result, writeResult);
+            } catch (ex) { console.warn('Auto-output failed:', ex.message); }
+          }
+
+          if (keepAlive) clearInterval(keepAlive);
+          res.write(JSON.stringify({ status: 'success', result }));
+          res.end();
+          return;
+        }
+      }
+    }
+
     const repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName);
 
     const extraction = repairResult.finalExtraction;
