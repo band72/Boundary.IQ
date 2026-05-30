@@ -219,6 +219,52 @@ async function generateTextOnly(prompt, model) {
   throw new Error('Exceeded maximum retry attempts for Ollama /api/generate.');
 }
 
+/**
+ * Resolves a requested model name to one of the actually installed Ollama models.
+ * E.g. "qwen2.5-coder:1.5b" -> "qwen2.5-coder:latest"
+ */
+async function resolveModelAlias(requestedModel) {
+  try {
+    const status = await getStatus();
+    if (!status.online || !status.models || status.models.length === 0) {
+      return requestedModel;
+    }
+    
+    // If exact match exists, use it
+    if (status.models.includes(requestedModel)) {
+      return requestedModel;
+    }
+    
+    // Try to find a fuzzy match
+    const reqClean = requestedModel.toLowerCase().replace(/[:\-_]/g, '');
+    const reqBase = requestedModel.split(':')[0].toLowerCase();
+    
+    // Sort models so that closer matches or 'latest' come first
+    const sortedModels = [...status.models].sort((a, b) => {
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      if (aLower.includes('latest') && !bLower.includes('latest')) return -1;
+      if (!aLower.includes('latest') && bLower.includes('latest')) return 1;
+      return 0;
+    });
+
+    for (const model of sortedModels) {
+      const mLower = model.toLowerCase();
+      const mClean = mLower.replace(/[:\-_]/g, '');
+      const mBase = model.split(':')[0].toLowerCase();
+      
+      // Match base name or cleaned names
+      if (mClean === reqClean || mBase === reqBase || reqClean.includes(mClean) || mClean.includes(reqClean)) {
+        console.log(`[Ollama Model Resolve] Resolving requested model "${requestedModel}" to installed alias "${model}"`);
+        return model;
+      }
+    }
+  } catch (err) {
+    console.warn('[Ollama Model Resolve] Resolution failed, using original name:', err.message);
+  }
+  return requestedModel;
+}
+
 // ── Unified entry-point ───────────────────────────────────────────────────────
 
 /**
@@ -231,21 +277,22 @@ async function generateTextOnly(prompt, model) {
  */
 export async function generate(buffer, mimeType, model, prompt) {
   const hasImage = buffer && buffer.length > 0;
-  const vision = isVisionModel(model);
+  const resolvedModel = await resolveModelAlias(model);
+  const vision = isVisionModel(resolvedModel);
 
   await ollamaAcquire();
   try {
     if (hasImage && vision) {
-      console.log(`Ollama routing → /api/chat  [vision model: ${model}]`);
-      return await generateVisionChat(buffer, model, prompt);
+      console.log(`Ollama routing → /api/chat  [vision model: ${resolvedModel}]`);
+      return await generateVisionChat(buffer, resolvedModel, prompt);
     }
 
     if (hasImage && !vision) {
-      console.warn(`Ollama: text-only model "${model}" received an image buffer it cannot process. Falling back to text-only prompt.`);
+      console.warn(`Ollama: text-only model "${resolvedModel}" received an image buffer it cannot process. Falling back to text-only prompt.`);
     }
 
-    console.log(`Ollama routing → /api/generate [text model: ${model}]`);
-    return await generateTextOnly(prompt, model);
+    console.log(`Ollama routing → /api/generate [text model: ${resolvedModel}]`);
+    return await generateTextOnly(prompt, resolvedModel);
   } finally {
     ollamaRelease();
   }

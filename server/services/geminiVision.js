@@ -341,12 +341,46 @@ Return ONLY the corrected JSON object (same schema as original extraction).`;
 
 function parseStructuredResponse(raw) {
   let cleanJson = raw.trim();
+  
+  // Try direct parsing first
+  try {
+    const root = JSON.parse(cleanJson);
+    if (root) {
+      return getStructureFromRoot(root, cleanJson);
+    }
+  } catch (err) {
+    // If direct parse fails, try to extract from markdown code blocks
+    let m = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (m) {
+      const extracted = m[1].trim();
+      try {
+        const root = JSON.parse(extracted);
+        if (root) return getStructureFromRoot(root, extracted);
+      } catch (err2) {}
+    }
+    
+    // If still fails, locate the first '{' and last '}'
+    const startIdx = cleanJson.indexOf('{');
+    const endIdx = cleanJson.lastIndexOf('}');
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      const extractedPos = cleanJson.substring(startIdx, endIdx + 1);
+      try {
+        const root = JSON.parse(extractedPos);
+        if (root) return getStructureFromRoot(root, extractedPos);
+      } catch (err3) {}
+    }
+  }
+
+  // Original fallback parsing logic if all robust methods fail
   if (cleanJson.startsWith('```')) cleanJson = cleanJson.split('\n').slice(1).join('\n');
   if (cleanJson.endsWith('```')) cleanJson = cleanJson.substring(0, cleanJson.lastIndexOf('```'));
   cleanJson = cleanJson.trim();
 
   const root = JSON.parse(cleanJson);
+  return getStructureFromRoot(root, cleanJson);
+}
 
+function getStructureFromRoot(root, cleanJson) {
   // Container format: { "Classification": "...", "Segments": [...] }
   if (root && typeof root === 'object' && !Array.isArray(root) && root.Segments) {
     const classification = root.Classification || 'METES_BOUNDS';
