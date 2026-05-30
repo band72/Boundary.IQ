@@ -1348,9 +1348,9 @@ export function detectOpenEnded(text, fileName, aiFlag) {
 export function extractNamedParcels(docText) {
   if (!docText || docText.length < 20) return null;
 
-  // Match "Parcel A", "PARCEL B", "Parcel C" etc. as section dividers.
-  // We only handle single-letter labels (A-Z), up to 6 parcels.
-  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL)[ \t]+([A-F])[ \t]*(?:\n|$)/gi;
+  // Match "Parcel A", "PARCEL B", "DEED CASE 1", "DEED 1", "CASE 1" etc. as section dividers.
+  // Supports letters (A-Z) and numbers (1-9).
+  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL|DEED CASE|DEED|CASE)[ \t]+([A-Z]|[1-9])\b/gi;
 
   const matches = [];
   let m;

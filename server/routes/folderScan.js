@@ -375,12 +375,61 @@ router.post('/process-batch', async (req, res) => {
         const namedParcels = extractNamedParcels(rawDocText);
         if (namedParcels && namedParcels.length >= 2) {
           console.log(`FolderScan: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels: ${namedParcels.map(p => p.label).join(', ')}`);
+          
+          let parcelResults = [];
           for (const { label, text: parcelText } of namedParcels) {
             const ext = path.extname(fileName);
             const base = path.parse(fileName).name;
             const parcelFileName = `${base}__${label}${ext}`;
             const isOE = detectOpenEnded(parcelText, parcelFileName, false);
             console.log(`FolderScan: Processing parcel ${label} → ${parcelFileName} (isOpenEnded=${isOE})`);
+            
+            // Try offline PLSS intercept first for the parcel
+            const plssParsedObj = plssParser.parsePlss(parcelText);
+            if (plssParsedObj) {
+              console.log(`[FolderScan Intercept] Found PLSS in parcel ${label} (${parcelFileName}) - bypassing LLM.`, plssParsedObj);
+              const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
+              if (platResult && !platResult.needsManual && platResult.courses?.length > 0) {
+                const extraction = {
+                  courses: platResult.courses,
+                  classification: 'SECTION_BREAKDOWN',
+                  rawText: parcelText,
+                };
+                const traverse = traverseSvc.compute({ pointOfBeginning: pob, courses: platResult.courses, units, isOpenEnded: false });
+                let writeResult = null;
+                try {
+                  writeResult = {
+                    legalDescription: legalWriter.write({
+                      courses: platResult.courses,
+                      pobNorthing: pobN,
+                      pobEasting: pobE,
+                      county,
+                      state,
+                      units: units.toLowerCase(),
+                      areaAcres: platResult.areaAcres,
+                      perimeter: traverse?.perimeter
+                    }),
+                    courseCount: platResult.courses.length
+                  };
+                } catch {}
+
+                const pRes = { fileName: parcelFileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
+                parcelResults.push(pRes);
+
+                const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
+                const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+                db.saveDeedLog(batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+                
+                if (autoOutput) {
+                  try {
+                    const outputFolder = output.createOutputFolder(validPath);
+                    output.writeResultFiles(outputFolder, parcelFileName, pRes, writeResult);
+                  } catch (ex) { console.warn('Auto-output failed:', ex.message); }
+                }
+                continue; // successfully processed this parcel offline!
+              }
+            }
+
             try {
               const pResult = await runRepairPipeline(imageBytes, mime, pob, units, isOE, parcelFileName);
               const pEx = pResult.finalExtraction;
@@ -388,6 +437,22 @@ router.post('/process-batch', async (req, res) => {
               const pStatus = pResult.status;
               const pStage  = pResult.repairStageUsed;
               const pLabel  = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+              
+              let pWrite = null;
+              if (pEx.courses?.length > 0) {
+                try {
+                  pWrite = {
+                    legalDescription: legalWriter.write({
+                      courses: pEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: pTr?.areaAcres, perimeter: pTr?.perimeter
+                    }),
+                    courseCount: pEx.courses.length
+                  };
+                } catch {}
+              }
+
+              const pRes = { fileName: parcelFileName, status: pStatus === 'PASS' ? 'success' : 'error', extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
+              parcelResults.push(pRes);
+
               db.saveDeedLog(
                 batchId, parcelFileName, pLabel,
                 pEx?.courses?.length || 0,
@@ -404,6 +469,20 @@ router.post('/process-batch', async (req, res) => {
             } catch (parcelEx) {
               console.warn(`FolderScan: Parcel ${label} (${parcelFileName}) failed:`, parcelEx.message);
             }
+          }
+
+          if (parcelResults.length > 0) {
+            results[index] = {
+              fileName,
+              status: 'success',
+              isMultiParcel: true,
+              parcels: parcelResults,
+              extraction: parcelResults[0].extraction,
+              traverse: parcelResults[0].traverse,
+              legalDescription: parcelResults[0].legalDescription,
+              error: null,
+            };
+            return;
           }
         }
 
