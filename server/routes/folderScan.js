@@ -420,12 +420,6 @@ router.post('/process-batch', async (req, res) => {
                 const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
                 db.saveDeedLog(batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
                 
-                if (autoOutput) {
-                  try {
-                    const outputFolder = output.createOutputFolder(validPath);
-                    output.writeResultFiles(outputFolder, parcelFileName, pRes, writeResult);
-                  } catch (ex) { console.warn('Auto-output failed:', ex.message); }
-                }
                 continue; // successfully processed this parcel offline!
               }
             }
@@ -628,7 +622,13 @@ router.post('/process-batch', async (req, res) => {
         outputFolder = output.createOutputFolder(req.query.path);
         for (const r of results) {
           if (!r) continue;
-          output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription);
+          if (r.isMultiParcel && r.parcels) {
+            for (const pr of r.parcels) {
+              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription);
+            }
+          } else {
+            output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription);
+          }
         }
         output.writeBatchSummary(outputFolder, req.query.path, results, Date.now() - start);
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
