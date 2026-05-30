@@ -17,7 +17,7 @@ import * as traverseSvc from '../services/traverse.js';
 const router = Router();
 
 const MAX_FILE_SIZE = 51 * 1024 * 1024;
-const SUPPORTED_EXTS = new Set(['.pdf', '.doc', '.docx']);
+const SUPPORTED_EXTS = new Set(['.pdf', '.doc', '.docx', '.txt']);
 
 // ── Allowed roots (path traversal protection) ────────────────────────────────
 function getAllowedRoots() {
@@ -85,11 +85,24 @@ function classifyByFilename(fileName) {
 function getDocType(filePath, fileName) {
   const dir = path.dirname(filePath);
   const base = path.parse(fileName).name;
-  const extractedTxt = path.join(dir, '_extracted', base + '.txt');
+  const ext = path.extname(fileName).toLowerCase();
 
-  if (fs.existsSync(extractedTxt)) {
+  let raw = '';
+  if (ext === '.txt') {
     try {
-      const raw = fs.readFileSync(extractedTxt, 'utf-8');
+      raw = fs.readFileSync(filePath, 'utf-8');
+    } catch {}
+  } else {
+    const extractedTxt = path.join(dir, '_extracted', base + '.txt');
+    if (fs.existsSync(extractedTxt)) {
+      try {
+        raw = fs.readFileSync(extractedTxt, 'utf-8');
+      } catch {}
+    }
+  }
+
+  if (raw) {
+    try {
       const txt = raw.toUpperCase();
 
       // Hard skip: stub documents (cover pages, stamps, annotations)
@@ -108,8 +121,11 @@ function getDocType(filePath, fileName) {
         return 'SKIP';
       }
 
-      // If the content explicitly contains boundary geometry, immediately return 'DEED' to bypass filename check!
-      if (txt.includes('THENCE') || txt.includes('BEGINNING AT')) {
+      // Check if it has township/range/section/quarter for PLSS/aliquot deeds
+      const isPlss = txt.includes('SECTION') || txt.includes('SEC.') || txt.includes('TOWNSHIP') || txt.includes('RANGE');
+
+      // If the content explicitly contains boundary geometry or PLSS info, immediately return 'DEED'!
+      if (txt.includes('THENCE') || txt.includes('BEGINNING AT') || isPlss) {
         return 'DEED';
       }
     } catch {}
@@ -134,7 +150,16 @@ function getSupportedFiles(dirPath) {
 
 function inferMimeType(fileName) {
   const ext = path.extname(fileName).toLowerCase();
-  const map = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.doc': 'application/pdf', '.docx': 'application/pdf' };
+  const map = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.doc': 'application/pdf',
+    '.docx': 'application/pdf',
+    '.txt': 'text/plain'
+  };
   return map[ext] || 'application/pdf';
 }
 
@@ -334,11 +359,16 @@ router.post('/process-batch', async (req, res) => {
         const pob = { northing: pobN, easting: pobE };
 
         // ── Multi-Parcel Fan-Out ───────────────────────────────────────────────
-        const extractedTxtPath = path.join(validPath, '_extracted', path.parse(fileName).name + '.txt');
         let rawDocText = '';
         try {
-          if (fs.existsSync(extractedTxtPath)) {
-            rawDocText = fs.readFileSync(extractedTxtPath, 'utf-8');
+          const ext = path.extname(fileName).toLowerCase();
+          if (ext === '.txt') {
+            rawDocText = fs.readFileSync(filePath, 'utf-8');
+          } else {
+            const extractedTxtPath = path.join(validPath, '_extracted', path.parse(fileName).name + '.txt');
+            if (fs.existsSync(extractedTxtPath)) {
+              rawDocText = fs.readFileSync(extractedTxtPath, 'utf-8');
+            }
           }
         } catch {}
 
