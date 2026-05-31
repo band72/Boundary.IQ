@@ -57,7 +57,7 @@ export default function BatchDeedTab() {
   }, [activeIdx, results]);
 
   // Folder Scan state
-  const [folderPath, setFolderPath] = useLocalStorage('boundaryiq_folder_path', '/home/bando/Downloads/TrainPDF/Regency-Title');
+  const [folderPath, setFolderPath] = useLocalStorage('boundaryiq_folder_path', '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/TrainPDF/Regency-Title');
   const [browserOpen, setBrowserOpen] = useState(false);
   const [folderManifest, setFolderManifest] = useState(null);
   const [folderScanLoading, setFolderScanLoading] = useState(false);
@@ -89,6 +89,17 @@ export default function BatchDeedTab() {
   const [manualCoords, setManualCoords] = useState([{northing:'',easting:''},{northing:'',easting:''},{northing:'',easting:''}]);
   const [manualPlatLoading, setManualPlatLoading] = useState(false);
   const [manualPlatStatus, setManualPlatStatus]   = useState('');
+
+  // Auto-normalize stale/developer default paths in localStorage to active user path
+  useEffect(() => {
+    if (folderPath && folderPath.includes('/home/bando')) {
+      const normalized = folderPath
+        .replace('/home/bando/Downloads/TrainPDF', '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/TrainPDF')
+        .replace('/home/bando/Downloads/Legal Descriptions', '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions')
+        .replace('/home/bando', '/home/artwalk');
+      setFolderPath(normalized);
+    }
+  }, [folderPath, setFolderPath]);
 
   const fetchHeuristics = async () => {
     try {
