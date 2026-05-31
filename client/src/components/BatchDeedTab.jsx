@@ -77,6 +77,8 @@ export default function BatchDeedTab() {
   const [serverLocked, setServerLocked] = useState(false);
   const [lockElapsed, setLockElapsed]   = useState(0);
 
+  const [reprocessLoading, setReprocessLoading] = useState({});
+
   // Adjacent lot chaining
   const [adjacentDeedText, setAdjacentDeedText] = useState('');
   const [adjacentChainLoading, setAdjacentChainLoading] = useState(false);
@@ -366,6 +368,46 @@ export default function BatchDeedTab() {
       setCorrectionStatus(`✗ AI Reprocess failed: ${e.message}`);
     } finally {
       setAiRepairLoading(false);
+    }
+  };
+
+  const handleIndividualReprocess = async (fileName) => {
+    const folderDir = (folderPath ?? '').trim();
+    if (!folderDir) {
+      alert('Set a folder path first (Folder Scan panel above) so the system knows where to look for the file.');
+      return;
+    }
+    
+    setReprocessLoading(prev => ({ ...prev, [fileName]: true }));
+    try {
+      const params = new URLSearchParams({
+        path: folderDir,
+        file: fileName,
+        pobN,
+        pobE,
+        units: 'Feet',
+        force: 'true',
+        ...(county ? { county } : {}),
+        ...(stateVal ? { state: stateVal } : {}),
+      });
+
+      const res = await fetch(`${API}/folderscan/process-file?${params}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Reprocessing failed');
+
+      if (data.status === 'success') {
+        alert(`✓ Reprocessed ${fileName} successfully! The boundary has closed.`);
+        searchDatabase();
+        triggerStatsRefresh();
+      } else {
+        const errorMsg = data.result?.error || data.result?.traverseError || 'Closure failure or skipping occurred.';
+        alert(`⚠ Reprocess complete for ${fileName}: ${errorMsg}`);
+        searchDatabase();
+      }
+    } catch (e) {
+      alert(`Error reprocessing ${fileName}: ${e.message}`);
+    } finally {
+      setReprocessLoading(prev => ({ ...prev, [fileName]: false }));
     }
   };
 
@@ -2186,18 +2228,36 @@ export default function BatchDeedTab() {
                     <td style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{log.timestamp}</td>
                     <td style={{ textAlign: 'center' }}>
                       {log.extractionJson ? (
-                        <button
-                          className="btn btn-sm"
-                          onClick={() => loadFromDb(log)}
-                          style={{
-                            padding: '0.15rem 0.55rem', fontSize: '0.7rem', fontWeight: 600,
-                            background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.35)',
-                            color: 'var(--success)', borderRadius: '4px', cursor: 'pointer',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          📐 Load
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => loadFromDb(log)}
+                            style={{
+                              padding: '0.15rem 0.55rem', fontSize: '0.7rem', fontWeight: 600,
+                              background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.35)',
+                              color: 'var(--success)', borderRadius: '4px', cursor: 'pointer',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            📐 Load
+                          </button>
+                          
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => handleIndividualReprocess(log.fileName)}
+                            disabled={reprocessLoading[log.fileName]}
+                            style={{
+                              padding: '0.15rem 0.55rem', fontSize: '0.7rem', fontWeight: 600,
+                              background: log.status === 'PASS' ? 'rgba(255,255,255,0.05)' : 'rgba(255,77,77,0.12)', 
+                              border: log.status === 'PASS' ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,77,77,0.35)',
+                              color: log.status === 'PASS' ? 'var(--text-secondary)' : '#ff5a5a', 
+                              borderRadius: '4px', cursor: 'pointer',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {reprocessLoading[log.fileName] ? '⏳ ...' : '🔄 Reprocess'}
+                          </button>
+                        </div>
                       ) : (
                         <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>—</span>
                       )}
