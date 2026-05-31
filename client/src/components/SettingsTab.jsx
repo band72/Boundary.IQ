@@ -1253,16 +1253,16 @@ export default function SettingsTab({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <input
-                type="range" min="7" max="365" value={retentionDays}
+                type="range" min="0" max="365" value={retentionDays}
                 onChange={e => setRetentionDays(parseInt(e.target.value))}
                 style={{ flex: 1, accentColor: 'var(--accent)', height: '6px', borderRadius: '3px', outline: 'none', cursor: 'pointer' }}
               />
               <input
-                type="number" min="7" max="365" value={retentionDays}
+                type="number" min="0" max="365" value={retentionDays}
                 onChange={e => {
                   let val = parseInt(e.target.value);
                   if (isNaN(val)) val = 90;
-                  if (val < 7) val = 7;
+                  if (val < 0) val = 0;
                   if (val > 365) val = 365;
                   setRetentionDays(val);
                 }}

@@ -74,7 +74,7 @@ public class DiagnosticsController : ControllerBase
     [HttpPost("purge")]
     public IActionResult PurgeOldLogs([FromQuery] int days = 90)
     {
-        if (days < 1) return BadRequest(new { error = "Retention days must be at least 1." });
+        if (days < 0) return BadRequest(new { error = "Retention days must be at least 0." });
         try
         {
             int deleted = _db.PurgeOldLogs(days);

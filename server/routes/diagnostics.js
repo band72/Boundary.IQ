@@ -46,8 +46,9 @@ router.get('/failed-deeds', (req, res) => {
 });
 
 router.post('/purge', (req, res) => {
-  const days = parseInt(req.query.days) || 90;
-  if (days < 1) return res.status(400).json({ error: 'Retention days must be at least 1.' });
+  let days = parseInt(req.query.days);
+  if (isNaN(days)) days = 90;
+  if (days < 0) return res.status(400).json({ error: 'Retention days must be at least 0.' });
   try {
     const deleted = db.purgeOldLogs(days);
     res.json({ deleted, message: `Purged ${deleted} records older than ${days} days.`, stats: db.getDatabaseStats() });
@@ -58,6 +59,13 @@ router.post('/clear-failed', (req, res) => {
   try {
     const deleted = db.clearFailedCache();
     res.json({ deleted, message: `Cleared ${deleted} failed deed entries. They will be retried on next batch run.`, stats: db.getDatabaseStats() });
+  } catch (ex) { res.status(400).json({ error: ex.message }); }
+});
+
+router.post('/clear-all', (req, res) => {
+  try {
+    const deleted = db.clearAllCache();
+    res.json({ deleted, message: `Cleared ${deleted} records. All deed logs and batch runs deleted.`, stats: db.getDatabaseStats() });
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
