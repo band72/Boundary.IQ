@@ -691,7 +691,26 @@ router.post('/process-file', async (req, res) => {
     const fileName = req.query.file;
     if (!fileName) return res.status(400).json({ error: 'file query parameter is required.' });
 
-    const filePath = path.join(validPath, fileName);
+    let filePath = path.join(validPath, fileName);
+    if (!fs.existsSync(filePath)) {
+      // Fallback: search in common training and dataset directories
+      const trainingBase = path.join(os.homedir(), 'Downloads', 'training-20260530T124201Z-3-001', 'training');
+      const candidates = [
+        path.join(trainingBase, 'Legal Descriptions', fileName),
+        path.join(trainingBase, 'TrainPDF', fileName),
+        path.join(trainingBase, 'TrainPDF', 'Regency-Title', fileName),
+        path.join(trainingBase, 'TrainPDF', 'LIDO', fileName),
+        path.join(trainingBase, 'Bowtie-Failures', fileName),
+        path.join(trainingBase, 'Bowtie-Test', fileName),
+      ];
+      for (const cand of candidates) {
+        if (fs.existsSync(cand)) {
+          filePath = cand;
+          break;
+        }
+      }
+    }
+
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: `File not found: ${filePath}` });
 
     const pobN = parseFloat(req.query.pobN) || 5000;
