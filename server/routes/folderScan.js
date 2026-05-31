@@ -1101,7 +1101,24 @@ router.post('/retry-failed', async (req, res) => {
   try {
     const status = await ollamaSvc.getStatus();
     if (status.online && status.models && status.models.length > 0) {
-      for (const m of status.models) {
+      // Sort status.models so that faster/smaller models come first:
+      // - Prioritize models containing '1.5b', '2b', '3b', '4b', 'gemma3'
+      // - Deprioritize models containing 'deepseek', 'r1', '8b', '7b'
+      const sortedModels = [...status.models].sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        
+        const isSlow = (name) => name.includes('deepseek') || name.includes('r1') || name.includes('8b') || name.includes('7b');
+        const aSlow = isSlow(aLower);
+        const bSlow = isSlow(bLower);
+        
+        if (aSlow && !bSlow) return 1;
+        if (!aSlow && bSlow) return -1;
+        
+        return aLower.localeCompare(bLower);
+      });
+
+      for (const m of sortedModels) {
         if (!LOCAL_MODELS.includes(m)) {
           LOCAL_MODELS.push(m);
         }
@@ -1219,7 +1236,16 @@ router.post('/retry-failed', async (req, res) => {
               geminiVision.setProvider('ollama', model);
               send('model-try', { fileName, model });
 
-              const repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName, maxPasses);
+              const thinkingInterval = setInterval(() => {
+                send('status', { message: `🤖 [${model}] is thinking... CPU inference takes several minutes per file. Please stand by...` });
+              }, 15000);
+
+              let repairResult;
+              try {
+                repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName, maxPasses);
+              } finally {
+                clearInterval(thinkingInterval);
+              }
 
               if (repairResult.status === 'PASS' || repairResult.status === 'MEANDER') {
                 const extraction = repairResult.finalExtraction;

@@ -342,6 +342,11 @@ Return ONLY the corrected JSON object (same schema as original extraction).`;
 function parseStructuredResponse(raw) {
   let cleanJson = raw.trim();
   
+  // Strip Ollama/DeepSeek reasoning think tags if present
+  if (cleanJson.includes('<think>')) {
+    cleanJson = cleanJson.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  }
+  
   // Try direct parsing first
   try {
     const root = JSON.parse(cleanJson);
