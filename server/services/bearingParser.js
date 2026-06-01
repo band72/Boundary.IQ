@@ -58,6 +58,16 @@ export function parse(bearing) {
     .replace(/\s*([EWew])$/i, '$1')
     .replace(/([EWew])\s*\.$/i, '$1');
 
+  // Fix starting quadrant letter substitution typos (e.g. E58°48'30"E -> N58°48'30"E, W58°48'30"W -> S58°48'30"W)
+  if (/^[EWew]\d/.test(clean)) {
+    const start = clean[0].toUpperCase();
+    if (start === 'E') {
+      clean = 'N' + clean.slice(1);
+    } else if (start === 'W') {
+      clean = 'S' + clean.slice(1);
+    }
+  }
+
   // Clean spaces around symbols and normalize symbols
   clean = clean
     .replace(/\s*[°º\*^d]\s*/g, '°')

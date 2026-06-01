@@ -441,7 +441,10 @@ export class SupervisorAgent {
         turnRecord.bustCourseIndex = ocrBustDiag.bustCourseIndex ?? null;
       } else {
         // Fallback generic feedback if no direct dot-product alignment exists
-        currentFeedback = `The traverse fails to close by ${cogoReport.linearError.toFixed(2)} ft (Error Northing: ${cogoReport.errorNorthing.toFixed(2)}, Easting: ${cogoReport.errorEasting.toFixed(2)}). ` +
+        const errLinear = cogoReport.linearError ?? 999;
+        const errN = cogoReport.errorNorthing ?? 0;
+        const errE = cogoReport.errorEasting ?? 0;
+        currentFeedback = `The traverse fails to close by ${errLinear.toFixed(2)} ft (Error Northing: ${errN.toFixed(2)}, Easting: ${errE.toFixed(2)}). ` +
           `Please re-read the boundary document carefully and verify all bearings and distances.`;
       }
 
