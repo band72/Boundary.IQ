@@ -74,7 +74,7 @@ export function setProvider(provider, model, baseUrl) {
   if (provider === 'gemini') {
     activeModel = model || 'gemini-3.5-flash';
   } else if (provider === 'ollama') {
-    activeModel = model || 'gemma4:e2b';
+    activeModel = model || 'gemma3:4b';
   } else {
     // openai-compatible
     activeModel = model || 'llama3';

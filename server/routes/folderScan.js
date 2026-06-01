@@ -1161,7 +1161,7 @@ router.post('/retry-failed', async (req, res) => {
   const PER_FILE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 min max per file
 
   // Local model cascade — dynamically query available models from local Ollama
-  let LOCAL_MODELS = ['gemma4:e2b', 'qwen2.5-coder:1.5b'];
+  let LOCAL_MODELS = ['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b'];
   try {
     const status = await ollamaSvc.getStatus();
     if (status.online && status.models && status.models.length > 0) {

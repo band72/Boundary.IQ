@@ -1426,7 +1426,7 @@ export default function BatchDeedTab() {
         {/* Model cascade legend */}
         <div style={{ padding: '0 1rem 0.6rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
           <span>Model cascade:</span>
-          {['gemma4:e2b', 'qwen2.5-coder:7b', 'deepseek-coder:6.7b', 'qwen2.5-coder:1.5b'].map((m, i) => (
+          {['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b'].map((m, i) => (
             <span key={m} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
               {i > 0 && <span>→</span>}
               <span style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 7px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem' }}>{m}</span>

@@ -36,14 +36,14 @@ GEMINI_API_KEY  = os.getenv('GEMINI_API_KEY') or os.getenv('Gemini__ApiKey')
 
 # ── Custom Tools ──────────────────────────────────────────────────────────────
 
-async def call_local_llm(prompt: str, model: str = 'gemma4:e2b', base_url: str = None) -> str:
+async def call_local_llm(prompt: str, model: str = 'gemma3:4b', base_url: str = None) -> str:
     """
     Call a local LLM via the OpenAI-compatible /v1/chat/completions endpoint.
     Works with Ollama, LM Studio, llama.cpp, vLLM, etc.
 
     Args:
         prompt:   The user prompt to send.
-        model:    Model identifier (e.g. 'gemma4:e2b', 'llama3.1:8b').
+        model:    Model identifier (e.g. 'gemma3:4b', 'llama3.1:8b').
         base_url: OpenAI-compat base URL. Defaults to OPENAI_BASE_URL env var.
 
     Returns:
