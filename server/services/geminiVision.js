@@ -438,19 +438,32 @@ export function isPlaceholderHallucination(courses) {
 
 function getStructureFromRoot(root, cleanJson) {
   // Container format: { "Classification": "...", "Segments": [...] }
-  if (root && typeof root === 'object' && !Array.isArray(root) && root.Segments) {
-    const classification = root.Classification || 'METES_BOUNDS';
-    const preambleFound = root.PreambleFound === true;
-    const isOpenEnded = root.IsOpenEnded === true || root.isOpenEnded === true;
-    const mentalMapSummary = root.MentalMapSummary || root.mentalMapSummary || null;
-    let courses = parseSegmentArray(root.Segments);
+  if (root && typeof root === 'object' && !Array.isArray(root)) {
+    let segments = root.Segments;
+    let isOpenEnded = root.IsOpenEnded === true || root.isOpenEnded === true;
 
-    if (isPlaceholderHallucination(courses)) {
-      console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
-      courses = [];
+    // Support multi-parcel results from advanced models where Segments is null but Parcels array exists
+    if ((!segments || segments.length === 0) && root.Parcels && Array.isArray(root.Parcels) && root.Parcels.length > 0) {
+      console.log(`💡 Detected "Parcels" array in root. Extracting first parcel: "${root.Parcels[0].ParcelId || 'unnamed'}"`);
+      segments = root.Parcels[0].Segments;
+      if (root.Parcels[0].IsOpenEnded !== undefined) {
+        isOpenEnded = root.Parcels[0].IsOpenEnded === true;
+      }
     }
 
-    return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary };
+    if (segments) {
+      const classification = root.Classification || 'METES_BOUNDS';
+      const preambleFound = root.PreambleFound === true;
+      const mentalMapSummary = root.MentalMapSummary || root.mentalMapSummary || null;
+      let courses = parseSegmentArray(segments);
+
+      if (isPlaceholderHallucination(courses)) {
+        console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
+        courses = [];
+      }
+
+      return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary };
+    }
   }
 
   // Legacy flat array
@@ -533,7 +546,7 @@ function getNum(el, ...keys) {
 }
 
 // ── Extraction Prompt ───────────────────────────────────────────────────────
-function buildExtractionPrompt() {
+export function buildExtractionPrompt() {
   return `You are an elite, highly experienced Professional Land Surveyor and Computational Geometer.
 Your core directive is to translate this unstructured land document (deed, map, or plat image)
 into a mathematically perfect, logically sequential boundary traverse formatted as JSON.

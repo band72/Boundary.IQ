@@ -139,6 +139,7 @@ function parseExtractionJson(raw) {
       arcLength: s.ArcLength ?? s.arcLength ?? null,
       curveDirection: s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null,
     };
+  });
   let normalizedCourses = courses;
   if (isPlaceholderHallucination(courses)) {
     console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN TEXT EXTRACTION! Clearing courses.');

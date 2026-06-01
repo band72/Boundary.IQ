@@ -1351,8 +1351,8 @@ export function extractNamedParcels(docText) {
   if (!docText || docText.length < 20) return null;
 
   // Match "Parcel A", "PARCEL B", "DEED CASE 1", "DEED 1", "CASE 1" etc. as section dividers.
-  // Supports letters (A-Z) and numbers (1-9).
-  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL|DEED CASE|DEED|CASE)[ \t]+([A-Z]|[1-9])\b/gi;
+  // Supports letters (A-Z) and numbers (1-9), with optional enclosing straight/smart quotes.
+  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL|DEED CASE|DEED|CASE)[ \t]+['"“‘]?([A-Z]|[1-9])['"”’]?\b/gi;
 
   const matches = [];
   let m;
