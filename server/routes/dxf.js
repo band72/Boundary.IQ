@@ -1,6 +1,6 @@
 // ─── DXF Route ──────────────────────────────────────────────────────────────
 import { Router } from 'express';
-import { generateDxf } from '../services/dxfExport.js';
+import { generateDxf, generateCombinedDxf } from '../services/dxfExport.js';
 const router = Router();
 
 router.post('/generate', (req, res) => {
@@ -52,6 +52,67 @@ router.post('/generate', (req, res) => {
     res.send(dxfString);
   } catch (ex) {
     res.status(400).json({ error: `DXF generation failed: ${ex.message}` });
+  }
+});
+
+router.post('/combine', (req, res) => {
+  try {
+    const { parcels } = req.body;
+    if (!parcels || !Array.isArray(parcels) || parcels.length === 0) {
+      return res.status(400).send('An array of parcels is required.');
+    }
+
+    const processedParcels = parcels.map((parcel, idx) => {
+      const stations = (parcel.stations ?? []).map(s => ({
+        easting: s.easting ?? 0, northing: s.northing ?? 0,
+        depDN: s.depDN ?? 0, depDE: s.depDE ?? 0,
+      }));
+      const adjusted = (parcel.adjusted ?? parcel.adjustedStations ?? []).map(s => ({
+        easting: s.easting ?? 0, northing: s.northing ?? 0,
+      }));
+      const courses = (parcel.courses ?? []).map(c => ({
+        type: c.type ?? 'Line',
+        bearing: c.bearing ?? null,
+        distance: c.distance ?? null,
+        delta: c.delta ?? null,
+        radius: c.radius ?? null,
+        arcLength: c.arcLength ?? null,
+        curveDirection: c.curveDirection ?? null,
+        chordBearing: c.chordBearing ?? null,
+        chordDistance: c.chordDistance ?? null,
+      }));
+
+      const meta = {
+        parcelName: parcel.parcelName ?? parcel.fileName ?? `Parcel_${idx + 1}`,
+        fileName: parcel.fileName ?? `Parcel_${idx + 1}`,
+        county: parcel.county ?? null,
+        state: parcel.state ?? null,
+        units: parcel.units ?? 'Feet',
+        areaAcres: parcel.areaAcres ?? 0,
+        perimeter: parcel.perimeter ?? 0,
+        basisOfBearings: parcel.basisOfBearings ?? null,
+      };
+
+      return {
+        stations,
+        adjustedStations: adjusted,
+        courses,
+        ...meta,
+        referencePointName: parcel.referencePointName ?? null,
+        referencePointNorthing: parcel.referencePointNorthing != null ? parseFloat(parcel.referencePointNorthing) : null,
+        referencePointEasting: parcel.referencePointEasting != null ? parseFloat(parcel.referencePointEasting) : null,
+        pobNorthing: parcel.pobNorthing != null ? parseFloat(parcel.pobNorthing) : null,
+        pobEasting: parcel.pobEasting != null ? parseFloat(parcel.pobEasting) : null,
+      };
+    });
+
+    const dxfString = generateCombinedDxf(processedParcels);
+
+    res.setHeader('Content-Type', 'application/dxf');
+    res.setHeader('Content-Disposition', 'attachment; filename="combined_parcels.dxf"');
+    res.send(dxfString);
+  } catch (ex) {
+    res.status(400).json({ error: `Combined DXF generation failed: ${ex.message}` });
   }
 });
 

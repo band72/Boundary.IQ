@@ -4,6 +4,10 @@ import { Router } from 'express';
 import { spawn } from 'child_process';
 import * as gemini from '../services/geminiVision.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
+import * as dbSvc from '../services/diagnosticsDb.js';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 const router = Router();
 
 let ollamaSpawnPending = false;
@@ -146,6 +150,90 @@ router.post('/keys', (req, res) => {
     res.json({ success: true, message: 'API keys updated successfully in server memory.' });
   } catch (ex) {
     res.status(500).json({ error: ex.message });
+  }
+});
+
+// Helper to save system settings back to .env file for persistence
+function saveSystemSettingsToEnv(newDbPath, newScanRoots) {
+  const envPath = path.resolve(process.cwd(), '.env');
+  
+  let envContent = '';
+  if (fs.existsSync(envPath)) {
+    envContent = fs.readFileSync(envPath, 'utf8');
+  }
+
+  const lines = envContent.split(/\r?\n/);
+  const vars = {};
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const parts = trimmed.split('=');
+    if (parts.length >= 2) {
+      const key = parts[0].trim();
+      const val = parts.slice(1).join('=').trim();
+      vars[key] = val;
+    }
+  }
+
+  if (newDbPath !== undefined) vars['DATABASE_PATH'] = newDbPath;
+  if (newScanRoots !== undefined) vars['BOUNDARY_SCAN_ROOTS'] = newScanRoots;
+
+  const newLines = [];
+  newLines.push('# Boundary.IQ — Environment Variables');
+  for (const [key, val] of Object.entries(vars)) {
+    newLines.push(`${key}=${val}`);
+  }
+
+  fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
+  console.log(`✓ System settings persisted to .env file at: ${envPath}`);
+}
+
+// GET /api/settings/system — retrieve SQLite path & scan roots
+router.get('/system', (req, res) => {
+  try {
+    const dbPath = dbSvc.getDbPath();
+    const rawScanRoots = process.env.BOUNDARY_SCAN_ROOTS || '';
+    const allowedRoots = rawScanRoots 
+      ? rawScanRoots.split(';').filter(Boolean).map(r => path.resolve(r.trim()))
+      : [os.homedir()];
+
+    res.json({
+      dbPath,
+      rawScanRoots,
+      allowedRoots
+    });
+  } catch (ex) {
+    res.status(500).json({ error: ex.message });
+  }
+});
+
+// POST /api/settings/system — update SQLite path & scan roots
+router.post('/system', (req, res) => {
+  try {
+    const { dbPath, scanRoots } = req.body;
+    
+    // 1. Switch Database Path if changed
+    if (dbPath && dbPath !== dbSvc.getDbPath()) {
+      dbSvc.switchDbPath(dbPath);
+      process.env.DATABASE_PATH = dbPath;
+    }
+
+    // 2. Switch Allowed Roots if changed
+    if (scanRoots !== undefined) {
+      process.env.BOUNDARY_SCAN_ROOTS = scanRoots;
+    }
+
+    // 3. Persist to .env file for server restarts
+    saveSystemSettingsToEnv(dbPath, scanRoots);
+
+    res.json({
+      success: true,
+      message: 'System database and scan settings updated successfully in memory and persisted to server configurations.',
+      dbPath: dbSvc.getDbPath(),
+      scanRoots: process.env.BOUNDARY_SCAN_ROOTS || ''
+    });
+  } catch (ex) {
+    res.status(500).json({ error: `Failed to update system settings: ${ex.message}` });
   }
 });
 

@@ -2,6 +2,9 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { runRepairPipeline } from '../services/repair.js';
 import * as legalWriter from '../services/legalWriter.js';
 import * as db from '../services/diagnosticsDb.js';
@@ -47,6 +50,9 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
 
     const pobN = parseFloat(req.query.pobN) || 5000;
     const pobE = parseFloat(req.query.pobE) || 5000;
+    const refName = req.query.refName || null;
+    const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
+    const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
     const units = req.query.units || 'Feet';
     const county = req.query.county || null;
     const state = req.query.state || null;
@@ -122,7 +128,9 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
           db.saveDeedLog(batchId, fileName, solvedCase.parcelName || 'CACHED',
             courses.length, linErr,
             parsePrecisionRatio(precRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved',
-            solvedCase.extractionJson, solvedCase.traverseJson);
+            solvedCase.extractionJson, solvedCase.traverseJson,
+            solvedCase.agentTurnsJson ?? null, solvedCase.trustScore ?? null, solvedCase.solutionStepsJson ?? null,
+            refName, refN, refE, pobN, pobE);
           db.incrementHeuristic('SQLite Case Finder Solved', 'Auto-retrieve Solved Boundary');
           return;
         }
@@ -133,8 +141,21 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
         // Word doc conversion
         if (isWordDocument(fileName)) {
           console.log(`Converting Word doc ${fileName} to PDF...`);
-          imageBytes = await convertToPdf(imageBytes, fileName);
-          mime = 'application/pdf';
+          try {
+            imageBytes = await convertToPdf(imageBytes, fileName);
+            mime = 'application/pdf';
+          } catch (err) {
+            console.warn(`LibreOffice conversion failed for ${fileName}, checking for pre-extracted text fallback in training folders...`, err.message);
+            const base = path.parse(fileName).name;
+            const trainingBase = path.join(os.homedir(), 'Downloads', 'training-20260530T124201Z-3-001', 'training', 'Legal Descriptions', '_extracted', base + '.txt');
+            if (fs.existsSync(trainingBase)) {
+              console.log(`Found pre-extracted text fallback at ${trainingBase}`);
+              imageBytes = fs.readFileSync(trainingBase);
+              mime = 'text/plain';
+            } else {
+              throw err;
+            }
+          }
         }
 
         const upperName = fileName.toUpperCase();
@@ -181,13 +202,15 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
         db.saveDeedLog(batchId, fileName, parcelLabel, extraction.courses?.length || 0,
           linearError, precisionRatio, status, stageUsed,
           JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null,
-          agentTurnsJson, repairResult.trustScore ?? null);
+          agentTurnsJson, repairResult.trustScore ?? null,
+          repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null,
+          refName, refN, refE, pobN, pobE);
 
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'Auto-repair pipeline');
       } catch (ex) {
         console.error(`Batch item failed: ${fileName}`, ex.message);
         results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message };
-        db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null);
+        db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE);
       }
     });
 

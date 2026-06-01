@@ -11,11 +11,18 @@ let db = null;
 let dbPath = '';
 
 export function init() {
-  // Use same path as the C# version for backwards compatibility
-  const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-  const folder = path.join(configDir, 'BoundaryQC');
-  fs.mkdirSync(folder, { recursive: true });
-  dbPath = path.join(folder, 'BoundaryQCDiagnostics.db');
+  const envDbPath = process.env.DATABASE_PATH;
+  if (envDbPath) {
+    dbPath = path.resolve(envDbPath);
+  } else {
+    // Use same path as the C# version for backwards compatibility
+    const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+    const folder = path.join(configDir, 'BoundaryQC');
+    dbPath = path.join(folder, 'BoundaryQCDiagnostics.db');
+  }
+
+  const parent = path.dirname(dbPath);
+  fs.mkdirSync(parent, { recursive: true });
 
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
@@ -80,6 +87,11 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE DeedLogs ADD COLUMN AgentTurnsJson TEXT'); } catch {}
   try { db.exec('ALTER TABLE DeedLogs ADD COLUMN TrustScore REAL'); } catch {}
   try { db.exec('ALTER TABLE DeedLogs ADD COLUMN SolutionStepsJson TEXT'); } catch {}
+  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ReferencePointName TEXT'); } catch {}
+  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ReferencePointNorthing REAL'); } catch {}
+  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ReferencePointEasting REAL'); } catch {}
+  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN PobNorthing REAL'); } catch {}
+  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN PobEasting REAL'); } catch {}
 
   // Seed heuristics if empty
   const count = db.prepare('SELECT COUNT(*) as c FROM HeuristicTracking').get().c;
@@ -101,27 +113,47 @@ export function saveBatchRun(batchId, totalFiles, passRate) {
     .run(batchId, now(), totalFiles, passRate);
 }
 
-export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null) {
-  db.prepare(`INSERT INTO DeedLogs (BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp, ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, now(), extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson);
+export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null) {
+  db.prepare(`
+    INSERT INTO DeedLogs (
+      BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
+      ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson,
+      ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, now(),
+    extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
+    referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting
+  );
 }
 
-export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson = null, trustScore = null, solutionStepsJson = null) {
+export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null) {
   const row = db.prepare("SELECT Id, BatchId FROM DeedLogs WHERE FileName = ? ORDER BY Timestamp DESC LIMIT 1").get(fileName);
   const batchId = row ? row.BatchId : 'CORRECTED';
   
   if (row) {
     db.prepare(`
       UPDATE DeedLogs 
-      SET Status = ?, RepairStageUsed = ?, ExtractionJson = ?, TraverseJson = ?, AgentTurnsJson = ?, TrustScore = ?, SolutionStepsJson = ?, Timestamp = ?
+      SET Status = ?, RepairStageUsed = ?, ExtractionJson = ?, TraverseJson = ?, AgentTurnsJson = ?, TrustScore = ?, SolutionStepsJson = ?, Timestamp = ?,
+          ReferencePointName = ?, ReferencePointNorthing = ?, ReferencePointEasting = ?, PobNorthing = ?, PobEasting = ?
       WHERE Id = ?
-    `).run(status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson, now(), row.Id);
+    `).run(
+      status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson, now(),
+      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, row.Id
+    );
     return row.Id;
   } else {
     const result = db.prepare(`
-      INSERT INTO DeedLogs (BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp, ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(batchId, fileName, parcelName || 'Manual Corrected', 0, 0, 0, status, repairStageUsed, now(), extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson);
+      INSERT INTO DeedLogs (
+        BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
+        ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson,
+        ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      batchId, fileName, parcelName || 'Manual Corrected', 0, 0, 0, status, repairStageUsed, now(),
+      extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
+      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting
+    );
     return result.lastInsertRowid;
   }
 }
@@ -564,6 +596,11 @@ function mapDeedLog(r) {
     extractionJson: r.ExtractionJson, traverseJson: r.TraverseJson,
     agentTurnsJson: r.AgentTurnsJson, trustScore: r.TrustScore,
     solutionStepsJson: (r.SolutionStepsJson !== undefined && r.SolutionStepsJson !== null ? r.SolutionStepsJson : null),
+    referencePointName: r.ReferencePointName,
+    referencePointNorthing: r.ReferencePointNorthing,
+    referencePointEasting: r.ReferencePointEasting,
+    pobNorthing: r.PobNorthing,
+    pobEasting: r.PobEasting,
   };
 }
 
@@ -675,3 +712,42 @@ export function findUserByUsername(username) {
   return row ? { id: row.id, username: row.username, role: row.role } : null;
 }
 
+
+export function getDeedsByReferencePoint(refPointName) {
+  return db.prepare(`
+    SELECT * FROM DeedLogs
+    WHERE ReferencePointName = ? AND Status IN ('PASS', 'MEANDER')
+    ORDER BY Timestamp DESC
+  `).all(refPointName).map(mapDeedLog);
+}
+
+export function getDistinctReferencePoints() {
+  return db.prepare(`
+    SELECT DISTINCT ReferencePointName
+    FROM DeedLogs
+    WHERE ReferencePointName IS NOT NULL AND ReferencePointName != ''
+    ORDER BY ReferencePointName
+  `).all().map(r => r.ReferencePointName);
+}
+
+export function getDbPath() {
+  return dbPath;
+}
+
+export function switchDbPath(newPath) {
+  if (!newPath) throw new Error('New database path cannot be empty.');
+  const resolved = path.resolve(newPath);
+  
+  const parent = path.dirname(resolved);
+  fs.mkdirSync(parent, { recursive: true });
+
+  if (db) {
+    db.close();
+  }
+
+  dbPath = resolved;
+  db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  initializeDatabase();
+  console.log(`✓ SQLite Database path successfully switched to: ${dbPath}`);
+}

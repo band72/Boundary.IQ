@@ -180,6 +180,26 @@ router.get("/deed-detail", (req, res) => {
   } catch (ex) { res.status(500).json({ error: ex.message }); }
 });
 
+// GET /api/diagnostics/reference-points — returns a list of distinct POR names
+router.get('/reference-points', (req, res) => {
+  try {
+    res.json(db.getDistinctReferencePoints());
+  } catch (ex) {
+    res.status(500).json({ error: ex.message });
+  }
+});
+
+// GET /api/diagnostics/by-reference-point?name=X — returns all passed deeds under reference point X
+router.get('/by-reference-point', (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) return res.status(400).json({ error: 'name query parameter is required.' });
+    res.json(db.getDeedsByReferencePoint(name));
+  } catch (ex) {
+    res.status(500).json({ error: ex.message });
+  }
+});
+
 export default router;
 
 

@@ -15,6 +15,145 @@ export default function BatchDeedTab() {
   const [county]     = useLocalStorage('boundaryiq_batch_county', '');
   const [stateVal] = useLocalStorage('boundaryiq_batch_state', '');
   const [concurrentAgents]      = useLocalStorage('boundaryiq_concurrent_agents', 5);
+
+  // Point of Reference state hooks
+  const [useReferencePoint, setUseReferencePoint] = useLocalStorage('boundaryiq_use_ref_point', false);
+  const [refPointName, setRefPointName]           = useLocalStorage('boundaryiq_ref_point_name', 'POR-1');
+  const [refPointN, setRefPointN]                 = useLocalStorage('boundaryiq_ref_point_n', '5000.00');
+  const [refPointE, setRefPointE]                 = useLocalStorage('boundaryiq_ref_point_e', '5000.00');
+  const [pobOffsetMode, setPobOffsetMode]         = useLocalStorage('boundaryiq_pob_offset_mode', true);
+  const [pobOffsetN, setPobOffsetN]               = useLocalStorage('boundaryiq_pob_offset_n', '0.00');
+  const [pobOffsetE, setPobOffsetE]               = useLocalStorage('boundaryiq_pob_offset_e', '0.00');
+  const [refOpen, setRefOpen]                     = useState(false);
+
+  const [distinctRefPoints, setDistinctRefPoints] = useState([]);
+  const [selectedRefPoint, setSelectedRefPoint]   = useState('');
+  const [deedsForRefPoint, setDeedsForRefPoint]   = useState([]);
+  const [combineLoading, setCombineLoading]       = useState(false);
+  const [combineMsg, setCombineMsg]               = useState('');
+
+  const getPobCoordinates = () => {
+    if (useReferencePoint && pobOffsetMode) {
+      const n = (parseFloat(refPointN) || 5000.0) + (parseFloat(pobOffsetN) || 0.0);
+      const e = (parseFloat(refPointE) || 5000.0) + (parseFloat(pobOffsetE) || 0.0);
+      return { n: n.toFixed(2), e: e.toFixed(2) };
+    }
+    return { n: pobN, e: pobE };
+  };
+
+  const fetchRefPoints = async () => {
+    try {
+      const res = await fetch(`${API}/diagnostics/reference-points`);
+      if (res.ok) {
+        const data = await res.json();
+        setDistinctRefPoints(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch distinct reference points:', e);
+    }
+  };
+
+  const fetchDeedsForRefPoint = async (name) => {
+    try {
+      const res = await fetch(`${API}/diagnostics/by-reference-point?name=${encodeURIComponent(name)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDeedsForRefPoint(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch deeds for reference point:', e);
+    }
+  };
+
+  const handleCombineDxf = async () => {
+    if (deedsForRefPoint.length === 0) return;
+    setCombineLoading(true);
+    setCombineMsg('');
+    try {
+      const parcels = deedsForRefPoint.map(deed => {
+        let extraction = deed.extractionJson;
+        if (typeof extraction === 'string') {
+          try { extraction = JSON.parse(extraction); } catch { extraction = {}; }
+        }
+        let traverse = deed.traverseJson;
+        if (typeof traverse === 'string') {
+          try { traverse = JSON.parse(traverse); } catch { traverse = {}; }
+        }
+
+        const stations = (traverse.Stations || traverse.stations || []).map(s => ({
+          northing: s.Northing ?? s.northing,
+          easting: s.Easting ?? s.easting,
+          depDN: s.DepDN ?? s.depDN ?? 0,
+          depDE: s.DepDE ?? s.depDE ?? 0
+        }));
+
+        const adjusted = (traverse.AdjustedStations || traverse.adjustedStations || []).map(s => ({
+          northing: s.Northing ?? s.northing,
+          easting: s.Easting ?? s.easting
+        }));
+
+        const courses = (extraction.Courses || extraction.courses || []).map(c => ({
+          type: c.Type ?? c.type ?? 'Line',
+          bearing: c.Bearing ?? c.bearing ?? null,
+          distance: c.Distance ?? c.distance ?? null,
+          delta: c.Delta ?? c.delta ?? null,
+          radius: c.Radius ?? c.radius ?? null,
+          arcLength: c.ArcLength ?? c.arcLength ?? null,
+          curveDirection: c.CurveDirection ?? c.curveDirection ?? null,
+          chordBearing: c.ChordBearing ?? c.chordBearing ?? null,
+          chordDistance: c.ChordDistance ?? c.chordDistance ?? null
+        }));
+
+        return {
+          fileName: deed.fileName,
+          parcelName: deed.parcelName || deed.fileName,
+          stations,
+          adjusted,
+          courses,
+          county: deed.county,
+          state: deed.state,
+          areaAcres: traverse.AreaAcres ?? traverse.areaAcres ?? 0,
+          perimeter: traverse.Perimeter ?? traverse.perimeter ?? 0,
+          referencePointName: deed.referencePointName,
+          referencePointNorthing: deed.referencePointNorthing,
+          referencePointEasting: deed.referencePointEasting,
+          pobNorthing: deed.pobNorthing,
+          pobEasting: deed.pobEasting
+        };
+      });
+
+      const res = await fetch(`${API}/dxf/combine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Combined DXF export failed');
+      }
+
+      const blob = await res.blob();
+      const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob),
+        download: `combined_${selectedRefPoint.replace(/[^a-zA-Z0-9_-]/g, '_')}.dxf`,
+      });
+      a.click();
+      setCombineMsg('✓ Successfully generated and downloaded combined spatially-aligned DXF!');
+    } catch (e) {
+      setCombineMsg(`✗ Error: ${e.message}`);
+    } finally {
+      setCombineLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedRefPoint) {
+      fetchDeedsForRefPoint(selectedRefPoint);
+    } else {
+      setDeedsForRefPoint([]);
+    }
+  }, [selectedRefPoint]);
   const [loading, setLoading]   = useState(false);
   const [results, setResults]   = useState(null);   // BatchDeedResult | null
   const [error, setError]       = useState('');
@@ -144,6 +283,7 @@ export default function BatchDeedTab() {
         setDbLogs(data);
       }
       fetchFailedCount();
+      fetchRefPoints();
     } catch (e) { console.error(e); }
     finally { setDbLoading(false); }
   };
@@ -186,6 +326,7 @@ export default function BatchDeedTab() {
     fetchRecentBatches();
     fetchFailedCount();
     checkServerLockStatus();
+    fetchRefPoints();
     const interval = setInterval(checkServerLockStatus, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -220,13 +361,14 @@ export default function BatchDeedTab() {
       const rawCourses = rawExtraction.Courses || rawExtraction.courses || [];
       if (rawCourses.length > 0) {
         try {
+          const { n: activePobN, e: activePobE } = getPobCoordinates();
           const writeRes = await fetch(`${API}/writer/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               courses: rawCourses,
-              pobNorthing: parseFloat(pobN),
-              pobEasting: parseFloat(pobE),
+              pobNorthing: parseFloat(activePobN),
+              pobEasting: parseFloat(activePobE),
               parcelDescription: null,
               county: county || null,
               state: stateVal || null,
@@ -275,15 +417,17 @@ export default function BatchDeedTab() {
     setAiRepairLoading(true);
     setCorrectionStatus('🤖 Dispatching AI vision and automated repairs (ignoring cache)...');
     try {
+      const { n: activePobN, e: activePobE } = getPobCoordinates();
       const params = new URLSearchParams({
         path: folderPath.trim(),
         file: active.fileName,
-        pobN,
-        pobE,
+        pobN: activePobN,
+        pobE: activePobE,
         units: 'Feet',
         force: 'true',
         ...(county ? { county } : {}),
         ...(stateVal ? { state: stateVal } : {}),
+        ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
       });
 
       const res = await fetch(`${API}/folderscan/process-file?${params}`, { method: 'POST' });
@@ -380,15 +524,17 @@ export default function BatchDeedTab() {
     
     setReprocessLoading(prev => ({ ...prev, [fileName]: true }));
     try {
+      const { n: activePobN, e: activePobE } = getPobCoordinates();
       const params = new URLSearchParams({
         path: folderDir,
         file: fileName,
-        pobN,
-        pobE,
+        pobN: activePobN,
+        pobE: activePobE,
         units: 'Feet',
         force: 'true',
         ...(county ? { county } : {}),
         ...(stateVal ? { state: stateVal } : {}),
+        ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
       });
 
       const res = await fetch(`${API}/folderscan/process-file?${params}`, { method: 'POST' });
@@ -532,11 +678,13 @@ export default function BatchDeedTab() {
       const fd = new FormData();
       files.forEach(f => fd.append('images', f));
 
+      const { n: activePobN, e: activePobE } = getPobCoordinates();
       const params = new URLSearchParams({
-        pobN, pobE, units: 'Feet',
+        pobN: activePobN, pobE: activePobE, units: 'Feet',
         concurrency: concurrentAgents,
         ...(county   ? { county }        : {}),
         ...(stateVal ? { state: stateVal } : {}),
+        ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
       });
 
       const res  = await fetch(`${API}/batchdeed/process?${params}`, { method: 'POST', body: fd });
@@ -578,6 +726,7 @@ export default function BatchDeedTab() {
     const r = results.results[activeIdx];
     if (!r?.traverse) { alert('No traverse data to export.'); return; }
     try {
+      const { n: activePobN, e: activePobE } = getPobCoordinates();
       const res = await fetch(`${API}/dxf/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -590,8 +739,8 @@ export default function BatchDeedTab() {
             perimeter:      r.traverse.perimeter,
             areaAcres:      r.traverse.areaAcres,
             precisionRatio: r.traverse.closure?.precisionRatio,
-            pobNorthing:    parseFloat(pobN),
-            pobEasting:     parseFloat(pobE),
+            pobNorthing:    parseFloat(activePobN),
+            pobEasting:     parseFloat(activePobE),
             county:         county || null,
             state:          stateVal || null,
             compassRuleApplied: r.traverse.compassRuleApplied || false,
@@ -653,13 +802,20 @@ export default function BatchDeedTab() {
       catch { return true; }
     })();
 
-    const baseParams = new URLSearchParams({
-      path: folderPath.trim(), pobN, pobE, units: 'Feet',
-      concurrency: concurrentAgents,
-      ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
-      ...(county   ? { county }          : {}),
-      ...(stateVal ? { state: stateVal } : {}),
-    });
+    const baseParams = (() => {
+      const { n: activePobN, e: activePobE } = getPobCoordinates();
+      return new URLSearchParams({
+        path: folderPath.trim(),
+        pobN: activePobN,
+        pobE: activePobE,
+        units: 'Feet',
+        concurrency: concurrentAgents,
+        ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
+        ...(county   ? { county }          : {}),
+        ...(stateVal ? { state: stateVal } : {}),
+        ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
+      });
+    })();
 
     // Shared mutable accumulator (safe because JS is single-threaded for state)
     let allResults = [];
@@ -737,10 +893,17 @@ export default function BatchDeedTab() {
     };
 
     try {
+      const { n: activePobN, e: activePobE } = getPobCoordinates();
       const params = new URLSearchParams({
-        path: folderDir, pobN, pobE, units: 'Feet', concurrency: 2, maxPasses: 3,
+        path: folderDir,
+        pobN: activePobN,
+        pobE: activePobE,
+        units: 'Feet',
+        concurrency: 2,
+        maxPasses: 3,
         ...(county   ? { county }          : {}),
         ...(stateVal ? { state: stateVal } : {}),
+        ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
       });
 
       const res = await fetch(`${API}/folderscan/retry-failed?${params}`, {
@@ -844,6 +1007,153 @@ export default function BatchDeedTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* ── Point of Reference & Coordinate Alignment ── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: useReferencePoint ? '1px solid rgba(0, 212, 168, 0.35)' : '1px solid var(--border)',
+        boxShadow: useReferencePoint ? '0 4px 24px rgba(0, 212, 168, 0.08)' : '0 4px 24px rgba(0, 0, 0, 0.15)',
+        transition: 'all 0.3s ease',
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem', cursor: 'pointer' }} onClick={() => setRefOpen(!refOpen)}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            📍 Point of Reference & Coordinate Alignment
+          </div>
+          <span style={{ fontSize: '0.75rem', color: useReferencePoint ? 'var(--success)' : 'var(--text-muted)', fontWeight: 600 }}>
+            {useReferencePoint ? 'Active (Aligned)' : 'Inactive (Default POB)'} {refOpen ? ' ▲' : ' ▼'}
+          </span>
+        </div>
+
+        {refOpen && (
+          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+              <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0, marginTop: '2px' }}>
+                <input
+                  type="checkbox"
+                  checked={useReferencePoint}
+                  onChange={e => setUseReferencePoint(e.target.checked)}
+                  style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                />
+                <div style={{
+                  width: '44px', height: '24px', borderRadius: '12px',
+                  background: useReferencePoint ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(255,255,255,0.1)',
+                  border: `1px solid ${useReferencePoint ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                  position: 'relative', transition: 'all 0.3s ease',
+                  boxShadow: useReferencePoint ? '0 0 12px rgba(0, 212, 168, 0.3)' : 'none',
+                }}>
+                  <div style={{
+                    width: '18px', height: '18px', borderRadius: '50%', background: '#fff',
+                    position: 'absolute', top: '2px', left: useReferencePoint ? '22px' : '3px',
+                    transition: 'left 0.3s ease', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                  }} />
+                </div>
+              </label>
+
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.35rem' }}>
+                  Enable Point of Reference (POR) Mapping
+                </div>
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Aligns the Point of Beginning (POB) relative to a common, shared Point of Reference (e.g. section corners, benchmarks). Multiple deeds referencing the same POR will be aligned in a single spatially-correct Coordinate Space.
+                </p>
+              </div>
+            </div>
+
+            {useReferencePoint && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', animation: 'slideDown 0.2s ease', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem' }}>
+                <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.2rem' }}>
+                  <span>📍</span> Reference Point Definition
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '180px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Reference Point Name / ID</label>
+                    <input
+                      type="text"
+                      value={refPointName}
+                      onChange={e => setRefPointName(e.target.value)}
+                      placeholder="e.g. SEC-CORNER-12"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '130px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>POR Northing (Y)</label>
+                    <input
+                      type="number"
+                      value={refPointN}
+                      onChange={e => setRefPointN(e.target.value)}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '130px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>POR Easting (X)</label>
+                    <input
+                      type="number"
+                      value={refPointE}
+                      onChange={e => setRefPointE(e.target.value)}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="divider" style={{ margin: '0.5rem 0' }} />
+
+                <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.2rem' }}>
+                  <span>📐</span> POB Coordinate Calculation Mode
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', margin: '0.25rem 0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.78rem', color: pobOffsetMode ? '#fff' : 'var(--text-muted)' }}>
+                    <input type="radio" checked={pobOffsetMode} onChange={() => setPobOffsetMode(true)} style={{ accentColor: 'var(--success)' }} />
+                    Delta Offset Mode (POB = POR + Offset)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.78rem', color: !pobOffsetMode ? '#fff' : 'var(--text-muted)' }}>
+                    <input type="radio" checked={!pobOffsetMode} onChange={() => setPobOffsetMode(false)} style={{ accentColor: 'var(--success)' }} />
+                    Absolute Mode (POB is fixed coordinate)
+                  </label>
+                </div>
+
+                {pobOffsetMode ? (
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', animation: 'fadeIn 0.2s' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '130px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>POB Delta Northing (ΔN)</label>
+                      <input
+                        type="number"
+                        value={pobOffsetN}
+                        onChange={e => setPobOffsetN(e.target.value)}
+                        placeholder="0.00"
+                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '130px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>POB Delta Easting (ΔE)</label>
+                      <input
+                        type="number"
+                        value={pobOffsetE}
+                        onChange={e => setPobOffsetE(e.target.value)}
+                        placeholder="0.00"
+                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5, background: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border)' }}>
+                    ℹ️ <strong>Using Absolute Coordinates:</strong> POB is locked to Northing <strong style={{ color: 'var(--success)' }}>{pobN}</strong> and Easting <strong style={{ color: 'var(--success)' }}>{pobE}</strong>. However, the database record will still log association to the Reference Point <strong style={{ color: '#fff' }}>"{refPointName}"</strong>.
+                  </div>
+                )}
+
+                <div style={{ fontSize: '0.75rem', padding: '0.6rem 0.85rem', background: 'rgba(0, 212, 168, 0.05)', border: '1px solid rgba(0, 212, 168, 0.2)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', color: '#fff' }}>
+                  <span><strong>Calculated Absolute POB:</strong></span>
+                  <span style={{ fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700 }}>
+                    N: {getPobCoordinates().n} | E: {getPobCoordinates().e}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Folder Scan ─────────────────────────────────────────────────────────── */}
       <div className="card">
@@ -1762,14 +2072,15 @@ export default function BatchDeedTab() {
                             setManualPlatLoading(true);
                             setManualPlatStatus('⏳ Computing traverse from coordinates…');
                             try {
+                              const { n: activePobN, e: activePobE } = getPobCoordinates();
                               const res = await fetch(`${API}/folderscan/resolve-plat-manual`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                   fileName: r.fileName,
                                   vertices: valid.map(p => ({ northing: parseFloat(p.northing), easting: parseFloat(p.easting) })),
-                                  pobNorthing: parseFloat(pobN) || 5000,
-                                  pobEasting: parseFloat(pobE) || 5000,
+                                  pobNorthing: parseFloat(activePobN) || 5000,
+                                  pobEasting: parseFloat(activePobE) || 5000,
                                   county: county || null,
                                   state: stateVal || null,
                                 }),
@@ -2101,6 +2412,140 @@ export default function BatchDeedTab() {
         )}
       </div>
 
+      {/* ── Spatially Aligned DXF Combiner ── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid var(--border)',
+        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15)',
+        marginTop: '1.5rem',
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              🌐 Spatially-Aligned DXF Combiner
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={fetchRefPoints} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
+          </div>
+        </div>
+
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Synthesize multiple historical deeds sharing a common <strong>Point of Reference (POR)</strong> into a single, cohesive drawing. Each parcel will be outputted to its own NCS-compliant AutoCAD layer set (e.g. <code style={{ fontSize: '0.65rem' }}>C-PROP-LINE-[ParcelName]</code>) to enable clear CAD toggle states.
+          </p>
+
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '240px' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Select Active Reference Point (POR)
+              </label>
+              <select
+                value={selectedRefPoint}
+                onChange={e => setSelectedRefPoint(e.target.value)}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.55rem 0.85rem',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  height: '38px',
+                }}
+              >
+                <option value="">-- Choose Reference Point --</option>
+                {distinctRefPoints.map(rp => (
+                  <option key={rp} value={rp}>📍 {rp}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={handleCombineDxf}
+              disabled={combineLoading || deedsForRefPoint.length === 0}
+              className="btn btn-primary"
+              style={{
+                height: '38px',
+                padding: '0 1.5rem',
+                borderRadius: 'var(--radius-sm)',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                cursor: deedsForRefPoint.length === 0 ? 'not-allowed' : 'pointer',
+                background: deedsForRefPoint.length === 0 ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)',
+                border: 'none',
+                boxShadow: deedsForRefPoint.length === 0 ? 'none' : '0 0 14px rgba(0, 212, 168, 0.3)',
+                color: deedsForRefPoint.length === 0 ? 'var(--text-muted)' : '#fff',
+              }}
+            >
+              {combineLoading ? '⏳ Compiling CAD Drawing…' : `📦 Export Combined DXF (${deedsForRefPoint.length} Parcel${deedsForRefPoint.length !== 1 ? 's' : ''})`}
+            </button>
+          </div>
+
+          {selectedRefPoint && (
+            <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff' }}>
+                Deeds mapped to "{selectedRefPoint}":
+              </div>
+
+              {deedsForRefPoint.length === 0 ? (
+                <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  No successfully closed deeds currently mapped to this reference point in diagnostics database.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'var(--bg-card)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.75rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
+                        <th style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>File Name</th>
+                        <th style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>Parcel Name</th>
+                        <th style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Precision</th>
+                        <th style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Area (Acres)</th>
+                        <th style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', textAlign: 'center' }}>POR Coordinate</th>
+                        <th style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', textAlign: 'center' }}>POB Coordinate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deedsForRefPoint.map((deed, i) => (
+                        <tr key={deed.id || i} style={{ borderBottom: i === deedsForRefPoint.length - 1 ? 'none' : '1px solid var(--border)', transition: 'background 0.2s' }}>
+                          <td style={{ padding: '0.6rem 0.85rem', color: '#fff', fontWeight: 500 }}>{deed.fileName}</td>
+                          <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-primary)' }}>{deed.parcelName}</td>
+                          <td style={{ padding: '0.6rem 0.85rem', textAlign: 'right', color: 'var(--success)', fontFamily: 'monospace' }}>
+                            {deed.precisionRatio ? `1:${Number(deed.precisionRatio).toLocaleString()}` : '—'}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', textAlign: 'right', color: 'var(--accent)', fontFamily: 'monospace' }}>
+                            {deed.traverseJson ? (JSON.parse(deed.traverseJson).AreaAcres ?? JSON.parse(deed.traverseJson).areaAcres ?? 0).toFixed(4) : '0.0000'}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', textAlign: 'center', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                            {deed.referencePointNorthing != null && deed.referencePointEasting != null ? `${deed.referencePointNorthing.toFixed(1)}, ${deed.referencePointEasting.toFixed(1)}` : '—'}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', textAlign: 'center', fontFamily: 'monospace', color: 'var(--success)' }}>
+                            {deed.pobNorthing != null && deed.pobEasting != null ? `${deed.pobNorthing.toFixed(1)}, ${deed.pobEasting.toFixed(1)}` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {combineMsg && (
+            <div style={{
+              padding: '0.45rem 0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              background: combineMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)',
+              border: `1px solid ${combineMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
+              color: combineMsg.startsWith('✓') ? 'var(--success)' : '#dc3232',
+              fontSize: '0.75rem',
+              fontWeight: 500
+            }}>
+              {combineMsg}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Diagnostics Database Case Finder & Heuristics Telemetry ─────────── */}
       <div className="card" style={{ marginTop: '1.5rem' }}>
         <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
@@ -2283,6 +2728,7 @@ export default function BatchDeedTab() {
           const courses  = (r.extraction?.courses || []);
           const stations = (r.traverse?.stations || []);
           const adjusted = (r.traverse?.adjustedStations || []);
+          const { n: activePobN, e: activePobE } = getPobCoordinates();
           return (
             <PrintBlueprint
               key={`${activeIdx}_${r.fileName}_${r.traverse?.stations?.length || 0}_${r.traverse?.closure?.linearError || 0}`}
@@ -2292,7 +2738,7 @@ export default function BatchDeedTab() {
               units="Feet"
               area={r.traverse?.areaAcres ?? 0}
               perimeter={r.traverse?.perimeter ?? 0}
-              pob={{ northing: parseFloat(pobN), easting: parseFloat(pobE) }}
+              pob={{ northing: parseFloat(activePobN), easting: parseFloat(activePobE) }}
               initialLegalDescription={r.legalDescription?.legalDescription || ''}
               originalCourses={r.originalExtraction?.courses || null}
               originalLegalDescription={''}

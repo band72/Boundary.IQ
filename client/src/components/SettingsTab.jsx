@@ -35,6 +35,12 @@ export default function SettingsTab({
   const [dbMessage, setDbMessage]   = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
 
+  // Server system configurations state
+  const [systemDbPath, setSystemDbPath] = useState('');
+  const [systemScanRoots, setSystemScanRoots] = useState('');
+  const [systemLoading, setSystemLoading] = useState(false);
+  const [systemMsg, setSystemMsg] = useState('');
+
   // ── AI Model Provider state ────────────────────────────────────
   const [modelConfig, setModelConfig]   = useState(null);
   const [modelLoading, setModelLoading] = useState(true);
@@ -169,8 +175,52 @@ export default function SettingsTab({
     } catch (e) { console.error('Failed to fetch DB stats:', e); }
   }, []);
 
+  const fetchSystemSettings = useCallback(async () => {
+    setSystemLoading(true);
+    try {
+      const res = await fetch(`${API}/settings/system`);
+      if (res.ok) {
+        const data = await res.json();
+        setSystemDbPath(data.dbPath || '');
+        setSystemScanRoots(data.rawScanRoots || '');
+      }
+    } catch (e) {
+      console.error('Failed to fetch system settings:', e);
+    } finally {
+      setSystemLoading(false);
+    }
+  }, []);
+
+  const saveSystemSettings = async () => {
+    setSystemLoading(true);
+    setSystemMsg('');
+    try {
+      const res = await fetch(`${API}/settings/system`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath: systemDbPath, scanRoots: systemScanRoots }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSystemMsg('✓ Server database and scan settings updated successfully in memory and persisted.');
+        fetchSystemSettings();
+        fetchStats();
+      } else {
+        setSystemMsg(`✗ Error: ${data.error}`);
+      }
+    } catch (e) {
+      setSystemMsg(`✗ Connection Error: ${e.message}`);
+    } finally {
+      setSystemLoading(false);
+    }
+  };
+
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchStats(); fetchModelConfig(); }, [fetchStats, fetchModelConfig]);
+  useEffect(() => { 
+    fetchStats(); 
+    fetchModelConfig(); 
+    fetchSystemSettings();
+  }, [fetchStats, fetchModelConfig, fetchSystemSettings]);
 
   const dbAction = async (url, label) => {
     setDbLoading(true); setDbMessage('');
@@ -1182,6 +1232,124 @@ export default function SettingsTab({
           </div>
         </div>
       </div>
+
+      {/* ── Server Database & File System Configuration ── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(61, 127, 255, 0.3)',
+        boxShadow: '0 4px 24px rgba(61, 127, 255, 0.1)',
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              🗄️ Server Database & File System Configuration
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={fetchSystemSettings} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
+          </div>
+        </div>
+
+        {systemLoading && (
+          <div className="progress-bar-container">
+            <div className="progress-bar-fill" />
+          </div>
+        )}
+
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Configure and mutate server-side host configurations. These settings direct server memory paths on the production node and are persisted in <code style={{ fontSize: '0.75rem', color: 'var(--accent)' }}>.env</code> configurations.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Database Path Input */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                📁 Production SQLite Database Path
+              </label>
+              <input
+                type="text"
+                value={systemDbPath}
+                onChange={e => setSystemDbPath(e.target.value)}
+                placeholder="/absolute/path/to/BoundaryQCDiagnostics.db"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.55rem 0.85rem',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.8rem',
+                }}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                The physical path to the Diagnostics database. Changing this will dynamically close the active connection, open/create the SQLite database at the new location, and run all required database migrations.
+              </span>
+            </div>
+
+            {/* Allowed Roots Input */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🛡️ Allowed File Scan Roots (Semicolon-Separated)
+              </label>
+              <input
+                type="text"
+                value={systemScanRoots}
+                onChange={e => setSystemScanRoots(e.target.value)}
+                placeholder="/home/user/allowed-folder;/var/data"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.55rem 0.85rem',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.8rem',
+                }}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Authorized search paths for the local host file scanner, separated by semicolons (e.g. <code style={{ fontSize: '0.65rem' }}>/home/user/project1;/var/docs</code>). Directory paths outside these scopes cannot be traversed for security.
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+              🔒 These modifications apply instantly in production memory and write to server config files.
+            </span>
+            <button
+              onClick={saveSystemSettings}
+              disabled={systemLoading}
+              className="btn btn-primary"
+              style={{
+                padding: '0.55rem 1.25rem',
+                fontSize: '0.78rem',
+                borderRadius: 'var(--radius-sm)',
+                background: 'linear-gradient(135deg, #0070f3 0%, #00a4ff 100%)',
+                border: 'none',
+                boxShadow: '0 0 12px rgba(0, 112, 243, 0.3)',
+              }}
+            >
+              {systemLoading ? '⏳ Saving…' : '💾 Persist Server Configuration'}
+            </button>
+          </div>
+
+          {systemMsg && (
+            <div style={{
+              padding: '0.45rem 0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              background: systemMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)',
+              border: `1px solid ${systemMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
+              color: systemMsg.startsWith('✓') ? 'var(--success)' : '#dc3232',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              marginTop: '0.5rem'
+            }}>
+              {systemMsg}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="card" style={{
         background: 'rgba(9, 14, 26, 0.4)',
         backdropFilter: 'blur(8px)',

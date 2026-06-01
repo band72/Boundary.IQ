@@ -64,6 +64,20 @@ export function parse(bearing) {
     .replace(/\s*['’‘`]\s*/g, "'")
     .replace(/\s*(?:"|”|“|'')\s*/g, '"');
 
+  // Handle smashed degree symbol OCR errors (e.g. S5719'54"W -> S57°19'54"W, S5719'W -> S57°19'00"W)
+  if (!clean.includes('°')) {
+    const smashedMatch = /^([NSns])\s*(\d{3,4})\s*[']\s*(?:(\d{1,2}(?:\.\d+)?)\s*["])?\s*([EWew])$/i.exec(clean);
+    if (smashedMatch) {
+      const ns = smashedMatch[1].toUpperCase();
+      const digits = smashedMatch[2];
+      const sec = smashedMatch[3] || '00';
+      const ew = smashedMatch[4].toUpperCase();
+      const deg = digits.slice(0, digits.length - 2);
+      const min = digits.slice(digits.length - 2);
+      clean = `${ns}${deg}°${min}'${sec}"${ew}`;
+    }
+  }
+
   // Try expanded DMS
   let m = EXPANDED.exec(clean);
   if (m) {

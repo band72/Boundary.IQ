@@ -57,6 +57,25 @@ function validatePath(p) {
   return null;
 }
 
+// Helper to convert Word document with pre-extracted text fallback
+async function readWordDocWithFallback(filePath, fileName, docBytes) {
+  try {
+    const pdfBytes = await convertToPdf(docBytes, fileName);
+    return { bytes: pdfBytes, mime: 'application/pdf' };
+  } catch (err) {
+    console.warn(`LibreOffice conversion failed for ${fileName}, checking for pre-extracted text fallback...`, err.message);
+    const base = path.parse(fileName).name;
+    const dir = path.dirname(filePath);
+    const extractedTxtPath = path.join(dir, '_extracted', base + '.txt');
+    if (fs.existsSync(extractedTxtPath)) {
+      console.log(`Found pre-extracted text fallback at ${extractedTxtPath}`);
+      const textBytes = fs.readFileSync(extractedTxtPath);
+      return { bytes: textBytes, mime: 'text/plain' };
+    }
+    throw err;
+  }
+}
+
 // ── Document classification ─────────────────────────────────────────────────
 const BOUNDARY_KEYWORDS = [' - WD', ' - SWD', ' - LWD', ' - QCD', 'Deed', 'Easement', 'Right of Way', 'Monument Road', 'Deed of Dedication', 'Grant of Easement', 'Utility Easement', 'Road', 'Blvd', 'Order of Taking', 'Closing of Pt'];
 
@@ -288,6 +307,21 @@ router.post('/reset-lock', (req, res) => {
   });
 });
 
+// Wrapper helper to inject Point of Reference parameters automatically into saveDeedLog
+function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null) {
+  const refName = req.query.refName || null;
+  const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
+  const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
+  const pobN = parseFloat(req.query.pobN) || 5000;
+  const pobE = parseFloat(req.query.pobE) || 5000;
+
+  db.saveDeedLog(
+    batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed,
+    extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
+    refName, refN, refE, pobN, pobE
+  );
+}
+
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
   let keepAlive = null;
@@ -299,6 +333,9 @@ router.post('/process-batch', async (req, res) => {
     const batchIndex = parseInt(req.query.batchIndex) || 0;
     const pobN = parseFloat(req.query.pobN) || 5000;
     const pobE = parseFloat(req.query.pobE) || 5000;
+    const refName = req.query.refName || null;
+    const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
+    const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
     const units = req.query.units || 'Feet';
     const county = req.query.county || null;
     const state = req.query.state || null;
@@ -370,7 +407,7 @@ router.post('/process-batch', async (req, res) => {
             } catch {}
           }
           results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
-          db.saveDeedLog(batchId, fileName, solvedCase.parcelName || 'CACHED', cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson);
+          saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED', cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson);
           return;
         }
 
@@ -381,9 +418,10 @@ router.post('/process-batch', async (req, res) => {
         let mime = inferMimeType(fileName);
 
         if (isWordDocument(fileName)) {
-          console.log(`Converting Word doc ${fileName} to PDF...`);
-          imageBytes = await convertToPdf(imageBytes, fileName);
-          mime = 'application/pdf';
+          console.log(`Converting Word doc ${fileName} to PDF with fallback...`);
+          const resFallback = await readWordDocWithFallback(filePath, fileName, imageBytes);
+          imageBytes = resFallback.bytes;
+          mime = resFallback.mime;
         }
 
         const pob = { northing: pobN, easting: pobE };
@@ -448,7 +486,7 @@ router.post('/process-batch', async (req, res) => {
 
                 const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
                 const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
-                db.saveDeedLog(batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+                saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
                 
                 continue; // successfully processed this parcel offline!
               }
@@ -477,7 +515,7 @@ router.post('/process-batch', async (req, res) => {
               const pRes = { fileName: parcelFileName, status: pStatus === 'PASS' ? 'success' : 'error', extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
               parcelResults.push(pRes);
 
-              db.saveDeedLog(
+              saveDeedLogWrapper(req, 
                 batchId, parcelFileName, pLabel,
                 pEx?.courses?.length || 0,
                 pTr?.closure?.linearError || 0,
@@ -541,7 +579,7 @@ router.post('/process-batch', async (req, res) => {
 
             results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
             const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-            db.saveDeedLog(batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+            saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
             return;
           }
         }
@@ -584,11 +622,11 @@ router.post('/process-batch', async (req, res) => {
               try { writeResult = { legalDescription: legalWriter.write({ courses: platResult.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: platResult.areaAcres, perimeter: traverse?.perimeter }), courseCount: platResult.courses.length }; } catch {}
               const stageLabel = `Stage 3.5: PlatLookup Tier ${platResult.tier} (${isLotBlock ? 'LOT_BLOCK' : 'PLSS'})${platResult.isFallback ? ' [fallback grid]' : ''}`;
               results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
-              db.saveDeedLog(batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+              saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
               return;
             } else if (platResult?.needsManual) {
               results[index] = { fileName, status: 'error', extraction, traverse: null, legalDescription: null, error: 'LOT_BLOCK lookup requires manual coordinate entry (Tier 3)', needsManualPlat: true, platInfo: { lot: platResult.lot, block: platResult.block, subdivision: platResult.subdivision } };
-              db.saveDeedLog(batchId, fileName, `[LOT_BLOCK-MANUAL] ${path.parse(fileName).name}`, 0, 999, 0, 'FAIL', 'Stage 4: LOT_BLOCK needs manual plat coordinates', JSON.stringify(extraction), null);
+              saveDeedLogWrapper(req, batchId, fileName, `[LOT_BLOCK-MANUAL] ${path.parse(fileName).name}`, 0, 999, 0, 'FAIL', 'Stage 4: LOT_BLOCK needs manual plat coordinates', JSON.stringify(extraction), null);
               return;
             }
           } catch (platEx) {
@@ -600,7 +638,7 @@ router.post('/process-batch', async (req, res) => {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Non-traversable: ${extraction.classification}`,
           };
-          db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+          saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
           return;
         }
@@ -615,7 +653,7 @@ router.post('/process-batch', async (req, res) => {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Non-traversable: ${extraction.classification}`,
           };
-          db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+          saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
           return;
         }
@@ -624,12 +662,12 @@ router.post('/process-batch', async (req, res) => {
 
         const parcelLabel = county && state ? `${county}, ${state}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
         const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-        db.saveDeedLog(batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson);
+        saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson);
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
       } catch (ex) {
         console.error(`FolderScan item failed: ${fileName}`, ex.message);
         results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message };
-        db.saveDeedLog(batchId, fileName, 'ERROR', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null);
+        saveDeedLogWrapper(req, batchId, fileName, 'ERROR', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null);
       }
     });
 
@@ -715,6 +753,9 @@ router.post('/process-file', async (req, res) => {
 
     const pobN = parseFloat(req.query.pobN) || 5000;
     const pobE = parseFloat(req.query.pobE) || 5000;
+    const refName = req.query.refName || null;
+    const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
+    const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
     const units = req.query.units || 'Feet';
     const county = req.query.county || null;
     const state = req.query.state || null;
@@ -774,7 +815,7 @@ router.post('/process-file', async (req, res) => {
         const result = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true };
         const linErr = cachedTr.closure?.linearError ?? cachedTr.Closure?.LinearError ?? 0;
         const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
-        db.saveDeedLog(batchId, fileName, solvedCase.parcelName || 'CACHED',
+        saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED',
           courses.length, linErr,
           parsePrecisionRatio(precRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved',
           solvedCase.extractionJson, solvedCase.traverseJson);
@@ -793,9 +834,10 @@ router.post('/process-file', async (req, res) => {
     let mime = inferMimeType(fileName);
 
     if (isWordDocument(fileName)) {
-      console.log(`Converting Word doc ${fileName} to PDF...`);
-      imageBytes = await convertToPdf(imageBytes, fileName);
-      mime = 'application/pdf';
+      console.log(`Converting Word doc ${fileName} to PDF with fallback...`);
+      const resFallback = await readWordDocWithFallback(filePath, fileName, imageBytes);
+      imageBytes = resFallback.bytes;
+      mime = resFallback.mime;
     }
 
     const pob = { northing: pobN, easting: pobE };
@@ -845,7 +887,7 @@ router.post('/process-file', async (req, res) => {
 
           const result = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, cached: false, platLookup: platResult };
           const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-          db.saveDeedLog(batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+          saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
           
           if (autoOutput) {
             try {
@@ -891,7 +933,7 @@ router.post('/process-file', async (req, res) => {
         skipReason: `Document contains no traversable boundary geometry (AI classification: ${extraction.classification}).`,
         cached: false,
       };
-      db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+      saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
         'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
 
       if (keepAlive) clearInterval(keepAlive);
@@ -904,7 +946,7 @@ router.post('/process-file', async (req, res) => {
 
     const parcelLabel = county && state ? `${county}, ${state}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
     const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-    db.saveDeedLog(batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson);
+    saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson);
     if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
 
     // Auto-output
@@ -1020,7 +1062,7 @@ router.post('/chain-adjacent', async (req, res) => {
     }
 
     const stageLabel = `Stage 4.5: Adjacent Lot Chain (${strategy || 'gap-solver'})${spliced ? ' [spliced]' : ''}`;
-    db.saveDeedLog(batchId, fileName,
+    saveDeedLogWrapper(req, batchId, fileName,
       county && state ? `${county}, ${state}` : `[CHAIN] ${fileName}`,
       resolvedCourses.length,
       traverse?.closure?.linearError ?? 999,
@@ -1073,7 +1115,7 @@ router.post('/resolve-plat-manual', async (req, res) => {
     } catch {}
 
     const stageLabel = 'Stage 4.5: LOT_BLOCK Manual Plat Coordinates (Tier 3)';
-    db.saveDeedLog(batchId, fileName, county && state ? `${county}, ${state}` : `[MANUAL-PLAT] ${fileName}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify({ courses: platResult.courses }), JSON.stringify(traverse));
+    saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[MANUAL-PLAT] ${fileName}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify({ courses: platResult.courses }), JSON.stringify(traverse));
 
     res.json({
       status: 'success',
@@ -1108,6 +1150,9 @@ router.post('/retry-failed', async (req, res) => {
 
   const pobN      = parseFloat(req.query.pobN) || 5000;
   const pobE      = parseFloat(req.query.pobE) || 5000;
+  const refName = req.query.refName || null;
+  const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
+  const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
   const units     = req.query.units || 'Feet';
   const county    = req.query.county || null;
   const state     = req.query.state  || null;
@@ -1227,8 +1272,10 @@ router.post('/retry-failed', async (req, res) => {
           imageBytes = await fs.promises.readFile(filePath);
           mime = inferMimeType(fileName);
           if (isWordDocument(fileName)) {
-            imageBytes = await convertToPdf(imageBytes, fileName);
-            mime = 'application/pdf';
+            console.log(`Converting Word doc ${fileName} to PDF with fallback...`);
+            const resFallback = await readWordDocWithFallback(filePath, fileName, imageBytes);
+            imageBytes = resFallback.bytes;
+            mime = resFallback.mime;
           }
         } catch (readEx) {
           send('file-fail', { fileName, error: `Cannot read file: ${readEx.message.slice(0, 80)}`, stillFailing: ++stillFailing, total: queue.length });
@@ -1270,7 +1317,7 @@ router.post('/retry-failed', async (req, res) => {
                 const extraction = repairResult.finalExtraction;
                 const traverse  = repairResult.finalTraverse;
                 const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-                db.saveDeedLog(batchId, fileName, county && state ? `${county}, ${state}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [local:${model}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
+                saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [local:${model}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
                 fixed++;
                 succeeded = true;
                 send('file-pass', { fileName, model, stage: repairResult.repairStageUsed, status: repairResult.status, area: traverse?.areaAcres?.toFixed(4) ?? 'n/a', fixed, total: queue.length });
@@ -1293,7 +1340,7 @@ router.post('/retry-failed', async (req, res) => {
 
         if (!succeeded) {
           stillFailing++;
-          db.saveDeedLog(batchId, fileName, '[RETRY-FAILED]', 0, 999, 0, 'ERROR', 'Retry: all local models failed', null, null);
+          saveDeedLogWrapper(req, batchId, fileName, '[RETRY-FAILED]', 0, 999, 0, 'ERROR', 'Retry: all local models failed', null, null);
           send('file-fail', { fileName, error: lastError?.slice(0, 120), stillFailing, total: queue.length });
         }
       }

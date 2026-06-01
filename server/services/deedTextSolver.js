@@ -12,6 +12,8 @@ import * as platLookup from './platLookupService.js';
 import * as plssParser from './plssParser.js';
 import * as legalWriter from './legalWriter.js';
 
+import { isPlaceholderHallucination } from './geminiVision.js';
+
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 
 const ollamaAgent = new Agent({
@@ -36,7 +38,9 @@ RULES:
 5. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
 6. Bearings format: "N45°22'10\\"E" — keep the exact degree/minute/second format from the text.
 7. Distances are decimal feet (or meters if stated).
-8. Output ONLY a JSON object. No explanation, no markdown.
+8. IGNORE any "THENCE" clauses that occur BEFORE the phrase "POINT OF BEGINNING" or "TO THE POINT OF BEGINNING" (these are commencement or reference runs leading TO the POB, not boundary lines). Only extract courses that describe the actual property boundary starting FROM the Point of Beginning.
+9. Output ONLY a JSON object. No explanation, no markdown.
+10. Under no circumstances should you ever return the placeholder segments from the example output format below. If you cannot find any valid metes-and-bounds traverse courses in the deed text, return an empty segments list "Segments": [].
 
 OUTPUT FORMAT:
 {
@@ -135,9 +139,13 @@ function parseExtractionJson(raw) {
       arcLength: s.ArcLength ?? s.arcLength ?? null,
       curveDirection: s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null,
     };
-  });
+  let normalizedCourses = courses;
+  if (isPlaceholderHallucination(courses)) {
+    console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN TEXT EXTRACTION! Clearing courses.');
+    normalizedCourses = [];
+  }
 
-  return { courses, pob, units };
+  return { courses: normalizedCourses, pob, units };
 }
 
 // ── Deterministic COGO repair ─────────────────────────────────────────────────

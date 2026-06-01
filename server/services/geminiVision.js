@@ -111,13 +111,15 @@ async function postWithRetry(url, payload) {
 async function extractViaGemini(buffer, mimeType, prompt, model) {
   if (!geminiApiKey) throw new Error('Gemini API key not configured.');
 
-  const b64 = buffer.toString('base64');
+  const parts = [{ text: prompt }];
+  if (mimeType !== 'text/plain') {
+    const b64 = buffer.toString('base64');
+    parts.push({ inlineData: { mimeType, data: b64 } });
+  }
+
   const payload = {
     contents: [{
-      parts: [
-        { text: prompt },
-        { inlineData: { mimeType, data: b64 } },
-      ],
+      parts,
     }],
     generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
   };
@@ -145,7 +147,10 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
   // Detect whether this model can process images
   const modelIsVision = ollama.isVisionCapable(model);
 
-  if (mimeType === 'application/pdf') {
+  if (mimeType === 'text/plain') {
+    activeBuffer = Buffer.alloc(0);
+    activeMime = 'image/png';
+  } else if (mimeType === 'application/pdf') {
     // 1. Try to extract digital text first
     const extractedText = await extractTextFromPdf(buffer);
 
@@ -189,7 +194,11 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
 async function extractViaOpenAI(buffer, mimeType, prompt, model, baseUrl) {
   let userContent;
 
-  if (mimeType === 'application/pdf') {
+  if (mimeType === 'text/plain') {
+    userContent = [
+      { type: 'text', text: prompt },
+    ];
+  } else if (mimeType === 'application/pdf') {
     // Try text extraction first (same as Ollama path)
     const extractedText = await extractTextFromPdf(buffer);
     if (extractedText && extractedText.length > 50) {
@@ -257,15 +266,21 @@ async function extractRaw(buffer, mimeType, prompt) {
   const provider = activeProvider;
   const model = activeModel;
 
+  let activePrompt = prompt;
+  if (mimeType === 'text/plain') {
+    const textContent = buffer.toString('utf-8');
+    activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${textContent}`;
+  }
+
   console.log(`AI Extract → provider=${provider}, model=${model}, bufferSize=${(buffer.length / 1024).toFixed(0)} KB`);
 
   if (provider === 'ollama') {
-    return extractViaOllama(buffer, mimeType, prompt, model);
+    return extractViaOllama(buffer, mimeType, activePrompt, model);
   }
   if (provider === 'openai') {
-    return extractViaOpenAI(buffer, mimeType, prompt, model, activeOpenAiBaseUrl);
+    return extractViaOpenAI(buffer, mimeType, activePrompt, model, activeOpenAiBaseUrl);
   }
-  return extractViaGemini(buffer, mimeType, prompt, model);
+  return extractViaGemini(buffer, mimeType, activePrompt, model);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -385,6 +400,42 @@ function parseStructuredResponse(raw) {
   return getStructureFromRoot(root, cleanJson);
 }
 
+export function isPlaceholderHallucination(courses) {
+  if (!courses || courses.length === 0) return false;
+
+  let matchCount = 0;
+  for (const c of courses) {
+    const bearingStr = (c.bearing || c.chordBearing || '').toString().toUpperCase();
+    const dist = c.distance ?? c.chordDistance ?? 0;
+
+    // Check 1: 150.25 and 45°22'10"
+    if (Math.abs(dist - 150.25) < 0.01 && (bearingStr.includes("45°22") || bearingStr.includes("45D22") || bearingStr.includes("45.37") || bearingStr.includes("45°22'10\""))) {
+      matchCount++;
+    }
+    // Check 2: 57.84 and Northerly/00°00'00"
+    if (Math.abs(dist - 57.84) < 0.01 && (bearingStr.includes("NORTHERLY") || bearingStr.includes("00°00") || bearingStr.includes("0°00") || bearingStr.includes("00.00"))) {
+      matchCount++;
+    }
+    // Check 3: 89.02 and 13°22'54" or deflection 13.3819
+    if (Math.abs(dist - 89.02) < 0.01 && (bearingStr.includes("13°22") || bearingStr.includes("13D22") || c.deflectionAngle === 13.3819)) {
+      matchCount++;
+    }
+    // Check 4: Curve R=200 and Delta=12.3015 or radius=150/100/80 and delta=10.3015/8.3015/6.3015
+    if (c.type === 'Curve' &&
+        (Math.abs((c.radius || 0) - 200) < 0.01 || Math.abs((c.radius || 0) - 150) < 0.01 || Math.abs((c.radius || 0) - 100) < 0.01 || Math.abs((c.radius || 0) - 80) < 0.01) &&
+        (Math.abs((c.delta || 0) - 12.3015) < 0.001 || Math.abs((c.delta || 0) - 10.3015) < 0.001 || Math.abs((c.delta || 0) - 8.3015) < 0.001 || Math.abs((c.delta || 0) - 6.3015) < 0.001)) {
+      matchCount++;
+    }
+    // Check 5: Curve chord distance 42.88 or 38.88/30.88/20.88/10.88
+    if (c.type === 'Curve' &&
+        (Math.abs((c.chordDistance || 0) - 42.88) < 0.01 || Math.abs((c.chordDistance || 0) - 38.88) < 0.01 || Math.abs((c.chordDistance || 0) - 30.88) < 0.01 || Math.abs((c.chordDistance || 0) - 20.88) < 0.01 || Math.abs((c.chordDistance || 0) - 10.88) < 0.01)) {
+      matchCount++;
+    }
+  }
+
+  return matchCount >= 2;
+}
+
 function getStructureFromRoot(root, cleanJson) {
   // Container format: { "Classification": "...", "Segments": [...] }
   if (root && typeof root === 'object' && !Array.isArray(root) && root.Segments) {
@@ -392,13 +443,25 @@ function getStructureFromRoot(root, cleanJson) {
     const preambleFound = root.PreambleFound === true;
     const isOpenEnded = root.IsOpenEnded === true || root.isOpenEnded === true;
     const mentalMapSummary = root.MentalMapSummary || root.mentalMapSummary || null;
-    const courses = parseSegmentArray(root.Segments);
+    let courses = parseSegmentArray(root.Segments);
+
+    if (isPlaceholderHallucination(courses)) {
+      console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
+      courses = [];
+    }
+
     return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary };
   }
 
   // Legacy flat array
   if (Array.isArray(root)) {
-    const courses = parseSegmentArray(root);
+    let courses = parseSegmentArray(root);
+
+    if (isPlaceholderHallucination(courses)) {
+      console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
+      courses = [];
+    }
+
     return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null };
   }
 
@@ -543,10 +606,13 @@ RULE 7 — DECOY ELIMINATION:
   Before generating JSON, physically count boundary lines and state each quadrant direction
   to avoid transcribing decoy tables from adjacent lots.
 
+RULE 7b — COMMENCEMENT RUNS ELIMINATION:
+  IGNORE any "THENCE" clauses or course descriptions that occur BEFORE the actual "POINT OF BEGINNING" or "TO THE POINT OF BEGINNING" (these are commencement or reference runs leading TO the POB, not boundary lines). Only extract courses that describe the actual property boundary starting FROM the Point of Beginning.
+
 RULE 8 — STRICT JSON FORMATTING:
   No leading zeros on integers. No unescaped newlines inside strings.
   No trailing commas. Bearing strings must use degree symbol (°), apostrophe ('), and
-  quote (") for DMS. Format: "N45°30'00\\"E".
+  quote (") for DMS. Format: "N45°30'00\\\"E".
 
 RULE 9 — STRIP DEED / OPEN-ENDED SURVEY LINE:
   BEFORE extracting segments, scan the text for these definitive signals:
@@ -650,5 +716,8 @@ MULTI-PARCEL: If the document contains MULTIPLE separate boundary loops
 ]
 For strip deed parcels within a multi-parcel doc, set IsOpenEnded=true on that parcel entry.
 and set Segments to the first parcel's segments only.
-Otherwise set Parcels to null.`;
+Otherwise set Parcels to null.
+
+RULE 12 — NO PLACEHOLDER HALLUCINATION:
+Under no circumstances should you ever return the exact example segments (e.g., N45°22'10"E, 150.25', etc.) shown in the output schema. If you cannot find any valid boundary courses or metes-and-bounds traverse calls in the document, you MUST return an empty segments array ("Segments": []) and set the classification to "LOT_BLOCK" or "PLAT" as appropriate.`;
 }
