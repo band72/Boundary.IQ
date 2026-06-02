@@ -1226,10 +1226,20 @@ router.post('/retry-failed', async (req, res) => {
   const originalProvider = geminiVision.getActiveProvider();
   const originalModel    = geminiVision.getActiveModel();
 
+  const provider = req.query.provider || originalProvider;
+  let modelsToTry = [];
+  if (provider === 'gemini') {
+    modelsToTry = [req.query.model || originalModel || 'gemini-2.5-flash'];
+  } else if (provider === 'openai') {
+    modelsToTry = [req.query.model || originalModel || 'llama3'];
+  } else {
+    modelsToTry = LOCAL_MODELS;
+  }
+
   try {
     // Get all files that are still failing
     const failedFileNames = db.getFailedFileNames();
-    send('init', { total: failedFileNames.length, models: LOCAL_MODELS, maxPasses });
+    send('init', { total: failedFileNames.length, models: modelsToTry, maxPasses });
 
     if (failedFileNames.length === 0) {
       send('done', { fixed: 0, stillFailing: 0, message: 'No failed files to retry.' });
@@ -1294,16 +1304,16 @@ router.post('/retry-failed', async (req, res) => {
         const fileTimeoutId = setTimeout(() => fileAbort.abort(), PER_FILE_TIMEOUT_MS);
 
         try {
-          // Try each local model in sequence until one passes (concurrency=1, so setProvider is safe)
-          for (const model of LOCAL_MODELS) {
+          // Try each model in sequence until one passes (concurrency=1, so setProvider is safe)
+          for (const model of modelsToTry) {
             if (succeeded) break;
             if (res.writableEnded || fileAbort.signal.aborted) break;
             try {
-              geminiVision.setProvider('ollama', model);
+              geminiVision.setProvider(provider, model);
               send('model-try', { fileName, model });
 
               const thinkingInterval = setInterval(() => {
-                send('status', { message: `🤖 [${model}] is thinking... CPU inference takes several minutes per file. Please stand by...` });
+                send('status', { message: `🤖 [${model}] is thinking... Inference in progress, please stand by...` });
               }, 15000);
 
               let repairResult;
@@ -1317,7 +1327,7 @@ router.post('/retry-failed', async (req, res) => {
                 const extraction = repairResult.finalExtraction;
                 const traverse  = repairResult.finalTraverse;
                 const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-                saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [local:${model}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
+                saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [${provider}:${model}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
                 fixed++;
                 succeeded = true;
                 send('file-pass', { fileName, model, stage: repairResult.repairStageUsed, status: repairResult.status, area: traverse?.areaAcres?.toFixed(4) ?? 'n/a', fixed, total: queue.length });
@@ -1334,13 +1344,13 @@ router.post('/retry-failed', async (req, res) => {
         }
 
         if (fileAbort.signal.aborted && !succeeded) {
-          lastError = 'Per-file timeout: all models exceeded 20 minutes';
+          lastError = `Per-file timeout: all ${provider} models exceeded 20 minutes`;
           send('model-fail', { fileName, model: 'timeout', error: lastError });
         }
 
         if (!succeeded) {
           stillFailing++;
-          saveDeedLogWrapper(req, batchId, fileName, '[RETRY-FAILED]', 0, 999, 0, 'ERROR', 'Retry: all local models failed', null, null);
+          saveDeedLogWrapper(req, batchId, fileName, '[RETRY-FAILED]', 0, 999, 0, 'ERROR', `Retry: all ${provider} models failed`, null, null);
           send('file-fail', { fileName, error: lastError?.slice(0, 120), stillFailing, total: queue.length });
         }
       }
