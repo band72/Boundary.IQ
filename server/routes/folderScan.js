@@ -1247,11 +1247,30 @@ router.post('/retry-failed', async (req, res) => {
       return;
     }
 
-    // Resolve file names to full paths
+    // Resolve file names to full paths (recursively search validPath if not found directly)
+    const findFileRecursive = (dir, name, depth = 0) => {
+      if (depth > 6) return null; // Prevent runaway recursion
+      const direct = path.join(dir, name);
+      if (fs.existsSync(direct)) return direct;
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const subDir = path.join(dir, entry.name);
+            const found = findFileRecursive(subDir, name, depth + 1);
+            if (found) return found;
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to read directory recursively: ${dir}`, err);
+      }
+      return null;
+    };
+
     const queue = failedFileNames
       .map(fn => {
-        const fp = path.join(validPath, fn);
-        return fs.existsSync(fp) ? { fileName: fn, filePath: fp } : null;
+        const fp = findFileRecursive(validPath, fn);
+        return fp ? { fileName: fn, filePath: fp } : null;
       })
       .filter(Boolean);
 
