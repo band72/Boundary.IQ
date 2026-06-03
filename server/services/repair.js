@@ -1350,13 +1350,21 @@ export function extractNamedParcels(docText) {
   if (!docText || docText.length < 20) return null;
 
   // Match "Parcel A", "PARCEL B", "DEED CASE 1", "DEED 1", "CASE 1" etc. as section dividers.
-  // Supports letters (A-Z) and numbers (1-9), with optional enclosing straight/smart quotes.
-  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL|DEED CASE|DEED|CASE)[ \t]+['"“‘]?([A-Z]|[1-9])['"”’]?\b/gi;
+  // Supports letters (A-Z) and numbers (1-9), with optional enclosing straight/smart/multiple quotes.
+  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL|DEED CASE|DEED|CASE)[ \t]+['"“‘'`]*([A-Z]|[1-9])['"”’'`]*\b/gi;
 
   const matches = [];
   let m;
   while ((m = headerRe.exec(docText)) !== null) {
-    matches.push({ label: m[1].toUpperCase(), index: m.index });
+    const nextNewline = docText.indexOf('\n', m.index + 1);
+    const endOfLine = nextNewline !== -1 ? nextNewline : docText.length;
+    const lineText = docText.slice(m.index, endOfLine).toLowerCase();
+    
+    // Ignore references disguised as headers
+    const isReference = ['herein', 'described', 'referred', 'overlap', 'contiguity', 'as to'].some(k => lineText.includes(k));
+    if (!isReference) {
+      matches.push({ label: m[1].toUpperCase(), index: m.index });
+    }
   }
 
   // Need at least 2 labeled parcels to split

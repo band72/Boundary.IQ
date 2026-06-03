@@ -16,7 +16,78 @@ import * as resolver from '../services/chainedTraverseResolver.js';
 import * as plssParser from '../services/plssParser.js';
 import * as traverseSvc from '../services/traverse.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
+import pdfParse from 'pdf-parse';
+
 const router = Router();
+
+// Helper to extract and cache raw text from PDF or Word doc if cache is missing
+async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
+  const ext = path.extname(fileName).toLowerCase();
+  if (ext === '.txt') {
+    try {
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return '';
+    }
+  }
+
+  const base = path.parse(fileName).name;
+  const extractedTxtPath = path.join(validPath, '_extracted', base + '.txt');
+
+  if (fs.existsSync(extractedTxtPath)) {
+    try {
+      return fs.readFileSync(extractedTxtPath, 'utf-8');
+    } catch {}
+  }
+
+  // If not cached, extract it
+  try {
+    let text = '';
+    if (ext === '.pdf') {
+      console.log(`Extracting text from PDF: ${fileName}`);
+      const data = await pdfParse(fileBytes);
+      text = data.text ? data.text.trim() : '';
+    } else if (isWordDocument(fileName)) {
+      console.log(`Extracting text from converted Word PDF: ${fileName}`);
+      const data = await pdfParse(fileBytes);
+      text = data.text ? data.text.trim() : '';
+    }
+
+    if (text) {
+      const extractedDir = path.join(validPath, '_extracted');
+      if (!fs.existsSync(extractedDir)) {
+        fs.mkdirSync(extractedDir, { recursive: true });
+      }
+      fs.writeFileSync(extractedTxtPath, text, 'utf-8');
+      console.log(`Cached extracted text to ${extractedTxtPath}`);
+      return text;
+    }
+  } catch (err) {
+    console.warn(`Failed to extract/cache raw text for ${fileName}:`, err.message);
+  }
+
+  return '';
+}
+
+// Helper to verify if we should run PLSS offline intercept
+function shouldInterceptPLSS(text) {
+  if (!text) return false;
+  const upper = text.toUpperCase();
+  const mbTerms = ['THENCE', 'DEGREES', 'MINUTES', 'SECONDS', 'FEET'];
+  let mbCount = 0;
+  for (const term of mbTerms) {
+    if (upper.includes(term)) mbCount++;
+  }
+  if (mbCount >= 3) {
+    return false; // Metes-and-bounds deed, needs LLM processing
+  }
+
+  // Check if it parses as valid PLSS
+  const plss = plssParser.parsePlss(text);
+  if (!plss) return false;
+
+  return true;
+}
 
 const MAX_FILE_SIZE = 51 * 1024 * 1024;
 const SUPPORTED_EXTS = new Set(['.pdf', '.doc', '.docx', '.txt']);
@@ -470,19 +541,7 @@ router.post('/process-batch', async (req, res) => {
         const pob = { northing: pobN, easting: pobE };
 
         // ── Multi-Parcel Fan-Out ───────────────────────────────────────────────
-        let rawDocText = '';
-        try {
-          const ext = path.extname(fileName).toLowerCase();
-          if (ext === '.txt') {
-            rawDocText = fs.readFileSync(filePath, 'utf-8');
-          } else {
-            const extractedTxtPath = path.join(validPath, '_extracted', path.parse(fileName).name + '.txt');
-            if (fs.existsSync(extractedTxtPath)) {
-              rawDocText = fs.readFileSync(extractedTxtPath, 'utf-8');
-            }
-          }
-        } catch {}
-
+        const rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
         const namedParcels = extractNamedParcels(rawDocText);
         if (namedParcels && namedParcels.length >= 2) {
           console.log(`FolderScan: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels: ${namedParcels.map(p => p.label).join(', ')}`);
@@ -496,7 +555,7 @@ router.post('/process-batch', async (req, res) => {
             console.log(`FolderScan: Processing parcel ${label} → ${parcelFileName} (isOpenEnded=${isOE})`);
             
             // Try offline PLSS intercept first for the parcel
-            const plssParsedObj = plssParser.parsePlss(parcelText);
+            const plssParsedObj = shouldInterceptPLSS(parcelText) ? plssParser.parsePlss(parcelText) : null;
             if (plssParsedObj) {
               console.log(`[FolderScan Intercept] Found PLSS in parcel ${label} (${parcelFileName}) - bypassing LLM.`, plssParsedObj);
               const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
@@ -536,7 +595,7 @@ router.post('/process-batch', async (req, res) => {
             }
 
             try {
-              const pResult = await runRepairPipeline(imageBytes, mime, pob, units, isOE, parcelFileName);
+              const pResult = await runRepairPipeline(Buffer.from(parcelText, 'utf-8'), 'text/plain', pob, units, isOE, parcelFileName);
               const pEx = pResult.finalExtraction;
               const pTr = pResult.finalTraverse;
               const pStatus = pResult.status;
@@ -577,12 +636,24 @@ router.post('/process-batch', async (req, res) => {
           }
 
           if (parcelResults.length > 0) {
+            const base = path.parse(fileName).name;
+            const ext = path.extname(fileName);
+            const combinedExtraction = {
+              ...parcelResults[0].extraction,
+              parcels: parcelResults.map((pr, pi) => ({
+                parcelId: pr.fileName.replace(`${base}__`, '').replace(ext, ''),
+                extraction: pr.extraction,
+                traverse: pr.traverse,
+                legalDescription: pr.legalDescription,
+                status: pr.status
+              }))
+            };
             results[index] = {
               fileName,
               status: 'success',
               isMultiParcel: true,
               parcels: parcelResults,
-              extraction: parcelResults[0].extraction,
+              extraction: combinedExtraction,
               traverse: parcelResults[0].traverse,
               legalDescription: parcelResults[0].legalDescription,
               error: null,
@@ -592,7 +663,7 @@ router.post('/process-batch', async (req, res) => {
         }
 
         // Check for PLSS description first to avoid Gemini API calls for .txt deeds
-        const plssParsedObj = plssParser.parsePlss(rawDocText);
+        const plssParsedObj = shouldInterceptPLSS(rawDocText) ? plssParser.parsePlss(rawDocText) : null;
         if (plssParsedObj) {
           console.log(`[FolderScan Intercept] Found PLSS in ${fileName} - bypassing LLM.`, plssParsedObj);
           const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
@@ -927,22 +998,141 @@ router.post('/process-file', async (req, res) => {
 
     const pob = { northing: pobN, easting: pobE };
 
-    // Check for PLSS description first to avoid Gemini API calls for .txt deeds
-    let rawDocText = '';
-    try {
-      const ext = path.extname(fileName).toLowerCase();
-      if (ext === '.txt') {
-        rawDocText = fs.readFileSync(filePath, 'utf-8');
-      } else {
-        const extractedTxtPath = path.join(validPath, '_extracted', path.parse(fileName).name + '.txt');
-        if (fs.existsSync(extractedTxtPath)) {
-          rawDocText = fs.readFileSync(extractedTxtPath, 'utf-8');
+    const rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+
+    // ── Multi-Parcel Fan-Out (process-file) ──────────────────────────────────
+    const namedParcels = extractNamedParcels(rawDocText);
+    if (namedParcels && namedParcels.length >= 2) {
+      console.log(`FolderScan process-file: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels`);
+      
+      let parcelResults = [];
+      const baseName = path.parse(fileName).name;
+      const ext = path.extname(fileName);
+      for (const { label, text: parcelText } of namedParcels) {
+        const parcelFileName = `${baseName}__${label}${ext}`;
+        const isOE = detectOpenEnded(parcelText, parcelFileName, false);
+        
+        // Try offline PLSS intercept first for the parcel
+        const plssParsedObj = shouldInterceptPLSS(parcelText) ? plssParser.parsePlss(parcelText) : null;
+        if (plssParsedObj) {
+          console.log(`[FolderScan Intercept] Found PLSS in parcel ${label} (${parcelFileName}) - bypassing LLM.`, plssParsedObj);
+          const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
+          if (platResult && !platResult.needsManual && platResult.courses?.length > 0) {
+            const extraction = {
+              courses: platResult.courses,
+              classification: 'SECTION_BREAKDOWN',
+              rawText: parcelText,
+            };
+            const traverse = traverseSvc.compute({ pointOfBeginning: pob, courses: platResult.courses, units, isOpenEnded: false });
+            let writeResult = null;
+            try {
+              writeResult = {
+                legalDescription: legalWriter.write({
+                  courses: platResult.courses,
+                  pobNorthing: pobN,
+                  pobEasting: pobE,
+                  county,
+                  state,
+                  units: units.toLowerCase(),
+                  areaAcres: platResult.areaAcres,
+                  perimeter: traverse?.perimeter
+                }),
+                courseCount: platResult.courses.length
+              };
+            } catch {}
+
+            const pRes = { fileName: parcelFileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
+            parcelResults.push(pRes);
+
+            const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
+            const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+            saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
+            
+            continue;
+          }
+        }
+
+        try {
+          const pResult = await runRepairPipeline(Buffer.from(parcelText, 'utf-8'), 'text/plain', pob, units, isOE, parcelFileName);
+          const pEx = pResult.finalExtraction;
+          const pTr = pResult.finalTraverse;
+          const pStatus = pResult.status;
+          const pStage  = pResult.repairStageUsed;
+          const pLabel  = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+          
+          let pWrite = null;
+          if (pEx.courses?.length > 0) {
+            try {
+              pWrite = {
+                legalDescription: legalWriter.write({
+                  courses: pEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: pTr?.areaAcres, perimeter: pTr?.perimeter
+                }),
+                courseCount: pEx.courses.length
+              };
+            } catch {}
+          }
+
+          const pRes = { fileName: parcelFileName, status: (pStatus === 'PASS' || pStatus === 'MEANDER') ? 'success' : 'error', extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
+          parcelResults.push(pRes);
+
+          saveDeedLogWrapper(req, 
+            batchId, parcelFileName, pLabel,
+            pEx?.courses?.length || 0,
+            pTr?.closure?.linearError || 0,
+            parsePrecisionRatio(pTr?.closure?.precisionRatio),
+            pStatus, pStage,
+            JSON.stringify(pEx),
+            pTr ? JSON.stringify(pTr) : null,
+            pResult.agentTurns ? JSON.stringify(pResult.agentTurns) : null,
+            pResult.trustScore ?? null,
+            pResult.solutionSteps ? JSON.stringify(pResult.solutionSteps) : null,
+            fileHash
+          );
+        } catch (parcelEx) {
+          console.warn(`FolderScan process-file: Parcel ${label} (${parcelFileName}) failed:`, parcelEx.message);
         }
       }
-    } catch {}
+
+      if (parcelResults.length > 0) {
+        const combinedExtraction = {
+          ...parcelResults[0].extraction,
+          parcels: parcelResults.map((pr, pi) => ({
+            parcelId: pr.fileName.replace(`${baseName}__`, '').replace(ext, ''),
+            extraction: pr.extraction,
+            traverse: pr.traverse,
+            legalDescription: pr.legalDescription,
+            status: pr.status
+          }))
+        };
+        const result = {
+          fileName,
+          status: 'success',
+          isMultiParcel: true,
+          parcels: parcelResults,
+          extraction: combinedExtraction,
+          traverse: parcelResults[0].traverse,
+          legalDescription: parcelResults[0].legalDescription,
+          error: null,
+          cached: false
+        };
+        if (autoOutput) {
+          try {
+            const outputFolder = output.createOutputFolder(validPath);
+            for (const pr of parcelResults) {
+              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription);
+            }
+          } catch (ex) { console.warn('Auto-output failed:', ex.message); }
+        }
+
+        if (keepAlive) clearInterval(keepAlive);
+        res.write(JSON.stringify({ status: 'success', result }));
+        res.end();
+        return;
+      }
+    }
 
     if (rawDocText) {
-      const plssParsedObj = plssParser.parsePlss(rawDocText);
+      const plssParsedObj = shouldInterceptPLSS(rawDocText) ? plssParser.parsePlss(rawDocText) : null;
       if (plssParsedObj) {
         console.log(`[FolderScan Intercept] Found PLSS in ${fileName} - bypassing LLM.`, plssParsedObj);
         const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
@@ -1355,14 +1545,23 @@ router.post('/retry-failed', async (req, res) => {
     // Resolve file names to full paths (recursively search validPath if not found directly)
     const findFileRecursive = (dir, name, depth = 0) => {
       if (depth > 6) return null; // Prevent runaway recursion
-      const direct = path.join(dir, name);
+      
+      // Handle multi-parcel filenames containing '__'
+      let cleanName = name;
+      if (name.includes('__')) {
+        const parts = name.split('__');
+        const ext = path.extname(name);
+        cleanName = parts[0] + ext;
+      }
+      
+      const direct = path.join(dir, cleanName);
       if (fs.existsSync(direct)) return direct;
       try {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (entry.isDirectory()) {
             const subDir = path.join(dir, entry.name);
-            const found = findFileRecursive(subDir, name, depth + 1);
+            const found = findFileRecursive(subDir, cleanName, depth + 1);
             if (found) return found;
           }
         }
@@ -1423,6 +1622,26 @@ router.post('/retry-failed', async (req, res) => {
         let succeeded = false;
         let lastError = '';
 
+        let activeImageBytes = imageBytes;
+        let activeMime = mime;
+        let activeIsOpenEnded = isOpenEnded;
+
+        if (fileName.includes('__')) {
+          const parts = fileName.split('__');
+          const label = parts[1].split('.')[0].toUpperCase();
+          const rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+          const namedParcels = extractNamedParcels(rawDocText);
+          if (namedParcels) {
+            const matchedParcel = namedParcels.find(p => p.label === label);
+            if (matchedParcel) {
+              console.log(`Retry: Found matched parcel text for label "${label}" in ${fileName}`);
+              activeImageBytes = Buffer.from(matchedParcel.text, 'utf-8');
+              activeMime = 'text/plain';
+              activeIsOpenEnded = detectOpenEnded(matchedParcel.text, fileName, false);
+            }
+          }
+        }
+
         // Per-file 20-min timeout — if ALL models combined take too long, skip and move on
         const fileAbort = new AbortController();
         const fileTimeoutId = setTimeout(() => fileAbort.abort(), PER_FILE_TIMEOUT_MS);
@@ -1442,7 +1661,7 @@ router.post('/retry-failed', async (req, res) => {
 
               let repairResult;
               try {
-                repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName, maxPasses);
+                repairResult = await runRepairPipeline(activeImageBytes, activeMime, pob, units, activeIsOpenEnded, fileName, maxPasses);
               } finally {
                 clearInterval(thinkingInterval);
               }

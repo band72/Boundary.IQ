@@ -48,7 +48,10 @@ function assessConfidence(deg, min, sec, format) {
 }
 export function parse(bearing) {
   // Pre-normalize bearing string to handle non-standard characters from OCR or Word conversions
-  let clean = bearing.trim();
+  let clean = bearing.trim()
+    .replace(/DEGREES|DEG/gi, '°')
+    .replace(/MINUTES|MIN/gi, "'")
+    .replace(/SECONDS|SEC/gi, '"');
 
   // Remove dot after N/S and before/after E/W (e.g., "N.45" -> "N45", "E." -> "E")
   clean = clean

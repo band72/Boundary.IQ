@@ -226,6 +226,10 @@ export default function BatchDeedTab() {
   // Multi-parcel selection
   const [selectedParcelIdx, setSelectedParcelIdx] = useState(0);
 
+  useEffect(() => {
+    setSelectedParcelIdx(0);
+  }, [activeIdx]);
+
   // LOT_BLOCK manual coordinate entry
   const [manualCoords, setManualCoords] = useState([{northing:'',easting:''},{northing:'',easting:''},{northing:'',easting:''}]);
   const [manualPlatLoading, setManualPlatLoading] = useState(false);
@@ -1689,8 +1693,25 @@ export default function BatchDeedTab() {
 
           {/* Active Result Split Window */}
           {(() => {
-            const r = results.results[activeIdx];
+            let r = results.results[activeIdx];
             if (!r) return null;
+
+            // Resolve selected parcel data if multi-parcel
+            if (r.extraction?.parcels && r.extraction.parcels.length > 1) {
+              const activeParcel = r.extraction.parcels[selectedParcelIdx];
+              if (activeParcel) {
+                r = {
+                  ...r,
+                  fileName: activeParcel.fileName || r.fileName,
+                  extraction: activeParcel.extraction || r.extraction,
+                  traverse: activeParcel.traverse || r.traverse,
+                  legalDescription: activeParcel.legalDescription || r.legalDescription,
+                  status: activeParcel.status || r.status,
+                  error: activeParcel.error || r.error,
+                  conceptualAnalysis: activeParcel.conceptualAnalysis || r.conceptualAnalysis,
+                };
+              }
+            }
 
             return (
               <div className="grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
@@ -2825,8 +2846,26 @@ export default function BatchDeedTab() {
 
       {showPrint && results && (
         (() => {
-          const r = results.results[activeIdx];
+          let r = results.results[activeIdx];
           if (!r) return null;
+
+          // Resolve selected parcel data if multi-parcel
+          if (r.extraction?.parcels && r.extraction.parcels.length > 1) {
+            const activeParcel = r.extraction.parcels[selectedParcelIdx];
+            if (activeParcel) {
+              r = {
+                ...r,
+                fileName: activeParcel.fileName || r.fileName,
+                extraction: activeParcel.extraction || r.extraction,
+                traverse: activeParcel.traverse || r.traverse,
+                legalDescription: activeParcel.legalDescription || r.legalDescription,
+                status: activeParcel.status || r.status,
+                error: activeParcel.error || r.error,
+                conceptualAnalysis: activeParcel.conceptualAnalysis || r.conceptualAnalysis,
+              };
+            }
+          }
+
           const courses  = (r.extraction?.courses || []);
           const stations = (r.traverse?.stations || []);
           const adjusted = (r.traverse?.adjustedStations || []);
