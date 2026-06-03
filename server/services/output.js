@@ -39,8 +39,9 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
 
   try {
     // 1. Corrected legal description
-    if (writeResult?.legalDescription) {
-      fs.writeFileSync(path.join(outputFolder, `${baseName}_corrected.txt`), writeResult.legalDescription);
+    const legalDesc = writeResult?.legalDescription || result.legalDescription || result.extraction?.legalDesc || result.extraction?.legalDescription || '';
+    if (legalDesc) {
+      fs.writeFileSync(path.join(outputFolder, `${baseName}_corrected.txt`), legalDesc);
     }
 
     // 2. Original extraction summary
@@ -72,8 +73,9 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
       error: result.error,
       extraction: result.extraction,
       traverse: result.traverse,
-      legalDescription: writeResult?.legalDescription || null,
+      legalDescription: legalDesc || null,
       originalExtraction: result.originalExtraction,
+      conceptualAnalysis: result.conceptualAnalysis || result.extraction?.conceptualAnalysis || null
     };
     fs.writeFileSync(path.join(outputFolder, `${baseName}_report.json`), JSON.stringify(report, null, 2));
 
@@ -82,6 +84,38 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
     const stations = result.traverse?.stations || [];
     const adjusted = result.traverse?.adjustedStations || [];
     const courses  = result.extraction?.courses || result.finalExtraction?.courses || [];
+    const conceptual = result.conceptualAnalysis || result.extraction?.conceptualAnalysis;
+
+    if (conceptual && (!courses || courses.length === 0)) {
+      try {
+        const skMeta = {
+          parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
+          county:          result.extraction?.county           || null,
+          state:           result.extraction?.state            || null,
+          units:           result.extraction?.units            || 'Feet',
+          areaAcres:       0,
+          perimeter:       0,
+          basisOfBearings: result.extraction?.basisOfBearings  || null,
+          status:          'SKIPPED',
+        };
+
+        const pages = sketch.renderConceptualPages(
+          conceptual,
+          legalDesc,
+          skMeta
+        );
+
+        const pageLabels = ['conceptual_map', 'record_legal', 'conceptual_analysis'];
+        Object.entries(pages).forEach(([key, buf], i) => {
+          const outPath = path.join(outputFolder, `${baseName}_${pageLabels[i]}.png`);
+          fs.writeFileSync(outPath, buf);
+          console.log(`Output: wrote PNG conceptual page ${i + 1} — ${path.basename(outPath)}`);
+        });
+      } catch (pngEx) {
+        console.warn(`Output: Conceptual PNG sketch failed for ${sourceFileName}:`, pngEx.message);
+      }
+    }
+
     if (stations.length >= 2 && courses.length >= 1) {
       try {
         const meta = {

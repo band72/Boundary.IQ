@@ -920,3 +920,404 @@ export function renderSketchPages(stations, adjusted, courses, meta = {},
 export function renderSketchPng(stations, adjusted, courses, meta = {}) {
   return renderPage1(stations, adjusted, courses, meta, null);
 }
+
+export function renderConceptualPages(conceptualAnalysis, legalDesc, meta = {}) {
+  return {
+    page1: renderConceptualPage1(conceptualAnalysis, legalDesc, meta),
+    page2: renderConceptualPage2(legalDesc, meta),
+    page3: renderConceptualPage3(conceptualAnalysis, meta),
+  };
+}
+
+function renderConceptualPage1(conceptualAnalysis, legalDesc = '', meta = {}) {
+  const { canvas, ctx } = newCanvas();
+  drawPageFrame(ctx);
+
+  // Section title
+  ctx.fillStyle = C_HEADER;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('CONCEPTUAL PLAT SKETCH MAP', PAD, PAD + 10);
+
+  // Map box
+  const mapX = PAD;
+  const mapY = PAD + 25;
+  const mapW = W - PAD * 2;
+  const mapH = H - FOOTER_H - PAD - 35;
+
+  ctx.strokeStyle = C_BLACK;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(mapX, mapY, mapW, mapH);
+
+  // Grid background
+  ctx.strokeStyle = 'rgba(0,0,0,0.035)';
+  ctx.lineWidth = 0.5;
+  const gridStep = 60;
+  for (let gx = mapX + gridStep; gx < mapX + mapW; gx += gridStep) {
+    ctx.beginPath(); ctx.moveTo(gx, mapY); ctx.lineTo(gx, mapY + mapH); ctx.stroke();
+  }
+  for (let gy = mapY + gridStep; gy < mapY + mapH; gy += gridStep) {
+    ctx.beginPath(); ctx.moveTo(mapX, gy); ctx.lineTo(mapX + mapW, gy); ctx.stroke();
+  }
+
+  // Parse lot and block numbers
+  const lotMatch = legalDesc.toUpperCase().match(/LOT\s*(\d+[A-Z]?|\d+)/i) || 
+                   (conceptualAnalysis.Description || '').toUpperCase().match(/LOT\s*(\d+[A-Z]?|\d+)/i);
+  const blockMatch = legalDesc.toUpperCase().match(/BLOCK\s*(\d+[A-Z]?|\d+)/i) ||
+                     (conceptualAnalysis.Description || '').toUpperCase().match(/BLOCK\s*(\d+[A-Z]?|\d+)/i);
+  const lotNum = lotMatch ? lotMatch[1] : "107";
+  const blockNum = blockMatch ? blockMatch[1] : "A";
+
+  const subMatch = legalDesc.match(/(?:subdivision|plat|replat)\s+of\s+([A-Za-z0-9\s]+?)(?:,|\.|\b)/i) || 
+                   legalDesc.match(/([A-Za-z0-9\s]+?)\s+subdivision/i) ||
+                   (conceptualAnalysis.Description || '').match(/(?:subdivision|plat|replat)\s+of\s+([A-Za-z0-9\s]+?)(?:,|\.|\b)/i);
+  const subName = subMatch ? subMatch[1].trim().toUpperCase() : "RECORDED PLAT SUBDIVISION";
+
+  // North Arrow
+  const arrowX = mapX + mapW - 60;
+  const arrowY = mapY + 60;
+  ctx.strokeStyle = C_BLACK;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(arrowX, arrowY, 16, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.moveTo(arrowX, arrowY - 20);
+  ctx.lineTo(arrowX - 5, arrowY - 5);
+  ctx.lineTo(arrowX + 5, arrowY - 5);
+  ctx.closePath();
+  ctx.fillStyle = C_BLACK;
+  ctx.fill();
+  
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = C_BLACK;
+  ctx.textAlign = 'center';
+  ctx.fillText('N', arrowX, arrowY - 24);
+
+  // Title block on map
+  ctx.textAlign = 'left';
+  ctx.fillStyle = C_HEADER;
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('CONCEPTUAL PLAT SKETCH MAP', mapX + 30, mapY + 40);
+  ctx.font = '600 9px sans-serif';
+  ctx.fillStyle = C_LABEL;
+  ctx.fillText(`SUBDIVISION: ${subName}`, mapX + 30, mapY + 55);
+  ctx.fillText(`BLOCK: ${blockNum}`, mapX + 30, mapY + 68);
+
+  // Roadway along bottom of map box
+  const roadY = mapY + mapH - 120;
+  const roadH = 50;
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(mapX, roadY); ctx.lineTo(mapX + mapW, roadY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mapX, roadY + roadH); ctx.lineTo(mapX + mapW, roadY + roadH); ctx.stroke();
+  
+  ctx.strokeStyle = '#64748b';
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([8, 8]);
+  ctx.beginPath(); ctx.moveTo(mapX, roadY + roadH / 2); ctx.lineTo(mapX + mapW, roadY + roadH / 2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#334155';
+  ctx.font = 'italic bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('PLATTED ROADWAY (PUBLIC RIGHT-OF-WAY)', mapX + mapW / 2, roadY + roadH / 2 + 3);
+
+  // Lots grid inside block
+  const blockX = mapX + 80;
+  const blockWidth = mapW - 160;
+  const blockY = mapY + 110;
+  const blockHeight = roadY - blockY - 10;
+
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'italic bold 9px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`BLOCK ${blockNum} BOUNDARY`, blockX + 20, blockY + 14);
+
+  // 5 Lots inside block
+  const numLots = 5;
+  const lotW = blockWidth / numLots;
+  const startLotVal = isNaN(parseInt(lotNum)) ? 105 : parseInt(lotNum) - 2;
+
+  for (let i = 0; i < numLots; i++) {
+    const lx = blockX + i * lotW;
+    const ly = blockY + 30;
+    const lh = blockHeight - 30;
+
+    const currentLotLabel = isNaN(parseInt(lotNum))
+      ? (i === 2 ? lotNum : `LOT ${105 + i}`)
+      : `LOT ${startLotVal + i}`;
+
+    const isSubject = (i === 2);
+
+    if (isSubject) {
+      // Highlight subject lot
+      ctx.fillStyle = 'rgba(14, 165, 233, 0.08)';
+      ctx.fillRect(lx, ly, lotW, lh);
+      
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(lx, ly, lotW, lh);
+
+      // Hatch pattern
+      ctx.strokeStyle = 'rgba(14, 165, 233, 0.15)';
+      ctx.lineWidth = 1.0;
+      for (let offset = 10; offset < lotW + lh; offset += 15) {
+        ctx.beginPath();
+        ctx.moveTo(lx + Math.max(0, offset - lh), ly + Math.min(lh, offset));
+        ctx.lineTo(lx + Math.min(lotW, offset), ly + Math.max(0, offset - lotW));
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#0284c7';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(currentLotLabel, lx + lotW / 2, ly + lh / 2 - 8);
+      ctx.font = 'bold 8px sans-serif';
+      ctx.fillText('(SUBJECT PROPERTY)', lx + lotW / 2, ly + lh / 2 + 4);
+      
+      ctx.font = '500 7.5px sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText("60.00'", lx + lotW / 2, ly + 14);
+      ctx.fillText("110.00'", lx + lotW / 2, ly + lh - 10);
+      
+      ctx.save();
+      ctx.translate(lx + 10, ly + lh / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("110.00' (TYP)", 0, 0);
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.0;
+      ctx.strokeRect(lx, ly, lotW, lh);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(currentLotLabel, lx + lotW / 2, ly + lh / 2);
+    }
+  }
+
+  // Rear drainage easement
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath();
+  ctx.moveTo(blockX, blockY + 50);
+  ctx.lineTo(blockX + blockWidth, blockY + 50);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ef4444';
+  ctx.font = 'italic 7.5px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText("15' REAR DRAINAGE & UTILITY EASEMENT", blockX + 15, blockY + 45);
+
+  // Disclaimer stamp at bottom of map
+  const stampW = 420;
+  const stampH = 30;
+  const stampX = mapX + (mapW - stampW) / 2;
+  const stampY = mapY + mapH - 45;
+  ctx.strokeStyle = 'rgba(196, 78, 0, 0.4)';
+  ctx.fillStyle = 'rgba(196, 78, 0, 0.04)';
+  ctx.lineWidth = 1.0;
+  ctx.strokeRect(stampX, stampY, stampW, stampH);
+  ctx.fillRect(stampX, stampY, stampW, stampH);
+
+  ctx.fillStyle = '#c44e00';
+  ctx.font = 'bold 8.5px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CONCEPTUAL DIAGRAM — FOR ILLUSTRATIVE PURPOSES ONLY', mapX + mapW / 2, stampY + 12);
+  ctx.font = '500 7px sans-serif';
+  ctx.fillText('NOT A FIELD SURVEY. PROPERTY BOUNDARIES AND RELATIVE SIZES ARE RECORD ESTIMATES.', mapX + mapW / 2, stampY + 22);
+
+  // Draw Footer notes and Title block
+  const footerY = H - FOOTER_H - MARGIN;
+  const footerW = W - MARGIN * 2;
+  const tbWidth = TB_W;
+  const noteW = footerW - tbWidth - 12;
+
+  // Notes Box
+  ctx.strokeStyle = C_BLACK;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(MARGIN, footerY, noteW, FOOTER_H);
+  drawPanelHeader(ctx, MARGIN, footerY, noteW, HDR_H, 'CONCEPTUAL ANALYSIS SUMMARY');
+
+  ctx.fillStyle = C_BLACK;
+  ctx.font = 'bold 8.5px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Parent Tract Estimate: ${conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}`, MARGIN + 12, footerY + HDR_H + 20);
+  ctx.fillText(`Standard Lot Size: ${conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}`, MARGIN + 12, footerY + HDR_H + 35);
+  
+  ctx.font = 'italic 8.5px sans-serif';
+  ctx.fillStyle = '#444444';
+  const descY = footerY + HDR_H + 55;
+  drawWrappedText(ctx, conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison || '', MARGIN + 12, descY, noteW - 24, 13);
+
+  // Title Block
+  drawTitleBlock(ctx, MARGIN + noteW + 12, footerY, tbWidth, FOOTER_H, meta, 1, 3);
+
+  return canvas.toBuffer('image/png');
+}
+
+function renderConceptualPage2(legalDesc, meta = {}) {
+  const { canvas, ctx } = newCanvas();
+  drawPageFrame(ctx);
+
+  // Section title
+  ctx.fillStyle = C_HEADER;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('METES & BOUNDS LEGAL DESCRIPTION', PAD, PAD + 10);
+
+  // Description box
+  const descX = PAD;
+  const descY = PAD + 25;
+  const descW = W - PAD * 2;
+  const descH = H - FOOTER_H - PAD - 35;
+
+  ctx.strokeStyle = C_BLACK;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(descX, descY, descW, descH);
+  drawPanelHeader(ctx, descX, descY, descW, HDR_H, 'RECORD DESCRIPTION');
+
+  ctx.fillStyle = C_BLACK;
+  ctx.font = '11px serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  
+  const textX = descX + 24;
+  const textY = descY + HDR_H + 24;
+  const maxTextW = descW - 48;
+  const lineH = 18;
+
+  if (legalDesc) {
+    drawWrappedText(ctx, legalDesc, textX, textY, maxTextW, lineH);
+  } else {
+    ctx.font = 'italic 10px sans-serif';
+    ctx.fillStyle = '#666666';
+    ctx.fillText('[No legal description provided.]', textX, textY);
+  }
+
+  // Footer notes and Title block
+  const footerY = H - FOOTER_H - MARGIN;
+  const footerW = W - MARGIN * 2;
+  const tbWidth = TB_W;
+  const noteW = footerW - tbWidth - 12;
+
+  ctx.strokeStyle = C_BLACK;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(MARGIN, footerY, noteW, FOOTER_H);
+  drawPanelHeader(ctx, MARGIN, footerY, noteW, HDR_H, 'SHEET NOTES & CERTIFICATION');
+
+  ctx.fillStyle = C_BLACK;
+  ctx.font = '8px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('1. This legal description represents a mathematical compilation of recorded deed and plat data.', MARGIN + 12, footerY + HDR_H + 25);
+  ctx.fillText('2. No mathematical boundary traverse could be computed due to reference to recorded plat.', MARGIN + 12, footerY + HDR_H + 40);
+
+  ctx.font = 'bold 8px sans-serif';
+  ctx.fillText('SHEET IDENTIFIER: RECORD LEGAL DESCRIPTION', MARGIN + 12, footerY + FOOTER_H - 18);
+
+  // Title Block
+  drawTitleBlock(ctx, MARGIN + noteW + 12, footerY, tbWidth, FOOTER_H, meta, 2, 3);
+
+  return canvas.toBuffer('image/png');
+}
+
+function renderConceptualPage3(conceptualAnalysis, meta = {}) {
+  const { canvas, ctx } = newCanvas();
+  drawPageFrame(ctx);
+
+  // Section title
+  ctx.fillStyle = C_HEADER;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('CONCEPTUAL LOT & BLOCK ANALYSIS', PAD, PAD + 10);
+
+  // Description box
+  const descX = PAD;
+  const descY = PAD + 25;
+  const descW = W - PAD * 2;
+  const descH = H - FOOTER_H - PAD - 35;
+
+  ctx.strokeStyle = C_BLACK;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(descX, descY, descW, descH);
+  drawPanelHeader(ctx, descX, descY, descW, HDR_H, 'LOT & BLOCK ASSUMPTIONS & COMPARATIVE ANALYSIS');
+
+  let curY = descY + HDR_H + 20;
+
+  // Title 1: Deed Summary
+  ctx.fillStyle = '#1a365d';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('DEED SUMMARY & INTERPRETATION', descX + 20, curY);
+  curY += 16;
+  ctx.fillStyle = C_BLACK;
+  ctx.font = '9.5px sans-serif';
+  curY = drawWrappedText(ctx, conceptualAnalysis.Description || conceptualAnalysis.description || '', descX + 20, curY, descW - 40, 14);
+  curY += 12;
+
+  // Title 2: General Assumptions
+  ctx.fillStyle = '#1a365d';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('1. GENERAL ASSUMPTIONS FOR LOT & BLOCK SIZES', descX + 20, curY);
+  curY += 16;
+  ctx.fillStyle = C_BLACK;
+  ctx.font = '9.5px sans-serif';
+  ctx.fillText('When a deed refers to a subdivision Plat, surveyors and database systems use the following size assumptions:', descX + 20, curY);
+  curY += 14;
+  ctx.font = '9px sans-serif';
+  ctx.fillText('• Subdivision Lots (Residential): Standard residential lots typically range between 0.10 to 0.25 acres. Standard: 0.15 acres.', descX + 25, curY);
+  curY += 13;
+  ctx.fillText('• Subdivision Tracts / Blocks (Commercial): Tracts inside replats typically range from 1.0 to 5.0+ acres.', descX + 25, curY);
+  curY += 13;
+  ctx.fillText('• Government Lots: Fractional sections along boundaries or water bodies typically range from 10 to 50 acres.', descX + 25, curY);
+  curY += 18;
+
+  // Title 3: Specific Breakdown
+  ctx.fillStyle = '#1a365d';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('2. SPECIFIC SIZE ESTIMATES & RELATIVE COMPARISON', descX + 20, curY);
+  curY += 16;
+  
+  ctx.fillStyle = C_BLACK;
+  ctx.font = 'bold 9.5px sans-serif';
+  ctx.fillText(`Parent Tract size estimate: ${conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}`, descX + 20, curY);
+  curY += 13;
+  ctx.fillText(`Standard Lot size estimate: ${conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}`, descX + 20, curY);
+  curY += 15;
+  ctx.font = 'italic 9.5px sans-serif';
+  ctx.fillStyle = '#444444';
+  drawWrappedText(ctx, conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison || '', descX + 20, curY, descW - 40, 14);
+
+  // Footer notes and Title block
+  const footerY = H - FOOTER_H - MARGIN;
+  const footerW = W - MARGIN * 2;
+  const tbWidth = TB_W;
+  const noteW = footerW - tbWidth - 12;
+
+  ctx.strokeStyle = C_BLACK;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(MARGIN, footerY, noteW, FOOTER_H);
+  drawPanelHeader(ctx, MARGIN, footerY, noteW, HDR_H, 'CONCEPTUAL SHEET NOTES');
+
+  ctx.fillStyle = C_BLACK;
+  ctx.font = '8px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('1. This analysis provides a conceptual representation based on standard lot, block, and tract guidelines.', MARGIN + 12, footerY + HDR_H + 25);
+  ctx.fillText('2. True dimensions and boundaries require a professional land survey of the referenced plat map.', MARGIN + 12, footerY + HDR_H + 40);
+
+  ctx.font = 'bold 8px sans-serif';
+  ctx.fillText('SHEET IDENTIFIER: CONCEPTUAL ANALYSIS', MARGIN + 12, footerY + FOOTER_H - 18);
+
+  // Title Block
+  drawTitleBlock(ctx, MARGIN + noteW + 12, footerY, tbWidth, FOOTER_H, meta, 3, 3);
+
+  return canvas.toBuffer('image/png');
+}

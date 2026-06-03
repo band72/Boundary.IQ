@@ -980,6 +980,14 @@ router.post('/process-file', async (req, res) => {
       saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
         'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null, fileHash);
 
+      // Auto-output if enabled
+      if (autoOutput) {
+        try {
+          const outputFolder = output.createOutputFolder(validPath);
+          output.writeResultFiles(outputFolder, fileName, result, null);
+        } catch (ex) { console.warn('Auto-output failed:', ex.message); }
+      }
+
       if (keepAlive) clearInterval(keepAlive);
       res.write(JSON.stringify({ status: 'skipped', result }));
       res.end();
