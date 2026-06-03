@@ -626,8 +626,20 @@ router.post('/process-batch', async (req, res) => {
               saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
               return;
             } else if (platResult?.needsManual) {
-              results[index] = { fileName, status: 'error', extraction, traverse: null, legalDescription: null, error: 'LOT_BLOCK lookup requires manual coordinate entry (Tier 3)', needsManualPlat: true, platInfo: { lot: platResult.lot, block: platResult.block, subdivision: platResult.subdivision } };
-              saveDeedLogWrapper(req, batchId, fileName, `[LOT_BLOCK-MANUAL] ${path.parse(fileName).name}`, 0, 999, 0, 'FAIL', 'Stage 4: LOT_BLOCK needs manual plat coordinates', JSON.stringify(extraction), null);
+              results[index] = {
+                fileName,
+                status: 'skipped',
+                extraction,
+                traverse: null,
+                legalDescription: null,
+                error: null,
+                skipReason: `Lot/Block lookup requires manual coordinate entry (Tier 3)`,
+                needsManualPlat: true,
+                platInfo: { lot: platResult.lot, block: platResult.block, subdivision: platResult.subdivision },
+                conceptualAnalysis: extraction.conceptualAnalysis || null
+              };
+              saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+                'SKIPPED', 'Stage 4: LOT_BLOCK needs manual plat coordinates', JSON.stringify(extraction), null);
               return;
             }
           } catch (platEx) {
@@ -638,6 +650,7 @@ router.post('/process-batch', async (req, res) => {
           results[index] = {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Non-traversable: ${extraction.classification}`,
+            conceptualAnalysis: extraction.conceptualAnalysis || null
           };
           saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
@@ -645,14 +658,16 @@ router.post('/process-batch', async (req, res) => {
         }
 
         const isNonTraversable = (!extraction.courses || extraction.courses.length === 0) &&
-          (extraction.classification === 'PLAT' ||
-           (repairResult.traverseError || '').toLowerCase().includes('no traversable'));
+          (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(extraction.classification) ||
+           (repairResult.traverseError || '').toLowerCase().includes('no traversable') ||
+           (repairResult.traverseError || '').toLowerCase().includes('zero segment'));
 
         if (isNonTraversable) {
           console.log(`FolderScan batch: ${fileName} — SKIPPED (${extraction.classification})`);
           results[index] = {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Non-traversable: ${extraction.classification}`,
+            conceptualAnalysis: extraction.conceptualAnalysis || null
           };
           saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);

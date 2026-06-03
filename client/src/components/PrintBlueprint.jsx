@@ -3,6 +3,203 @@ import { createPortal } from 'react-dom';
 import { API } from '../config';
 const PAD = 50;
 
+function drawConceptualMap(ctx, W, H, conceptualAnalysis, legalDesc = '') {
+  // Extract lot number and subdivision name
+  const lotMatch = legalDesc.toUpperCase().match(/LOT\s*(\d+[A-Z]?|\d+)/i) || 
+                   (conceptualAnalysis.Description || '').toUpperCase().match(/LOT\s*(\d+[A-Z]?|\d+)/i);
+  const blockMatch = legalDesc.toUpperCase().match(/BLOCK\s*(\d+[A-Z]?|\d+)/i) ||
+                     (conceptualAnalysis.Description || '').toUpperCase().match(/BLOCK\s*(\d+[A-Z]?|\d+)/i);
+  const lotNum = lotMatch ? lotMatch[1] : "107";
+  const blockNum = blockMatch ? blockMatch[1] : "A";
+
+  const subMatch = legalDesc.match(/(?:subdivision|plat|replat)\s+of\s+([A-Za-z0-9\s]+?)(?:,|\.|\b)/i) || 
+                   legalDesc.match(/([A-Za-z0-9\s]+?)\s+subdivision/i) ||
+                   (conceptualAnalysis.Description || '').match(/(?:subdivision|plat|replat)\s+of\s+([A-Za-z0-9\s]+?)(?:,|\.|\b)/i);
+  const subName = subMatch ? subMatch[1].trim().toUpperCase() : "RECORDED PLAT SUBDIVISION";
+
+  // 1. Grid lines (blueprint style)
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.04)';
+  ctx.lineWidth = 0.5;
+  const step = 60;
+  for (let x = step; x < W; x += step) {
+    ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, H - 10); ctx.stroke();
+  }
+  for (let y = step; y < H; y += step) {
+    ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(W - 10, y); ctx.stroke();
+  }
+
+  // 2. North Arrow
+  const arrowX = W - 60;
+  const arrowY = 65;
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(arrowX, arrowY, 14, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.moveTo(arrowX, arrowY - 18);
+  ctx.lineTo(arrowX - 4, arrowY - 4);
+  ctx.lineTo(arrowX + 4, arrowY - 4);
+  ctx.closePath();
+  ctx.fillStyle = '#000000';
+  ctx.fill();
+
+  ctx.font = '700 9px sans-serif';
+  ctx.fillStyle = '#000000';
+  ctx.textAlign = 'center';
+  ctx.fillText('N', arrowX, arrowY - 21);
+
+  // 3. Draw Title Stamp
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 11px sans-serif';
+  ctx.fillText('CONCEPTUAL PLAT SKETCH MAP', 30, 45);
+  ctx.font = '600 8px sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText(`SUBDIVISION: ${subName}`, 30, 58);
+  ctx.fillText(`BLOCK: ${blockNum}`, 30, 68);
+
+  // 4. Draw Roadway along bottom
+  const roadY = 350;
+  const roadH = 45;
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1.5;
+  // Top road line
+  ctx.beginPath(); ctx.moveTo(30, roadY); ctx.lineTo(W - 30, roadY); ctx.stroke();
+  // Bottom road line
+  ctx.beginPath(); ctx.moveTo(30, roadY + roadH); ctx.lineTo(W - 30, roadY + roadH); ctx.stroke();
+  
+  // Center dashed line
+  ctx.strokeStyle = '#64748b';
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath(); ctx.moveTo(30, roadY + roadH / 2); ctx.lineTo(W - 30, roadY + roadH / 2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Road Label
+  ctx.fillStyle = '#334155';
+  ctx.font = 'italic 700 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('PLATTED ROADWAY (PUBLIC RIGHT-OF-WAY)', W / 2, roadY + roadH / 2 + 3);
+
+  // 5. Draw Subdivision Block & Lots
+  const blockX = 100;
+  const blockY = 110;
+  const blockW = 520;
+  const blockH = 200;
+
+  // Draw Block Boundary (Dashed outline)
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(blockX, blockY, blockW, blockH);
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'italic 700 8px sans-serif';
+  ctx.fillText(`BLOCK ${blockNum} BOUNDARY`, blockX + 60, blockY + 12);
+
+  // Draw 5 Lots inside block
+  const numLots = 5;
+  const lotW = blockW / numLots;
+  const startLotVal = isNaN(parseInt(lotNum)) ? 105 : parseInt(lotNum) - 2;
+
+  for (let i = 0; i < numLots; i++) {
+    const lx = blockX + i * lotW;
+    const ly = blockY + 25;
+    const lh = blockH - 25;
+
+    const currentLotLabel = isNaN(parseInt(lotNum))
+      ? (i === 2 ? lotNum : `LOT ${105 + i}`)
+      : `LOT ${startLotVal + i}`;
+
+    const isSubject = (i === 2); // Middle lot is subject
+
+    if (isSubject) {
+      // Highlight subject lot
+      ctx.fillStyle = 'rgba(14, 165, 233, 0.08)';
+      ctx.fillRect(lx, ly, lotW, lh);
+      
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(lx, ly, lotW, lh);
+
+      // Draw hatch pattern manually inside subject lot for surveyor style
+      ctx.strokeStyle = 'rgba(14, 165, 233, 0.15)';
+      ctx.lineWidth = 1.0;
+      for (let offset = 10; offset < lotW + lh; offset += 15) {
+        ctx.beginPath();
+        ctx.moveTo(lx + Math.max(0, offset - lh), ly + Math.min(lh, offset));
+        ctx.lineTo(lx + Math.min(lotW, offset), ly + Math.max(0, offset - lotW));
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#0284c7';
+      ctx.font = '700 9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(currentLotLabel, lx + lotW / 2, ly + lh / 2 - 8);
+      ctx.font = '700 7px sans-serif';
+      ctx.fillText('(SUBJECT PROPERTY)', lx + lotW / 2, ly + lh / 2 + 4);
+      
+      // Draw standard residential lot dimensions label
+      ctx.font = '500 6.5px sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText("60.00'", lx + lotW / 2, ly + 12);
+      ctx.fillText("110.00'", lx + lotW / 2, ly + lh - 8);
+      
+      // Side dimension vertical
+      ctx.save();
+      ctx.translate(lx + 8, ly + lh / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("110.00' (TYP)", 0, 0);
+      ctx.restore();
+    } else {
+      // Neighbor lot
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.0;
+      ctx.strokeRect(lx, ly, lotW, lh);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '600 8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(currentLotLabel, lx + lotW / 2, ly + lh / 2);
+    }
+  }
+
+  // 6. Draw a utility easement line
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([2, 3]);
+  // rear easement line
+  ctx.beginPath();
+  ctx.moveTo(blockX, blockY + 40);
+  ctx.lineTo(blockX + blockW, blockY + 40);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ef4444';
+  ctx.font = 'italic 6px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText("15' REAR DRAINAGE & UTILITY EASEMENT", blockX + 15, blockY + 36);
+
+  // 7. Disclaimer stamp box at bottom
+  const stampW = 380;
+  const stampH = 26;
+  const stampX = (W - stampW) / 2;
+  const stampY = H - 42;
+  ctx.strokeStyle = 'rgba(196, 78, 0, 0.4)';
+  ctx.fillStyle = 'rgba(196, 78, 0, 0.04)';
+  ctx.lineWidth = 1.0;
+  ctx.strokeRect(stampX, stampY, stampW, stampH);
+  ctx.fillRect(stampX, stampY, stampW, stampH);
+
+  ctx.fillStyle = '#c44e00';
+  ctx.font = '700 7.5px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CONCEPTUAL DIAGRAM — FOR ILLUSTRATIVE PURPOSES ONLY', W / 2, stampY + 10);
+  ctx.font = '500 6.5px sans-serif';
+  ctx.fillText('NOT A FIELD SURVEY. PROPERTY BOUNDARIES AND RELATIVE SIZES ARE RECORD ESTIMATES.', W / 2, stampY + 19);
+}
+
 function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000 }) {
   const pts = [{ northing: pob.northing, easting: pob.easting }];
   let curN = pob.northing;
@@ -280,7 +477,12 @@ export default function PrintBlueprint({
         : (courses?.length ? computePointsFromCourses(courses, pob) : []);
       const adjPts = adjusted?.length ? adjusted : rawPts;
       
-      if (rawPts.length < 2) return;
+      if (rawPts.length < 2) {
+        if (conceptualAnalysis) {
+          drawConceptualMap(ctx, W, H, conceptualAnalysis, legalDesc);
+        }
+        return;
+      }
 
       // Use active points for bounds scaling
       const activePts = showAdjusted ? adjPts : rawPts;
@@ -815,72 +1017,13 @@ export default function PrintBlueprint({
               {/* LANDSCAPE CONTAINER */}
               <div className="blueprint-grid">
                 
-                {/* LEFT SIDE: Map Canvas drawing or Conceptual Analysis */}
-                {courses.length > 0 ? (
-                  <div className="blueprint-map-column">
-                    <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
-                    <canvas ref={setCanvasElement} className="blueprint-canvas-element" />
+                {/* LEFT SIDE: Map Canvas drawing */}
+                <div className="blueprint-map-column">
+                  <div className="blueprint-section-title">
+                    {courses.length > 0 ? 'BOUNDARY SURVEY SKETCH' : 'CONCEPTUAL PLAT SKETCH MAP'}
                   </div>
-                ) : conceptualAnalysis ? (
-                  <div className="blueprint-map-column" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', boxSizing: 'border-box' }}>
-                    <div className="blueprint-section-title">CONCEPTUAL LOT & BLOCK ANALYSIS</div>
-                    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '12px', boxSizing: 'border-box' }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: '#1a365d', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', textTransform: 'uppercase' }}>
-                        Deed Summary & Interpretation
-                      </div>
-                      <p style={{ fontSize: '0.8rem', lineHeight: 1.5, color: '#333', margin: 0, fontFamily: 'sans-serif' }}>
-                        {conceptualAnalysis.Description || conceptualAnalysis.description}
-                      </p>
-                      
-                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: '#1a365d', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginTop: '8px', textTransform: 'uppercase' }}>
-                        1. General Assumptions for Lot & Block Sizes
-                      </div>
-                      <div style={{ fontSize: '0.72rem', lineHeight: 1.4, color: '#475569', display: 'flex', flexDirection: 'column', gap: '6px', fontFamily: 'sans-serif' }}>
-                        <p style={{ margin: '0 0 6px 0' }}>
-                          When a deed does not explicitly state dimensions or acreage and instead refers to a subdivision Plat (e.g., "Lot X, Block Y of Subdivision Z"), surveyors and database systems use the following size assumptions:
-                        </p>
-                        <div>
-                          <strong>Subdivision Lots (Residential):</strong> Standard modern residential lots (like Lot 107 of Westwood Estates mentioned in the deed) typically range between 0.10 to 0.25 acres (approx. 4,350 to 10,000 sq. ft.). A common standard is 0.15 acres (e.g., a 60' × 110' lot, or 6,600 sq. ft.).
-                        </div>
-                        <div>
-                          <strong>Subdivision Tracts / Blocks (Commercial/Industrial):</strong> "Tracts" or "Blocks" inside replats (like Tract 1 of Peninsular Life Insurance Company's Replat) are generally much larger parcels set aside for commercial use, parks, or future subdivision. These typically range from 1.0 to 5.0+ acres.
-                        </div>
-                        <div>
-                          <strong>Government Lots:</strong> Fractional sections of land along section boundaries, water bodies, or correction lines (like Government Lot 7 and Government Lot 2) are typically larger parcels ranging from 10 to 50 acres.
-                        </div>
-                      </div>
-
-                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: '#1a365d', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginTop: '8px', textTransform: 'uppercase' }}>
-                        2. Relative Size Breakdown for the Provided Deed Example
-                      </div>
-                      <p style={{ fontSize: '0.72rem', color: '#475569', margin: '0 0 6px 0', fontFamily: 'sans-serif' }}>
-                        Using the specific dimensions and descriptions given in the image, we can estimate and compare the relative sizes of the properties in question:
-                      </p>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '0.72rem', fontFamily: 'sans-serif' }}>
-                        <div>
-                          <strong style={{ color: '#475569' }}>PARENT TRACT SIZE:</strong>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'monospace', marginTop: '2px', color: '#0f172a' }}>
-                            {conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}
-                          </div>
-                        </div>
-                        <div>
-                          <strong style={{ color: '#475569' }}>STANDARD LOT SIZE:</strong>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'monospace', marginTop: '2px', color: '#0f172a' }}>
-                            {conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: '#0f172a', fontStyle: 'italic', marginTop: '6px', borderTop: '0.5px solid #cbd5e1', paddingTop: '6px', fontFamily: 'sans-serif' }}>
-                        {conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="blueprint-map-column">
-                    <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
-                    <canvas ref={setCanvasElement} className="blueprint-canvas-element" />
-                  </div>
-                )}
+                  <canvas ref={setCanvasElement} className="blueprint-canvas-element" />
+                </div>
 
                 {/* RIGHT SIDE: Information, tables and title block */}
                 <div className="blueprint-info-column">
@@ -899,56 +1042,74 @@ export default function PrintBlueprint({
                     </div>
                   </div>
 
-                  {/* Part 2: Dynamic Line and Curve Tables */}
-                  <div className="blueprint-tables-panel">
-                    {linesList.length > 0 && (
-                      <div className="table-block">
-                        <div className="panel-header">LINE TABLE</div>
-                        <table className="survey-table">
-                          <thead>
-                            <tr><th>ID</th><th>BEARING</th><th>DISTANCE</th></tr>
-                          </thead>
-                          <tbody>
-                            {linesList.map(line => (
-                              <tr key={line.id}>
-                                <td className="bold">{line.id}</td>
-                                <td>{line.bearing}</td>
-                                <td>{line.distance}'</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                  {/* Part 2: Dynamic Line and Curve Tables OR Conceptual Analysis Notes */}
+                  {courses.length > 0 ? (
+                    <div className="blueprint-tables-panel">
+                      {linesList.length > 0 && (
+                        <div className="table-block">
+                          <div className="panel-header">LINE TABLE</div>
+                          <table className="survey-table">
+                            <thead>
+                              <tr><th>ID</th><th>BEARING</th><th>DISTANCE</th></tr>
+                            </thead>
+                            <tbody>
+                              {linesList.map(line => (
+                                <tr key={line.id}>
+                                  <td className="bold">{line.id}</td>
+                                  <td>{line.bearing}</td>
+                                  <td>{line.distance}'</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
 
-                    {curvesList.length > 0 && (
-                      <div className="table-block" style={{ marginTop: '0.5rem' }}>
-                        <div className="panel-header">CURVE TABLE</div>
-                        <table className="survey-table">
-                          <thead>
-                            <tr>
-                              <th>ID</th>
-                              <th>RADIUS</th>
-                              <th>ARC LEN</th>
-                              <th>CHORD BRG</th>
-                              <th>CHORD DIST</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {curvesList.map(curve => (
-                              <tr key={curve.id}>
-                                <td className="bold">{curve.id}</td>
-                                <td>{curve.radius}'</td>
-                                <td>{curve.arcLength}'</td>
-                                <td style={{ fontSize: '0.62rem' }}>{curve.chordBearing}</td>
-                                <td>{curve.chordDistance}'</td>
+                      {curvesList.length > 0 && (
+                        <div className="table-block" style={{ marginTop: '0.5rem' }}>
+                          <div className="panel-header">CURVE TABLE</div>
+                          <table className="survey-table">
+                            <thead>
+                              <tr>
+                                <th>ID</th>
+                                <th>RADIUS</th>
+                                <th>ARC LEN</th>
+                                <th>CHORD BRG</th>
+                                <th>CHORD DIST</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {curvesList.map(curve => (
+                                <tr key={curve.id}>
+                                  <td className="bold">{curve.id}</td>
+                                  <td>{curve.radius}'</td>
+                                  <td>{curve.arcLength}'</td>
+                                  <td style={{ fontSize: '0.62rem' }}>{curve.chordBearing}</td>
+                                  <td>{curve.chordDistance}'</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ) : conceptualAnalysis ? (
+                    <div className="blueprint-desc-panel" style={{ maxHeight: '200px', flex: 'none', height: '180px' }}>
+                      <div className="panel-header" style={{ background: '#000000', color: '#ffffff' }}>CONCEPTUAL LOT & BLOCK ANALYSIS</div>
+                      <div className="panel-body font-sans" style={{ fontSize: '0.68rem', lineHeight: '1.4', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px' }}>
+                        <div>
+                          <strong>Interpretation:</strong> {conceptualAnalysis.Description || conceptualAnalysis.description}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', borderTop: '0.5px solid #000000', paddingTop: '4px', marginTop: '4px' }}>
+                          <div><strong>Parent Tract:</strong> {conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}</div>
+                          <div><strong>Std Lot:</strong> {conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 ac'}</div>
+                        </div>
+                        <div style={{ fontStyle: 'italic', borderTop: '0.5px solid #000000', paddingTop: '4px', marginTop: '2px' }}>
+                          {conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison}
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : null}
 
                   {/* Part 3: Professional Surveyor Title Block */}
                   {renderTitleBlock()}
@@ -1247,8 +1408,46 @@ export default function PrintBlueprint({
               </>
             ) : conceptualAnalysis ? (
               <>
-                {/* CONCEPTUAL SHEET 1: Legal Description */}
+                {/* CONCEPTUAL SHEET 1: Conceptual Sketch Map */}
                 <div className="blueprint-sheet">
+                  <div className="blueprint-border-outer">
+                    <div className="blueprint-border-inner">
+                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div className="blueprint-section-title">CONCEPTUAL PLAT SKETCH MAP</div>
+                        
+                        {/* Map occupies upper space */}
+                        <div style={{ flex: 1, minHeight: 0, position: 'relative', border: '1.5px solid #000000', boxSizing: 'border-box', marginBottom: '12px' }}>
+                          <canvas ref={setPrintCanvasElement} className="blueprint-canvas-element" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+                        </div>
+
+                        {/* Footer with Title Block and Conceptual Summary */}
+                        <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0 }}>
+                          
+                          {/* Conceptual Summary Box */}
+                          <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+                            <div className="panel-header">CONCEPTUAL ANALYSIS SUMMARY</div>
+                            <div style={{ padding: '8px', fontSize: '0.65rem', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, overflowY: 'auto' }}>
+                              <div><strong>Parent Tract Estimate:</strong> {conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}</div>
+                              <div><strong>Standard Lot Size:</strong> {conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}</div>
+                              <div style={{ fontStyle: 'italic', borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px' }}>
+                                {conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Title Block */}
+                          <div style={{ width: '420px', flexShrink: 0 }}>
+                            {renderTitleBlock()}
+                          </div>
+
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CONCEPTUAL SHEET 2: Legal Description */}
+                <div className="blueprint-sheet page-break">
                   <div className="blueprint-border-outer">
                     <div className="blueprint-border-inner">
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1279,7 +1478,7 @@ export default function PrintBlueprint({
                               <div>2. No mathematical boundary traverse could be computed due to reference to recorded plat.</div>
                               <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                                 <span>SHEET IDENTIFIER: RECORD LEGAL DESCRIPTION</span>
-                                <span>PAGE 1 OF 2</span>
+                                <span>PAGE 2 OF 3</span>
                               </div>
                             </div>
                           </div>
@@ -1295,7 +1494,7 @@ export default function PrintBlueprint({
                   </div>
                 </div>
 
-                {/* CONCEPTUAL SHEET 2: Conceptual Lot & Block Analysis */}
+                {/* CONCEPTUAL SHEET 3: Conceptual Lot & Block Analysis */}
                 <div className="blueprint-sheet page-break">
                   <div className="blueprint-border-outer">
                     <div className="blueprint-border-inner">
@@ -1372,11 +1571,11 @@ export default function PrintBlueprint({
                           <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
                             <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>CONCEPTUAL SHEET NOTES</div>
                             <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
-                              <div>1. This analysis provides a conceptual representation based on standard lot, block, and tract sizing guidelines.</div>
+                              <div>1. This analysis provides a conceptual representation based on standard lot, block, and tract guidelines.</div>
                               <div>2. True dimensions and boundaries require a professional land survey of the referenced plat map.</div>
                               <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                                 <span>SHEET IDENTIFIER: CONCEPTUAL ANALYSIS</span>
-                                <span>PAGE 2 OF 2</span>
+                                <span>PAGE 3 OF 3</span>
                               </div>
                             </div>
                           </div>
