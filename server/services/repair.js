@@ -163,72 +163,9 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     }
   }
 
-  // ── Stage 2: Dual-Run Consensus ───────────────────────────────────────
-  console.log('Stage 2: Dual-run Gemini consensus voting.');
-  let stage2Extraction = null, t2 = null;
-  try {
-    stage2Extraction = await gemini.extractBoundary(imageBytes, mimeType);
-    [t2] = tryCompute(stage2Extraction.courses, pob, units, actualOpenEnded);
-  } catch (ex) {
-    console.warn('Stage 2: Second Gemini run failed, skipping consensus.', ex.message);
-  }
-
   let bestExtraction = stage1_5Extraction || stage1Extraction || extraction;
   let bestTraverse = t1_5 || t1 || traverse;
   let bestStage = (stage1_5Extraction && stage1_5Extraction.message) || (stage1Extraction && stage1Extraction.message) || 'Stage 1: Bowtie Auto-Fix';
-
-  if (t2) {
-    const err1 = bestTraverse?.closure?.linearError ?? Infinity;
-    const err2 = t2.closure.linearError;
-    if (err2 < err1) {
-      bestExtraction = stage2Extraction;
-      bestTraverse = t2;
-      bestStage = 'Stage 2: Consensus (Run 2)';
-      console.log(`Stage 2: Run 2 wins with LinearError=${err2}`);
-    } else {
-      console.log(`Stage 2: Run 1 wins with LinearError=${err1}`);
-    }
-  }
-
-  if (bestTraverse && isPassing(bestTraverse)) {
-    console.log(`Stage 2 PASS: ${bestTraverse.closure.precisionRatio}`);
-    if (bestTraverse.courses) {
-      bestExtraction.courses = bestTraverse.courses;
-      bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
-    }
-    const steps2 = buildSolutionSteps(originalExtraction, bestExtraction, bestStage, bestTraverse, Date.now() - pipelineStart);
-    return { finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'PASS', repairStageUsed: bestStage, traverseError: null, originalExtraction, solutionSteps: steps2 };
-  }
-
-  // ── Stage 3: AI Misclosure Repair ─────────────────────────────────────
-  console.log('Stage 3: AI misclosure repair.');
-  const worstTraverse = bestTraverse || traverse || t1;
-  try {
-    const stage3Extraction = await gemini.extractMisclosureRepair(imageBytes, mimeType, bestExtraction, worstTraverse);
-    const [t3, e3] = tryCompute(stage3Extraction.courses, pob, units, actualOpenEnded);
-    if (t3 && isPassing(t3)) {
-      console.log(`Stage 3 PASS: ${t3.closure.precisionRatio}`);
-      if (t3.courses) {
-        stage3Extraction.courses = t3.courses;
-        stage3Extraction.rawJson = JSON.stringify(t3.courses);
-      }
-      const steps3 = buildSolutionSteps(originalExtraction, stage3Extraction, 'Stage 3: AI Misclosure Repair', t3, Date.now() - pipelineStart);
-      return { finalExtraction: stage3Extraction, finalTraverse: t3, status: 'PASS', repairStageUsed: 'Stage 3: AI Misclosure Repair', traverseError: null, originalExtraction, solutionSteps: steps3 };
-    }
-    if (t3 && t3.closure.linearError < worstTraverse.closure.linearError) {
-      bestExtraction = stage3Extraction;
-      bestTraverse = t3;
-      console.log(`Stage 3 improved error: ${t3.closure.linearError}`);
-    }
-  } catch (ex) {
-    console.warn('Stage 3: AI repair call failed, proceeding to Stage 4.', ex.message);
-  }
-
-  // Sync solved courses for Stage 4 fallback scenarios as well
-  if (bestTraverse && bestTraverse.courses) {
-    bestExtraction.courses = bestTraverse.courses;
-    bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
-  }
 
   // ── Stage 3.5: Compass Rule (Bowditch) Adjustment ────────────────────
   // Standard surveying practice: if a traverse closes to 1:5,000 or better
@@ -413,6 +350,68 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     }
   }
 
+  // ── Stage 2: Dual-Run Consensus (Generative Fallback) ───────────────────
+  console.log('Stage 2: Dual-run Gemini consensus voting.');
+  let stage2Extraction = null, t2 = null;
+  try {
+    stage2Extraction = await gemini.extractBoundary(imageBytes, mimeType);
+    [t2] = tryCompute(stage2Extraction.courses, pob, units, actualOpenEnded);
+  } catch (ex) {
+    console.warn('Stage 2: Second Gemini run failed, skipping consensus.', ex.message);
+  }
+
+  if (t2) {
+    const err1 = bestTraverse?.closure?.linearError ?? Infinity;
+    const err2 = t2.closure.linearError;
+    if (err2 < err1) {
+      bestExtraction = stage2Extraction;
+      bestTraverse = t2;
+      bestStage = 'Stage 2: Consensus (Run 2)';
+      console.log(`Stage 2: Run 2 wins with LinearError=${err2}`);
+    } else {
+      console.log(`Stage 2: Run 1 wins with LinearError=${err1}`);
+    }
+  }
+
+  if (bestTraverse && isPassing(bestTraverse)) {
+    console.log(`Stage 2 PASS: ${bestTraverse.closure.precisionRatio}`);
+    if (bestTraverse.courses) {
+      bestExtraction.courses = bestTraverse.courses;
+      bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
+    }
+    const steps2 = buildSolutionSteps(originalExtraction, bestExtraction, bestStage, bestTraverse, Date.now() - pipelineStart);
+    return { finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'PASS', repairStageUsed: bestStage, traverseError: null, originalExtraction, solutionSteps: steps2 };
+  }
+
+  // ── Stage 3: AI Misclosure Repair (Generative Fallback) ─────────────────
+  console.log('Stage 3: AI misclosure repair.');
+  const worstTraverse = bestTraverse || traverse || t1;
+  try {
+    const stage3Extraction = await gemini.extractMisclosureRepair(imageBytes, mimeType, bestExtraction, worstTraverse);
+    const [t3, e3] = tryCompute(stage3Extraction.courses, pob, units, actualOpenEnded);
+    if (t3 && isPassing(t3)) {
+      console.log(`Stage 3 PASS: ${t3.closure.precisionRatio}`);
+      if (t3.courses) {
+        stage3Extraction.courses = t3.courses;
+        stage3Extraction.rawJson = JSON.stringify(t3.courses);
+      }
+      const steps3 = buildSolutionSteps(originalExtraction, stage3Extraction, 'Stage 3: AI Misclosure Repair', t3, Date.now() - pipelineStart);
+      return { finalExtraction: stage3Extraction, finalTraverse: t3, status: 'PASS', repairStageUsed: 'Stage 3: AI Misclosure Repair', traverseError: null, originalExtraction, solutionSteps: steps3 };
+    }
+    if (t3 && t3.closure.linearError < worstTraverse.closure.linearError) {
+      bestExtraction = stage3Extraction;
+      bestTraverse = t3;
+      console.log(`Stage 3 improved error: ${t3.closure.linearError}`);
+    }
+  } catch (ex) {
+    console.warn('Stage 3: AI repair call failed, proceeding to Stage 4.', ex.message);
+  }
+
+  // Sync solved courses for Stage 4 fallback scenarios as well
+  if (bestTraverse && bestTraverse.courses) {
+    bestExtraction.courses = bestTraverse.courses;
+    bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
+  }
 
   if (isMeanderDeed(bestExtraction)) {
     console.log('Stage 4: Detected MEANDER deed (water boundary).');

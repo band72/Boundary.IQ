@@ -25,7 +25,42 @@ setGlobalDispatcher(new Agent({
 
 const PORT = process.env.PORT || 5050;
 const BASE_URL = `http://localhost:${PORT}`;
-const DEFAULT_PATH = '/home/friend/Downloads/Legal Descriptions';
+const DEFAULT_PATH = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/TrainPDF/Regency-Title';
+
+let authToken = null;
+
+async function authenticate() {
+  const username = 'cli_tester';
+  const password = 'CliPassword123!';
+  try {
+    const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    if (loginRes.ok) {
+      const data = await loginRes.json();
+      authToken = data.token;
+      return;
+    }
+  } catch (err) {
+    // Ignore error and try registering
+  }
+  
+  try {
+    const regRes = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    if (regRes.ok) {
+      const data = await regRes.json();
+      authToken = data.token;
+    }
+  } catch (err) {
+    console.error(`Authentication helper error: ${err.message}`);
+  }
+}
 
 const ANSI_COLORS = {
   reset: '\x1b[0m',
@@ -57,7 +92,9 @@ const ANSI_COLORS = {
 
 async function getStats() {
   try {
-    const res = await fetch(`${BASE_URL}/api/diagnostics/stats`);
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const res = await fetch(`${BASE_URL}/api/diagnostics/stats`, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const stats = await res.json();
     return stats;
@@ -109,22 +146,28 @@ async function processSingleFile(folderPath, fileName, index, total, batchId) {
       const precisionStr = r.traverse?.closure?.precisionRatio || 'Open-Ended';
       const linearErr = r.traverse?.closure?.linearError != null ? `${r.traverse.closure.linearError.toFixed(4)}ft` : 'N/A';
       console.log(`  [${index}/${total}] ${ANSI_COLORS.fgGreen}✓ ${fileName}${ANSI_COLORS.reset}:${cachedStr} PASS in ${duration}s | Error: ${linearErr} | Precision: ${precisionStr}`);
-      return { success: true, fileName };
+      return { success: true, skipped: false, fileName };
+    } else if (data.status === 'skipped') {
+      const r = data.result;
+      console.log(`  [${index}/${total}] ${ANSI_COLORS.fgYellow}⚠ ${fileName}${ANSI_COLORS.reset}: SKIPPED in ${duration}s | Reason: ${r?.skipReason || 'Non-traversable'}`);
+      return { success: false, skipped: true, fileName };
     } else {
       const r = data.result;
       const linearErr = r?.traverse?.closure?.linearError != null ? `${r.traverse.closure.linearError.toFixed(4)}ft` : 'N/A';
-      console.log(`  [${index}/${total}] ${ANSI_COLORS.fgRed}✗ ${fileName}${ANSI_COLORS.reset}: FAIL in ${duration}s | Error: ${linearErr} | ErrorDetails: ${r?.error || 'OCR failure'}`);
-      return { success: false, fileName };
+      console.log(`  [${index}/${total}] ${ANSI_COLORS.fgRed}✗ ${fileName}${ANSI_COLORS.reset}: FAIL in ${duration}s | Error: ${linearErr} | ErrorDetails: ${r?.error || 'OCR/LLM parsing failure'}`);
+      return { success: false, skipped: false, fileName };
     }
   } catch (err) {
     console.log(`  [${index}/${total}] ${ANSI_COLORS.fgRed}✗ ${fileName}${ANSI_COLORS.reset}: CRASHED in ${((Date.now() - startTime) / 1000).toFixed(1)}s | Error: ${err.message}`);
-    return { success: false, fileName };
+    return { success: false, skipped: false, fileName };
   }
 }
 
 async function getActiveProvider() {
   try {
-    const res = await fetch(`${BASE_URL}/api/settings/model`);
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const res = await fetch(`${BASE_URL}/api/settings/model`, { headers });
     if (!res.ok) return 'gemini';
     const data = await res.json();
     return data.activeProvider || 'gemini';
@@ -169,15 +212,17 @@ async function processBatch(folderPath, scanData, batchIndex) {
   await Promise.all(workers);
   
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-  const succeeded = results.filter(r => r.success).length;
-  const failed = results.length - succeeded;
-  const passRate = results.length > 0 ? (succeeded / results.length * 100).toFixed(1) : 0;
+  const succeeded = results.filter(r => r.success && !r.skipped).length;
+  const skipped = results.filter(r => r.skipped).length;
+  const failed = results.filter(r => !r.success && !r.skipped).length;
+  const processableCount = results.length - skipped;
+  const passRate = processableCount > 0 ? (succeeded / processableCount * 100).toFixed(1) : 0;
   
   console.log(`\n${ANSI_COLORS.fgGreen}✓ Batch ${batchIndex} Completed in ${duration}s!${ANSI_COLORS.reset}`);
-  console.log(`  Total: ${ANSI_COLORS.bright}${results.length}${ANSI_COLORS.reset} | Succeeded: ${ANSI_COLORS.fgGreen}${succeeded}${ANSI_COLORS.reset} | Failed: ${ANSI_COLORS.fgRed}${failed}${ANSI_COLORS.reset}`);
-  console.log(`  Batch Pass Rate: ${ANSI_COLORS.bright}${passRate}%${ANSI_COLORS.reset}`);
+  console.log(`  Total: ${ANSI_COLORS.bright}${results.length}${ANSI_COLORS.reset} | Succeeded: ${ANSI_COLORS.fgGreen}${succeeded}${ANSI_COLORS.reset} | Skipped: ${ANSI_COLORS.fgYellow}${skipped}${ANSI_COLORS.reset} | Failed: ${ANSI_COLORS.fgRed}${failed}${ANSI_COLORS.reset}`);
+  console.log(`  Processable Pass Rate: ${ANSI_COLORS.bright}${passRate}%${ANSI_COLORS.reset}`);
   
-  return { totalProcessed: results.length, succeeded, failed };
+  return { totalProcessed: results.length, succeeded, skipped, failed };
 }
 
 async function printDBStats() {
@@ -196,7 +241,15 @@ async function printDBStats() {
 }
 
 async function main() {
+  await authenticate();
   const args = argv.slice(2);
+  let folderPath = DEFAULT_PATH;
+  const dirIdx = args.indexOf('--dir');
+  if (dirIdx !== -1 && args[dirIdx + 1]) {
+    folderPath = args[dirIdx + 1];
+    args.splice(dirIdx, 2);
+  }
+
   const mode = args[0] || '--stats';
   
   console.log(`${ANSI_COLORS.fgCyan}=====================================================${ANSI_COLORS.reset}`);
@@ -208,7 +261,7 @@ async function main() {
     return;
   }
   
-  const scanData = await scanFolder(DEFAULT_PATH);
+  const scanData = await scanFolder(folderPath);
   if (!scanData) return;
   
   if (mode === '--scan') {
@@ -221,7 +274,7 @@ async function main() {
       console.error(`${ANSI_COLORS.fgRed}✗ Invalid batch index. Must be between 0 and ${scanData.batchesNeeded - 1}.${ANSI_COLORS.reset}`);
       return;
     }
-    await processBatch(DEFAULT_PATH, scanData, idx);
+    await processBatch(folderPath, scanData, idx);
     await printDBStats();
     return;
   }
@@ -232,6 +285,7 @@ async function main() {
     
     let totalProcessed = 0;
     let totalSucceeded = 0;
+    let totalSkipped = 0;
     let totalFailed = 0;
     
     for (let i = startIdx; i < scanData.batchesNeeded; i++) {
@@ -239,10 +293,11 @@ async function main() {
       console.log(`Batch Progress: ${i + 1} / ${scanData.batchesNeeded}`);
       console.log(`--------------------------------------------`);
       
-      const batchResult = await processBatch(DEFAULT_PATH, scanData, i);
+      const batchResult = await processBatch(folderPath, scanData, i);
       if (batchResult) {
         totalProcessed += batchResult.totalProcessed;
         totalSucceeded += batchResult.succeeded;
+        totalSkipped += batchResult.skipped || 0;
         totalFailed += batchResult.failed;
       }
       
@@ -254,7 +309,7 @@ async function main() {
     }
     
     console.log(`\n${ANSI_COLORS.bgGreen}${ANSI_COLORS.fgBlack} 🌟 BATCH PROCESSING RUN COMPLETE 🌟 ${ANSI_COLORS.reset}`);
-    console.log(`Processed: ${totalProcessed} | Succeeded: ${totalSucceeded} | Failed: ${totalFailed}`);
+    console.log(`Processed: ${totalProcessed} | Succeeded: ${totalSucceeded} | Skipped: ${totalSkipped} | Failed: ${totalFailed}`);
     await printDBStats();
     return;
   }

@@ -2171,6 +2171,65 @@ export default function BatchDeedTab() {
                     </div>
                   )}
 
+                  {(!r.extraction?.courses || r.extraction.courses.length === 0) && (r.conceptualAnalysis || r.extraction?.conceptualAnalysis) && (() => {
+                    const conceptual = r.conceptualAnalysis || r.extraction.conceptualAnalysis;
+                    return (
+                      <div style={{
+                        background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '1.25rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
+                            <span>🗺️</span> Conceptual Lot & Block Analysis
+                          </h3>
+                          <button className="btn btn-primary btn-sm" onClick={() => { setActiveIdx(activeIdx); setShowPrint(true); }}>
+                            🖨️ View & Print Analysis Sheet
+                          </button>
+                        </div>
+                        <div style={{
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '1rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.75rem',
+                          fontSize: '0.85rem'
+                        }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-bright)' }}>
+                            Deed Summary & Interpretation
+                          </div>
+                          <div style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                            {conceptual.Description || conceptual.description}
+                          </div>
+                          
+                          <div style={{ fontWeight: 600, color: 'var(--text-bright)', marginTop: '0.5rem' }}>
+                            Assumptions & Estimates
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                            <div className="closure-stat" style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                              <div className="label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Parent Tract Size</div>
+                              <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-bright)' }}>
+                                {conceptual.ParentTractSizeEstimate || conceptual.parentTractSizeEstimate || 'unknown'}
+                              </div>
+                            </div>
+                            <div className="closure-stat" style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                              <div className="label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Standard Lot Size</div>
+                              <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-bright)' }}>
+                                {conceptual.LotSizeEstimate || conceptual.lotSizeEstimate || '0.15 acres'}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: '0.8rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
+                            {conceptual.RelativeComparison || conceptual.relativeComparison}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {r.traverse && (
                     <div style={{
                       background: 'var(--bg-elevated)',
@@ -2739,10 +2798,11 @@ export default function BatchDeedTab() {
               area={r.traverse?.areaAcres ?? 0}
               perimeter={r.traverse?.perimeter ?? 0}
               pob={{ northing: parseFloat(activePobN), easting: parseFloat(activePobE) }}
-              initialLegalDescription={r.legalDescription?.legalDescription || ''}
+              initialLegalDescription={r.legalDescription?.legalDescription || r.extraction?.legalDesc || r.extraction?.legalDescription || ''}
               originalCourses={r.originalExtraction?.courses || null}
               originalLegalDescription={''}
               closure={r.traverse?.closure}
+              conceptualAnalysis={r.conceptualAnalysis || r.extraction?.conceptualAnalysis || null}
               onClose={() => setShowPrint(false)}
             />
           );

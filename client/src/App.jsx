@@ -9,6 +9,7 @@ import HelpModal from './components/HelpModal';
 import LoginScreen from './components/LoginScreen';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { API } from './config';
 
 const TABS = [
   { id: 'traverse',   icon: '📐', label: 'Traverse Compute' },
@@ -27,15 +28,15 @@ export default function App() {
   const [tab, setTab] = useState('traverse');
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // Authentication State (Bypassed with Guest user by default)
-  const [user, setUser] = useState({ username: 'Guest', role: 'administrator' });
+  // Authentication State
+  const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // Verify active session on load
   useEffect(() => {
     const token = localStorage.getItem('boundaryiq_auth_token');
     if (token) {
-      fetch('/api/auth/me', {
+      fetch(`${API}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -59,8 +60,18 @@ export default function App() {
   }, []);
 
   const handleAuthSuccess = (payload) => {
-    localStorage.setItem('boundaryiq_auth_token', payload.token);
-    setUser({ username: payload.username, role: payload.role });
+    try {
+      console.log('handleAuthSuccess received payload:', payload);
+      if (!payload) throw new Error('Authentication payload is null or undefined');
+      if (!payload.token) throw new Error('Authentication token is missing from response');
+      if (!payload.username) throw new Error('Authentication username is missing from response');
+
+      localStorage.setItem('boundaryiq_auth_token', payload.token);
+      setUser({ username: payload.username, role: payload.role });
+    } catch (err) {
+      console.error('handleAuthSuccess error:', err);
+      alert('Authentication transition failed: ' + err.message);
+    }
   };
 
   const handleLogout = async () => {
@@ -70,7 +81,7 @@ export default function App() {
 
     if (token) {
       try {
-        await fetch('/api/auth/logout', {
+        await fetch(`${API}/auth/logout`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -139,9 +150,9 @@ export default function App() {
           {/* User Profile Badge */}
           <div className="user-badge" style={{ marginLeft: 'auto' }}>
             <div className="user-avatar">
-              {user.username.substring(0, 2).toUpperCase()}
+              {(user?.username || 'US').substring(0, 2).toUpperCase()}
             </div>
-            <span className="user-name" title={user.username}>{user.username}</span>
+            <span className="user-name" title={user?.username || 'User'}>{user?.username || 'User'}</span>
             <button className="logout-icon-btn" onClick={handleLogout} title="Sign Out">
               🚪
             </button>

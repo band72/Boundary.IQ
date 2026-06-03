@@ -5,10 +5,14 @@ import { spawn } from 'child_process';
 import * as gemini from '../services/geminiVision.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
 import * as dbSvc from '../services/diagnosticsDb.js';
+import { requireAuth } from '../middleware/auth.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 const router = Router();
+
+// Secure all settings routes with session authentication
+router.use(requireAuth);
 
 let ollamaSpawnPending = false;
 

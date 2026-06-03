@@ -58,30 +58,52 @@ ${deedText}`;
 
 // ── Ollama text-only call ─────────────────────────────────────────────────────
 async function callOllama(model, prompt) {
+  const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
   const payload = {
     model,
     prompt,
     stream: false,
-    options: { temperature: 0.0, num_predict: 4096 },
-    format: 'json',
+    options: { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
   };
-
-  const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(1800000), // 30 min max for local text inference
-    dispatcher: ollamaAgent,
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    if (res.status === 404) throw new Error(`Model "${model}" not found. Run: ollama pull ${model}`);
-    throw new Error(`Ollama returned ${res.status}: ${errText.substring(0, 200)}`);
+  if (!isReasoning) {
+    payload.format = 'json';
   }
 
-  const data = await res.json();
-  return data.response || '';
+  const maxRetries = 1;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(1800000), // 30 min max for local text inference
+        dispatcher: ollamaAgent,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 404) throw new Error(`Model "${model}" not found. Run: ollama pull ${model}`);
+        if (attempt < maxRetries) {
+          console.warn(`Ollama /generate returned ${res.status} on attempt ${attempt + 1}. Retrying…`);
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw new Error(`Ollama returned ${res.status}: ${errText.substring(0, 200)}`);
+      }
+
+      const data = await res.json();
+      const rawText = data.response || '';
+      if (!rawText.trim()) {
+        throw new Error('Ollama returned empty response string.');
+      }
+      return rawText;
+    } catch (ex) {
+      if (attempt === maxRetries) throw ex;
+      console.warn(`Ollama /generate attempt ${attempt + 1} failed: ${ex.message}. Retrying…`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  throw new Error('Exceeded maximum retry attempts for Ollama /api/generate.');
 }
 
 // ── JSON parser — robust to common local LLM formatting issues ────────────────

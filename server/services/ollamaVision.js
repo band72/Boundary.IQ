@@ -124,7 +124,7 @@ async function generateVisionChat(buffer, model, prompt) {
     model,
     messages: [message],
     stream: false,
-    options: { temperature: 0.1, num_predict: 8192 },
+    options: { temperature: 0.1, num_predict: 8192, num_ctx: 16384 },
     // NOTE: Do NOT set format:'json' — vision models may not honor it and it
     // can suppress the entire response. Rely on prompt instructions instead.
   };
@@ -155,6 +155,9 @@ async function generateVisionChat(buffer, model, prompt) {
 
       const data = await res.json();
       const rawText = data.message?.content || '';
+      if (!rawText.trim()) {
+        throw new Error('Ollama returned empty response string.');
+      }
       console.log(`Ollama vision [${model}] /chat → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
       return { rawText };
     } catch (ex) {
@@ -172,13 +175,16 @@ async function generateVisionChat(buffer, model, prompt) {
 // ── Text-only model path: /api/generate with format:'json' ───────────────────
 
 async function generateTextOnly(prompt, model) {
+  const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
   const payload = {
     model,
     prompt,
     stream: false,
-    options: { temperature: 0.1, num_predict: 8192 },
-    format: 'json',
+    options: { temperature: 0.1, num_predict: 8192, num_ctx: 16384 }
   };
+  if (!isReasoning) {
+    payload.format = 'json';
+  }
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -205,6 +211,9 @@ async function generateTextOnly(prompt, model) {
 
       const data = await res.json();
       const rawText = data.response || '';
+      if (!rawText.trim()) {
+        throw new Error('Ollama returned empty response string.');
+      }
       console.log(`Ollama text [${model}] /generate → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
       return { rawText };
     } catch (ex) {

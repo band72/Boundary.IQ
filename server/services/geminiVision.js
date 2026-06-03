@@ -2,13 +2,16 @@ import { fetch } from 'undici';
 import * as ollama from './ollamaVision.js';
 import pdfParse from 'pdf-parse';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 
 const execFileAsync = promisify(execFile);
+const pdfOcrCache = new Map();
 
 /**
  * Extract digital text from a PDF buffer.
@@ -50,9 +53,52 @@ async function convertPdfToPng(buffer) {
   }
 }
 
+/**
+ * Convert multiple pages of a PDF buffer to an array of PNG buffers using pdftoppm.
+ */
+async function convertPdfPagesToPngs(buffer, maxPages = 5) {
+  const tempDir = path.join(os.tmpdir(), `biq_pdf_conv_${uuidv4().replace(/-/g, '')}`);
+  await fs.mkdir(tempDir, { recursive: true });
+  
+  const tempPdfPath = path.join(tempDir, 'input.pdf');
+  const tempPngPrefix = path.join(tempDir, 'output');
+  
+  try {
+    await fs.writeFile(tempPdfPath, buffer);
+    
+    console.log(`Converting first ${maxPages} PDF pages to PNGs via pdftoppm...`);
+    await execFileAsync('pdftoppm', [
+      '-png', '-r', '150', '-f', '1', '-l', String(maxPages), tempPdfPath, tempPngPrefix
+    ], { timeout: 300000 });
+    
+    const files = await fs.readdir(tempDir);
+    const pngFiles = files.filter(f => f.startsWith('output-') && f.endsWith('.png'));
+    
+    // Sort numerically by page number
+    pngFiles.sort((a, b) => {
+      const numA = parseInt(a.match(/output-(\d+)\.png/)?.[1] || '0');
+      const numB = parseInt(b.match(/output-(\d+)\.png/)?.[1] || '0');
+      return numA - numB;
+    });
+    
+    const results = [];
+    for (const f of pngFiles) {
+      const pageNum = parseInt(f.match(/output-(\d+)\.png/)?.[1] || '0');
+      const pngPath = path.join(tempDir, f);
+      const pngBytes = await fs.readFile(pngPath);
+      results.push({ pageNum, buffer: pngBytes });
+    }
+    
+    console.log(`Successfully converted ${results.length} pages to PNG.`);
+    return results;
+  } finally {
+    try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 // ── Provider Config (mutable at runtime via /api/settings/model) ────────────
-let activeProvider = 'gemini';     // 'gemini' | 'ollama' | 'openai'
-let activeModel = 'gemini-3.5-flash';
+let activeProvider = 'ollama';     // 'gemini' | 'ollama' | 'openai'
+let activeModel = 'gemma3:4b';
 let geminiApiKey = null;
 let activeOpenAiBaseUrl = process.env.OPENAI_BASE_URL || 'http://127.0.0.1:11434/v1';
 
@@ -138,6 +184,131 @@ async function extractViaGemini(buffer, mimeType, prompt, model) {
   return rawText;
 }
 
+function postProcessOcrText(text) {
+  if (!text) return '';
+  let cleaned = text;
+  
+  // Replace degree symbol transcribing errors (e.g. "S 010 09'" -> "S 01° 09'")
+  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})0\s+(\d{1,2})['']/g, '$1 $2° $3\'');
+  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})[oO-]\s*(\d{1,2})['']/g, '$1 $2° $3\'');
+  
+  // e.g. "North 01- 09'" -> "North 01° 09'"
+  cleaned = cleaned.replace(/([Nn]orth|[Ss]outh|[Ee]ast|[Ww]est)\s*(\d{1,2})[oO0-]\s*(\d{1,2})['']/g, '$1 $2° $3\'');
+  
+  return cleaned;
+}
+
+function pruneLongText(text) {
+  if (!text || text.length < 6000) return text;
+  
+  const lower = text.toLowerCase();
+  
+  let earliestIdx = -1;
+  
+  // Find the first occurrence of the word "thence"
+  const thenceMatch = text.match(/\bthence\b/i);
+  if (thenceMatch) {
+    earliestIdx = thenceMatch.index;
+  }
+  
+  // Fallback/preamble indicators
+  const indicators = [
+    'commencing at',
+    'commence at',
+    'beginning at',
+    'begin at'
+  ];
+  
+  for (const ind of indicators) {
+    const idx = lower.indexOf(ind);
+    if (idx !== -1) {
+      if (earliestIdx === -1 || idx < earliestIdx) {
+        earliestIdx = idx;
+      }
+    }
+  }
+  
+  let startIdx = 0;
+  if (earliestIdx !== -1) {
+    // Keep 1200 characters before the match for context (preamble, parcel name, etc.)
+    startIdx = Math.max(0, earliestIdx - 1200);
+  }
+  
+  // Find trailing boundaries to strip exceptions/boilerplates that follow the legal description
+  let endIdx = text.length;
+  const trailingIndicators = [
+    /^\s*schedule\s+b/im,
+    /^\s*requirements/im,
+    /^\s*exceptions\s+from\s+coverage/im,
+    /^\s*exceptions:/im,
+    /^\s*limitations\s+on\s+coverage/im,
+    /^\s*exhibit\s+b/im
+  ];
+  
+  const searchAreaStart = earliestIdx !== -1 ? earliestIdx : 0;
+  const searchArea = lower.substring(searchAreaStart);
+  
+  let earliestEndIdx = -1;
+  for (const regex of trailingIndicators) {
+    const match = searchArea.match(regex);
+    if (match) {
+      const idx = match.index;
+      if (earliestEndIdx === -1 || idx < earliestEndIdx) {
+        earliestEndIdx = idx;
+      }
+    }
+  }
+  
+  if (earliestEndIdx !== -1) {
+    // Keep 100 characters of buffer for any end sentences
+    endIdx = searchAreaStart + earliestEndIdx + 100;
+    if (endIdx > text.length) endIdx = text.length;
+  }
+  
+  if (startIdx > 0 || endIdx < text.length) {
+    const sliced = text.substring(startIdx, endIdx);
+    console.log(`✂️ Pruned long document text from ${text.length} to ${sliced.length} characters (start index: ${startIdx}, end index: ${endIdx}, match index: ${earliestIdx}).`);
+    return sliced;
+  }
+  
+  return text;
+}
+
+async function performLocalOcr(pngBuffer) {
+  const tempImgPath = path.join(os.tmpdir(), `biq_ocr_${uuidv4().replace(/-/g, '')}.png`);
+  try {
+    await fs.writeFile(tempImgPath, pngBuffer);
+    console.log(`Running local EasyOCR on converted PNG: ${tempImgPath}...`);
+    
+    const baseDir = process.cwd();
+    const serverDir = fsSync.existsSync(path.join(baseDir, 'server')) ? path.join(baseDir, 'server') : baseDir;
+    const ocrScriptPath = path.join(serverDir, 'services', 'ocr.py');
+    
+    const { stdout } = await execFileAsync('python3', [ocrScriptPath, tempImgPath], { timeout: 120000 });
+    const rawOcr = stdout ? stdout.trim() : '';
+    const ocrText = postProcessOcrText(rawOcr);
+    console.log(`Local OCR extraction complete (${ocrText.length} characters).`);
+    return ocrText;
+  } catch (err) {
+    console.warn(`Local OCR extraction failed:`, err.message);
+    return '';
+  } finally {
+    try { await fs.unlink(tempImgPath); } catch {}
+  }
+}
+
+function hasBoundaryKeywords(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const hasDegrees = lower.includes('°') || lower.includes('*') || lower.includes('deg') || lower.includes('degree');
+  const hasThence = lower.includes('thence');
+  const hasPob = lower.includes('point of beginning') || lower.includes('p.o.b.') || lower.includes('pob') || lower.includes('commence');
+  const hasFeet = lower.includes('feet') || lower.includes('foot') || lower.includes(' ft') || lower.includes('chs') || lower.includes('chains');
+  const hasChords = lower.includes('chord') || lower.includes('curve') || lower.includes('radius');
+  
+  return (hasThence && (hasFeet || hasDegrees)) || hasPob || (hasChords && hasFeet);
+}
+
 // ── Ollama Extraction ───────────────────────────────────────────────────────
 async function extractViaOllama(buffer, mimeType, prompt, model) {
   let activeBuffer = buffer;
@@ -151,36 +322,105 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
     activeBuffer = Buffer.alloc(0);
     activeMime = 'image/png';
   } else if (mimeType === 'application/pdf') {
-    // 1. Try to extract digital text first
-    const extractedText = await extractTextFromPdf(buffer);
-
-    if (extractedText && extractedText.length > 50) {
-      if (modelIsVision) {
-        // Vision model: inject text into prompt AND send the PNG so it can cross-reference
-        // bearing/distance details that text-extraction might garble.
-        console.log(`Ollama PDF: vision model "${model}" — injecting text + PNG (${extractedText.length} chars).`);
-        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted from PDF — use as primary source):\n=========================================\n${extractedText}`;
-        try {
-          activeBuffer = await convertPdfToPng(buffer);
-          activeMime = 'image/png';
-        } catch {
-          console.warn('Ollama PDF: PNG conversion failed for vision model — falling back to text-only.');
-          activeBuffer = Buffer.alloc(0);
+    const pdfHash = crypto.createHash('sha256').update(buffer).digest('hex');
+    let cacheEntry = pdfOcrCache.get(pdfHash);
+    
+    if (!cacheEntry) {
+      console.log(`Ollama PDF: Cache miss. Processing PDF (hash=${pdfHash})...`);
+      const extractedText = await extractTextFromPdf(buffer);
+      if (extractedText && extractedText.length > 50 && hasBoundaryKeywords(extractedText)) {
+        let firstPageBuf = Buffer.alloc(0);
+        if (modelIsVision) {
+          try {
+            firstPageBuf = await convertPdfToPng(buffer);
+          } catch {}
         }
+        cacheEntry = {
+          isScanned: false,
+          extractedText,
+          combinedOcrText: '',
+          firstPageBuffer: firstPageBuf
+        };
       } else {
-        // Text-only model: inject extracted text, send no image
-        console.log(`Ollama PDF: text-only model "${model}" — text injection (${extractedText.length} chars).`);
-        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${extractedText}`;
+        console.log(`Ollama PDF: no digital text (${extractedText?.length ?? 0} chars) — converting pages 1 to 10 to PNG.`);
+        const pages = await convertPdfPagesToPngs(buffer, 10);
+        let combinedOcrText = '';
+        let pagesWithKeywords = 0;
+        let firstPageBuffer = pages[0]?.buffer || Buffer.alloc(0);
+        
+        if (pages.length === 0) {
+          console.warn('Multi-page conversion returned no pages — falling back to single-page conversion.');
+          try {
+            const fallbackBuf = await convertPdfToPng(buffer);
+            pages.push({ pageNum: 1, buffer: fallbackBuf });
+            firstPageBuffer = fallbackBuf;
+          } catch (convErr) {
+            console.error('Single-page fallback conversion failed:', convErr.message);
+          }
+        }
+        
+        for (const page of pages) {
+          const pageText = await performLocalOcr(page.buffer);
+          if (pageText && pageText.length > 50) {
+            if (hasBoundaryKeywords(pageText)) {
+              console.log(`✓ Page ${page.pageNum} contains boundary keywords!`);
+              combinedOcrText += `\n\n--- PAGE ${page.pageNum} LEGAL DESCRIPTION ---\n${pageText}`;
+              pagesWithKeywords++;
+              if (pagesWithKeywords === 1) {
+                firstPageBuffer = page.buffer;
+              }
+            } else {
+              console.log('Page ' + page.pageNum + ' does not appear to contain boundary geometry.');
+              if (pagesWithKeywords === 0 && page.pageNum === 1) {
+                combinedOcrText += `\n\n--- PAGE 1 TEXT (fallback) ---\n${pageText}`;
+              }
+            }
+          }
+        }
+        cacheEntry = {
+          isScanned: true,
+          extractedText: '',
+          combinedOcrText,
+          firstPageBuffer
+        };
+      }
+      pdfOcrCache.set(pdfHash, cacheEntry);
+    } else {
+      console.log(`⚡ Cache hit: Reusing OCR/text extraction for PDF (hash=${pdfHash})`);
+    }
+
+    // Now construct activePrompt and activeBuffer using the cacheEntry
+    if (!cacheEntry.isScanned) {
+      const extractedText = cacheEntry.extractedText;
+      if (modelIsVision) {
+        console.log(`Ollama PDF [CACHED]: vision model "${model}" — injecting text + PNG.`);
+        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted from PDF — use as primary source):\n=========================================\n${pruneLongText(extractedText)}`;
+        activeBuffer = cacheEntry.firstPageBuffer;
+        activeMime = 'image/png';
+      } else {
+        console.log(`Ollama PDF [CACHED]: text-only model "${model}" — text injection.`);
+        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${pruneLongText(extractedText)}`;
         activeBuffer = Buffer.alloc(0);
         activeMime = 'image/png';
       }
     } else {
-      // Scanned/image-based PDF — no usable digital text
-      console.log(`Ollama PDF: no digital text (${extractedText?.length ?? 0} chars) — converting to PNG.`);
-      activeBuffer = await convertPdfToPng(buffer);
+      const combinedOcrText = cacheEntry.combinedOcrText;
+      activeBuffer = cacheEntry.firstPageBuffer;
       activeMime = 'image/png';
+      
       if (!modelIsVision) {
-        console.warn(`Ollama PDF: text-only model "${model}" receiving a scanned PDF image — results may be poor.`);
+        if (combinedOcrText.trim().length > 50) {
+          console.log(`Ollama PDF [CACHED]: text-only model "${model}" — injecting combined OCR text.`);
+          activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via combined local EasyOCR):\n=========================================\n${pruneLongText(combinedOcrText)}`;
+          activeBuffer = Buffer.alloc(0);
+        } else {
+          console.warn('Ollama PDF [CACHED]: Insufficient text. Falling back to raw image.');
+        }
+      } else {
+        if (combinedOcrText.trim().length > 50) {
+          console.log(`Ollama PDF [CACHED]: vision model "${model}" — injecting combined OCR text + page PNG.`);
+          activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via combined local EasyOCR):\n=========================================\n${pruneLongText(combinedOcrText)}`;
+        }
       }
     }
   }
@@ -201,10 +441,10 @@ async function extractViaOpenAI(buffer, mimeType, prompt, model, baseUrl) {
   } else if (mimeType === 'application/pdf') {
     // Try text extraction first (same as Ollama path)
     const extractedText = await extractTextFromPdf(buffer);
-    if (extractedText && extractedText.length > 50) {
+    if (extractedText && extractedText.length > 50 && hasBoundaryKeywords(extractedText)) {
       console.log(`OpenAI-compat PDF: extracted ${extractedText.length} chars, using text-only mode.`);
       userContent = [
-        { type: 'text', text: `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${extractedText}` },
+        { type: 'text', text: `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${pruneLongText(extractedText)}` },
       ];
     } else {
       console.log(`OpenAI-compat PDF: no digital text, converting to PNG.`);
@@ -269,7 +509,7 @@ async function extractRaw(buffer, mimeType, prompt) {
   let activePrompt = prompt;
   if (mimeType === 'text/plain') {
     const textContent = buffer.toString('utf-8');
-    activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${textContent}`;
+    activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${pruneLongText(textContent)}`;
   }
 
   console.log(`AI Extract → provider=${provider}, model=${model}, bufferSize=${(buffer.length / 1024).toFixed(0)} KB`);
@@ -293,6 +533,58 @@ async function extractRaw(buffer, mimeType, prompt) {
  * @param {string} mimeType
  * @returns {Promise<object>} PlatExtractResult
  */
+async function generateConceptualAnalysisFallback(docText) {
+  const provider = activeProvider;
+  const model = activeModel;
+  
+  const fallbackPrompt = `You are an expert Professional Land Surveyor. Analyze the following legal description text and extract a concise summary.
+1. Identify the Lot number, Block number, and Subdivision name (if present).
+2. Note standard lot size assumptions: standard residential lots are typically 0.15 acres (6,500 sq ft); commercial/subdivision tracts (e.g. Tract 1) are 1-5+ acres; government lots are 10-50 acres.
+3. Estimate the size of any described easement/parcel/corridor and compare it to the standard lot size.
+
+LEGAL DESCRIPTION TEXT:
+${pruneLongText(docText)}
+
+Return your response in this EXACT JSON format:
+{
+  "Description": "Detailed textual breakdown of the lots, blocks, or tracts mentioned.",
+  "ParentTractSizeEstimate": "Estimated parent tract size (e.g. '3.2 acres')",
+  "LotSizeEstimate": "Standard lot size assumption (e.g. '0.15 acres')",
+  "RelativeComparison": "Comparison of relative sizes (e.g. 'The 1.098 acre road easement is equivalent to about 7 standard residential lots')"
+}
+Return ONLY valid JSON. No conversational text or markdown fences.`;
+
+  console.log(`💡 Running fallback analysis LLM call via ${provider}/${model}...`);
+  let rawText = '';
+  try {
+    if (provider === 'ollama') {
+      const { rawText: ot } = await ollama.generate(Buffer.alloc(0), 'text/plain', model, fallbackPrompt);
+      rawText = ot;
+    } else if (provider === 'openai') {
+      rawText = await extractViaOpenAI(Buffer.alloc(0), 'text/plain', fallbackPrompt, model, activeOpenAiBaseUrl);
+    } else {
+      rawText = await extractViaGemini(Buffer.alloc(0), 'text/plain', fallbackPrompt, model);
+    }
+
+    // Clean think tags and parse JSON
+    const cleanText = rawText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    const start = cleanText.indexOf('{');
+    const end = cleanText.lastIndexOf('}');
+    if (start !== -1 && end !== -1) {
+      const jsonStr = cleanText.substring(start, end + 1);
+      return JSON.parse(jsonStr);
+    }
+  } catch (err) {
+    console.warn('⚠️ Failed to parse fallback conceptual analysis:', err.message);
+  }
+  return {
+    Description: rawText.substring(0, 500) || "Unable to extract description.",
+    ParentTractSizeEstimate: "unknown",
+    LotSizeEstimate: "0.15 acres",
+    RelativeComparison: "unknown"
+  };
+}
+
 export async function extractBoundary(buffer, mimeType, feedback = null) {
   let prompt = buildExtractionPrompt();
   if (feedback) {
@@ -302,7 +594,30 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
 
   console.log(`${activeProvider} raw extraction:`, rawText.substring(0, 200) + '...');
 
-  const { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary } = parseStructuredResponse(rawText);
+  let { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis } = parseStructuredResponse(rawText);
+
+  // Fallback: if LOT_BLOCK or courses is empty, and conceptualAnalysis is missing, run the targeted fallback LLM parser
+  if ((classification === 'LOT_BLOCK' || courses.length === 0) && !conceptualAnalysis) {
+    console.log('💡 ConceptualAnalysis is missing in raw JSON response. Executing lightweight fallback generator...');
+    try {
+      let docText = '';
+      if (mimeType === 'text/plain') {
+        docText = buffer.toString('utf-8');
+      } else if (mimeType === 'application/pdf') {
+        const pdfHash = crypto.createHash('sha256').update(buffer).digest('hex');
+        const cached = pdfOcrCache.get(pdfHash);
+        if (cached) {
+          docText = (cached.extractedText || '') + '\n' + (cached.combinedOcrText || '');
+        }
+      }
+      if (docText) {
+        conceptualAnalysis = await generateConceptualAnalysisFallback(docText);
+      }
+    } catch (fallbackErr) {
+      console.warn('⚠️ Conceptual analysis fallback generation failed:', fallbackErr.message);
+    }
+  }
+
   return {
     rawJson: cleanJson,
     courses,
@@ -311,6 +626,7 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
     preambleFound,
     isOpenEnded: !!isOpenEnded,
     mentalMapSummary: mentalMapSummary || null,
+    conceptualAnalysis: conceptualAnalysis || null
   };
 }
 
@@ -354,19 +670,167 @@ Return ONLY the corrected JSON object (same schema as original extraction).`;
 //  JSON Parser (unchanged)
 // ═══════════════════════════════════════════════════════════════════════════
 
+function findDescriptionsRecursive(val, results = new Set()) {
+  if (!val) return;
+  if (typeof val === 'object') {
+    const descKeys = ['description', 'Description', 'extracted_description', 'extractedDescription', 'text', 'Text', 'legal_description', 'legalDescription'];
+    for (const k of descKeys) {
+      if (typeof val[k] === 'string' && val[k].trim().length > 10) {
+        results.add(val[k].trim());
+      }
+    }
+    for (const k of Object.keys(val)) {
+      if (typeof val[k] === 'object' && val[k] !== null) {
+        findDescriptionsRecursive(val[k], results);
+      }
+    }
+  }
+}
+
+export function parseFromTextFallback(text) {
+  if (!text) return null;
+  // Strip backslashes and collapse whitespace
+  const normalizedText = text.replace(/\\/g, '').replace(/\s+/g, ' ');
+  const parts = normalizedText.split(/\bthence\b/i);
+  if (parts.length < 2) return null;
+
+  const courses = [];
+  // Skip parts[0] as it is the commencement/POB preamble
+  for (let i = 1; i < parts.length; i++) {
+    const part = parts[i].trim();
+    if (part.length < 8) continue;
+
+    // Skip commencement course if it returns to POB before the final segment
+    const isCommencement = (i < parts.length - 1) && 
+      /to\s+(?:the\s+)?(?:point\s+of\s+beginning|p\.?\s*o\.?\s*b\.?)/i.test(part);
+    if (isCommencement) {
+      console.log(`Skipping commencement course: "${part.slice(0, 60)}..."`);
+      continue;
+    }
+
+    // Clean part to remove next segment curve introduction keywords (like "to the point of curvature of a curve...")
+    const cleanPart = part.replace(/\bto\s+(?:a|the)\s+(?:point\s+of\s+curvature|point\s+of\s+curve|pc|p\.c\.|beginning\s+of\s+(?:a|the)\s+curve)\b.*/is, '').trim();
+
+    let bearing = null;
+    const bearingMatch = cleanPart.match(/([NSns]\s*\d{1,3}\s*[\u00B0°\-]?\s*\d{1,2}\s*['\-]?\s*\d{1,2}(?:\.\d+)?\s*["\s]*[EWew])/)
+      || cleanPart.match(/\b(North|South|East|West|N|S|E|W)\s*(\d{1,3})\s*[\u00B0°\-]?\s*(\d{1,2})\s*['\-]?\s*(\d{1,2}(?:\.\d+)?)\s*["\s]*(East|West|E|W)\b/i)
+      || cleanPart.match(/\b(NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY)\b/i);
+
+    let remaining = cleanPart;
+    if (bearingMatch) {
+      bearing = bearingMatch[0].trim();
+      remaining = cleanPart.replace(bearingMatch[0], '');
+    }
+
+    const distMatch = remaining.match(/([\d,]+\.\d+)/)
+      || remaining.match(/([\d,]+\.?\d*)\s*(?:feet|foot|ft|meters|m)\b/i)
+      || remaining.match(/([\d,]+\.?\d*)/);
+
+    let distance = distMatch ? parseFloat(distMatch[1].replace(/,/g, '')) : null;
+
+    if (bearing) {
+      bearing = bearing
+        .replace(/\bNorth\b/gi, 'N')
+        .replace(/\bSouth\b/gi, 'S')
+        .replace(/\bEast\b/gi, 'E')
+        .replace(/\bWest\b/gi, 'W')
+        .replace(/\s+/g, '');
+    }
+
+    // Detect if curve with flexible pattern support
+    const radiusMatch = cleanPart.match(/radius\s+(?:of\s+)?([\d,]+\.?\d*)/i);
+    const arcMatch = cleanPart.match(/(?:arc\s+distance|arc\s+length|arc|length|distance)\s+(?:of\s+)?([\d,]+\.?\d*)/i);
+    const chordBrgMatch = cleanPart.match(/chord\s*bearing\s+(?:and\s+distance\s+)?(?:of\s+)?((?:[NSns]|North|South)\s*\d{1,3}[\d°\-\s'"\.\u00B0]+(?:[EWew]|East|West)\b|\b[A-Za-z]+\b)/i)
+      || cleanPart.match(/bearing\s+(?:of\s+)?((?:[NSns]|North|South)\s*\d{1,3}[\d°\-\s'"\.\u00B0]+(?:[EWew]|East|West)\b|\b[A-Za-z]+\b)/i);
+    const chordDistMatch = cleanPart.match(/chord\s*(?:bearing\s+and\s+)?distance\s+(?:of\s+)?(?:[NSns]|North|South|East|West)?[^,]{1,50}?,?\s*([\d,]+\.?\d*)\s*(?:feet|foot|ft)?/i)
+      || cleanPart.match(/chord\s*(?:bearing\s+and\s+)?distance\s+(?:of\s+)?([\d,]+\.?\d*)/i)
+      || cleanPart.match(/chord\s+(?:of\s+)?([\d,]+\.?\d*)/i);
+    const dirMatch = cleanPart.match(/(?:curve\s+to\s+the|concave|direction)\s*([A-Za-z]+)/i);
+
+    const isCurve = /curve|arc|radius/i.test(cleanPart) && (radiusMatch || arcMatch || chordBrgMatch);
+
+    if (isCurve) {
+      let chordBearing = chordBrgMatch ? chordBrgMatch[1].trim() : null;
+      if (chordBearing && /^[a-z]+$/i.test(chordBearing) && !/^(north|south|east|west|northerly|southerly|easterly|westerly|northeasterly|northwesterly|southeasterly|southwesterly|ne|se|sw|nw)$/i.test(chordBearing)) {
+        chordBearing = null;
+      }
+      if (chordBearing) {
+        chordBearing = chordBearing
+          .replace(/\bNorth\b/gi, 'N')
+          .replace(/\bSouth\b/gi, 'S')
+          .replace(/\bEast\b/gi, 'E')
+          .replace(/\bWest\b/gi, 'W')
+          .replace(/\s+/g, '');
+      } else {
+        chordBearing = bearing;
+      }
+
+      let chordDistance = chordDistMatch ? parseFloat(chordDistMatch[1].replace(/,/g, '')) : null;
+      if (chordDistance == null) {
+        chordDistance = distance;
+      }
+
+      courses.push({
+        type: 'Curve',
+        bearing: null,
+        distance: null,
+        delta: null,
+        radius: radiusMatch ? parseFloat(radiusMatch[1].replace(/,/g, '')) : null,
+        arcLength: arcMatch ? parseFloat(arcMatch[1].replace(/,/g, '')) : null,
+        curveDirection: dirMatch ? dirMatch[1].trim() : null,
+        chordBearing,
+        chordDistance,
+        isUnknown: !radiusMatch && !arcMatch && !chordBearing,
+      });
+    } else {
+      courses.push({
+        type: 'Line',
+        bearing,
+        distance,
+        isUnknown: !bearing || distance == null,
+      });
+    }
+  }
+
+  return courses.length >= 2 ? { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson: text, mentalMapSummary: null } : null;
+}
+
 function parseStructuredResponse(raw) {
   let cleanJson = raw.trim();
+  
+  // Find the first index of '<think', '<thought', '{', or '['
+  const startMatch = cleanJson.match(/<(?:think|thought)|[{\[]/);
+  if (startMatch && startMatch.index > 0) {
+    cleanJson = cleanJson.substring(startMatch.index);
+  }
   
   // Strip Ollama/DeepSeek reasoning think tags if present
   if (cleanJson.includes('<think>')) {
     cleanJson = cleanJson.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  }
+  if (cleanJson.includes('<thought>')) {
+    cleanJson = cleanJson.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
   }
   
   // Try direct parsing first
   try {
     const root = JSON.parse(cleanJson);
     if (root) {
-      return getStructureFromRoot(root, cleanJson);
+      try {
+        return getStructureFromRoot(root, cleanJson);
+      } catch (structErr) {
+        const resultSet = new Set();
+        findDescriptionsRecursive(root, resultSet);
+        const descs = Array.from(resultSet);
+        if (descs.length > 0) {
+          const fallbackResult = parseFromTextFallback(descs[0]);
+          if (fallbackResult) {
+            console.log(`💡 JSON structure missing standard keys, but successfully extracted ${fallbackResult.courses.length} courses from nested description.`);
+            return fallbackResult;
+          }
+        }
+        throw structErr;
+      }
     }
   } catch (err) {
     // If direct parse fails, try to extract from markdown code blocks
@@ -375,7 +839,20 @@ function parseStructuredResponse(raw) {
       const extracted = m[1].trim();
       try {
         const root = JSON.parse(extracted);
-        if (root) return getStructureFromRoot(root, extracted);
+        if (root) {
+          try {
+            return getStructureFromRoot(root, extracted);
+          } catch (structErr) {
+            const resultSet = new Set();
+            findDescriptionsRecursive(root, resultSet);
+            const descs = Array.from(resultSet);
+            if (descs.length > 0) {
+              const fallbackResult = parseFromTextFallback(descs[0]);
+              if (fallbackResult) return fallbackResult;
+            }
+            throw structErr;
+          }
+        }
       } catch (err2) {}
     }
     
@@ -386,18 +863,61 @@ function parseStructuredResponse(raw) {
       const extractedPos = cleanJson.substring(startIdx, endIdx + 1);
       try {
         const root = JSON.parse(extractedPos);
-        if (root) return getStructureFromRoot(root, extractedPos);
+        if (root) {
+          try {
+            return getStructureFromRoot(root, extractedPos);
+          } catch (structErr) {
+            const resultSet = new Set();
+            findDescriptionsRecursive(root, resultSet);
+            const descs = Array.from(resultSet);
+            if (descs.length > 0) {
+              const fallbackResult = parseFromTextFallback(descs[0]);
+              if (fallbackResult) return fallbackResult;
+            }
+            throw structErr;
+          }
+        }
       } catch (err3) {}
     }
   }
 
-  // Original fallback parsing logic if all robust methods fail
-  if (cleanJson.startsWith('```')) cleanJson = cleanJson.split('\n').slice(1).join('\n');
-  if (cleanJson.endsWith('```')) cleanJson = cleanJson.substring(0, cleanJson.lastIndexOf('```'));
-  cleanJson = cleanJson.trim();
+  // Fallback parsing logic
+  try {
+    let fallbackJson = cleanJson;
+    if (fallbackJson.startsWith('```')) fallbackJson = fallbackJson.split('\n').slice(1).join('\n');
+    if (fallbackJson.endsWith('```')) fallbackJson = fallbackJson.substring(0, fallbackJson.lastIndexOf('```'));
+    fallbackJson = fallbackJson.trim();
+    const root = JSON.parse(fallbackJson);
+    try {
+      return getStructureFromRoot(root, fallbackJson);
+    } catch (structErr) {
+      const resultSet = new Set();
+      findDescriptionsRecursive(root, resultSet);
+      const descs = Array.from(resultSet);
+      if (descs.length > 0) {
+        const fallbackResult = parseFromTextFallback(descs[0]);
+        if (fallbackResult) return fallbackResult;
+      }
+      throw structErr;
+    }
+  } catch (finalErr) {
+    try {
+      const fallbackResult = parseFromTextFallback(raw);
+      if (fallbackResult) {
+        console.log(`💡 JSON parsing failed completely, but extracted ${fallbackResult.courses.length} courses via paragraph parser fallback on raw text.`);
+        return fallbackResult;
+      }
+    } catch (err) {
+      console.warn('Paragraph parser fallback failed:', err.message);
+    }
 
-  const root = JSON.parse(cleanJson);
-  return getStructureFromRoot(root, cleanJson);
+    console.error('======================================================');
+    console.error('🚨 JSON PARSING FAILED FOR RAW TEXT:');
+    console.error('------------------------------------------------------');
+    console.error(raw);
+    console.error('======================================================');
+    throw finalErr;
+  }
 }
 
 export function isPlaceholderHallucination(courses) {
@@ -436,38 +956,77 @@ export function isPlaceholderHallucination(courses) {
   return matchCount >= 2;
 }
 
+function constructFullBearing(bearing, direction) {
+  if (!bearing || typeof bearing !== 'string') return bearing;
+  let cleanBrg = bearing.trim();
+  // If the bearing already starts with N/S/E/W/North/South/East/West, don't prepend direction
+  if (/^[NSnsEWew]|^North|^South|^East|^West/i.test(cleanBrg)) {
+    return cleanBrg;
+  }
+  if (direction && typeof direction === 'string') {
+    const dir = direction.trim();
+    if (/^(North|South|East|West|N|S|E|W)/i.test(dir)) {
+      return dir + ' ' + cleanBrg;
+    }
+  }
+  return cleanBrg;
+}
+
 function getStructureFromRoot(root, cleanJson) {
   // Container format: { "Classification": "...", "Segments": [...] }
   if (root && typeof root === 'object' && !Array.isArray(root)) {
-    let segments = root.Segments;
-    let isOpenEnded = root.IsOpenEnded === true || root.isOpenEnded === true;
+    let segments = root.Segments || root.segments || root.boundary || root.Boundary || root.legs || root.Legs || root.courses || root.Courses;
+    let isOpenEnded = root.IsOpenEnded === true || root.isOpenEnded === true || root.isOpenEnded === 'true';
+
+    // Support case where segments is an array of parcels instead of flat segments
+    if (Array.isArray(segments) && segments.length > 0 && 
+        (segments[0].Segments || segments[0].segments || segments[0].boundary || segments[0].Boundary || segments[0].legs || segments[0].Legs || segments[0].courses || segments[0].Courses)) {
+      console.log(`💡 Detected multi-parcel structure mapped to "segments" array key.`);
+      const firstParcel = segments[0];
+      segments = firstParcel.Segments || firstParcel.segments || firstParcel.boundary || firstParcel.Boundary || firstParcel.legs || firstParcel.Legs || firstParcel.courses || firstParcel.Courses;
+      if (firstParcel.IsOpenEnded !== undefined || firstParcel.isOpenEnded !== undefined) {
+        isOpenEnded = (firstParcel.IsOpenEnded === true || firstParcel.isOpenEnded === true);
+      }
+    }
 
     // Support multi-parcel results from advanced models where Segments is null but Parcels array exists
-    if ((!segments || segments.length === 0) && root.Parcels && Array.isArray(root.Parcels) && root.Parcels.length > 0) {
-      console.log(`💡 Detected "Parcels" array in root. Extracting first parcel: "${root.Parcels[0].ParcelId || 'unnamed'}"`);
-      segments = root.Parcels[0].Segments;
-      if (root.Parcels[0].IsOpenEnded !== undefined) {
-        isOpenEnded = root.Parcels[0].IsOpenEnded === true;
+    const parcels = root.Parcels || root.parcels;
+    if ((!segments || segments.length === 0) && parcels && Array.isArray(parcels) && parcels.length > 0) {
+      console.log(`💡 Detected "Parcels" array in root. Extracting first parcel: "${parcels[0].ParcelId || parcels[0].parcelId || 'unnamed'}"`);
+      segments = parcels[0].Segments || parcels[0].segments || parcels[0].boundary || parcels[0].Boundary || parcels[0].legs || parcels[0].Legs || parcels[0].courses || parcels[0].Courses;
+      if (parcels[0].IsOpenEnded !== undefined || parcels[0].isOpenEnded !== undefined) {
+        isOpenEnded = parcels[0].IsOpenEnded === true || parcels[0].isOpenEnded === true;
       }
     }
 
-    if (segments) {
-      const classification = root.Classification || 'METES_BOUNDS';
-      const preambleFound = root.PreambleFound === true;
-      const mentalMapSummary = root.MentalMapSummary || root.mentalMapSummary || null;
-      let courses = parseSegmentArray(segments);
+    const classification = root.Classification || root.classification || 'LOT_BLOCK';
+    const preambleFound = root.PreambleFound === true || root.preambleFound === true;
+    const mentalMapSummary = root.MentalMapSummary || root.mentalMapSummary || null;
+    const conceptualAnalysis = root.ConceptualAnalysis || root.conceptualAnalysis || null;
+    let courses = segments ? parseSegmentArray(segments) : [];
 
-      if (isPlaceholderHallucination(courses)) {
-        console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
-        courses = [];
-      }
-
-      return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary };
+    if (isPlaceholderHallucination(courses)) {
+      console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
+      courses = [];
     }
+
+    return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis };
   }
 
   // Legacy flat array
   if (Array.isArray(root)) {
+    if (root.length > 0 && (root[0].legs || root[0].segments || root[0].Legs || root[0].Segments || root[0].boundary || root[0].Boundary || root[0].courses || root[0].Courses)) {
+      console.log(`💡 Detected array of parcels in root array. Extracting first parcel: "${root[0].name || root[0].ParcelId || 'unnamed'}"`);
+      const firstParcel = root[0];
+      const segments = firstParcel.legs || firstParcel.segments || firstParcel.Legs || firstParcel.Segments || firstParcel.boundary || firstParcel.Boundary || firstParcel.courses || firstParcel.Courses;
+      let courses = parseSegmentArray(segments);
+      if (isPlaceholderHallucination(courses)) {
+        console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
+        courses = [];
+      }
+      return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null, conceptualAnalysis: null };
+    }
+
     let courses = parseSegmentArray(root);
 
     if (isPlaceholderHallucination(courses)) {
@@ -475,7 +1034,7 @@ function getStructureFromRoot(root, cleanJson) {
       courses = [];
     }
 
-    return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null };
+    return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null, conceptualAnalysis: null };
   }
 
   throw new Error('Response root is neither an object with Segments nor an array.');
@@ -486,23 +1045,44 @@ function parseSegmentArray(arr) {
     const type = el.Type || el.type || 'Line';
     const isUnknown = el.IsUnknown === true || el.isUnknown === true;
 
-    if (type.toLowerCase() === 'curve') {
+    if (type.toLowerCase() === 'curve' || type.toLowerCase() === 'arc') {
+      let chordBearing = el.chordBearing || el.ChordBearing || el.chord_bearing || null;
+      let curveDirection = el.curveDirection || el.Direction || el.CurveDirection || el.curve_direction || el.direction || el.Direction || null;
+      chordBearing = constructFullBearing(chordBearing, curveDirection);
+      if (chordBearing && typeof chordBearing === 'string') {
+        chordBearing = chordBearing.trim()
+          .replace(/\bNorth\b/gi, 'N')
+          .replace(/\bSouth\b/gi, 'S')
+          .replace(/\bEast\b/gi, 'E')
+          .replace(/\bWest\b/gi, 'W')
+          .replace(/\s+/g, '');
+      }
       return {
         type: 'Curve',
         bearing: null,
         distance: null,
         delta: getNum(el, 'delta', 'Delta'),
         radius: getNum(el, 'radius', 'Radius'),
-        arcLength: getNum(el, 'arcLength', 'ArcLength'),
-        curveDirection: el.curveDirection || el.Direction || el.CurveDirection || null,
-        chordBearing: el.chordBearing || el.ChordBearing || null,
-        chordDistance: getNum(el, 'chordDistance', 'ChordDistance'),
+        arcLength: getNum(el, 'arcLength', 'ArcLength', 'arc_length', 'arcLength', 'arc_distance', 'arcDistance'),
+        curveDirection,
+        chordBearing,
+        chordDistance: getNum(el, 'chordDistance', 'ChordDistance', 'chord_distance', 'chordDistance'),
         isUnknown,
       };
     }
 
-    // Line
+    // Line / Leg
     let bearing = el.bearing || el.Bearing || null;
+    let direction = el.direction || el.Direction || null;
+    bearing = constructFullBearing(bearing, direction);
+    if (bearing && typeof bearing === 'string') {
+      bearing = bearing.trim()
+        .replace(/\bNorth\b/gi, 'N')
+        .replace(/\bSouth\b/gi, 'S')
+        .replace(/\bEast\b/gi, 'E')
+        .replace(/\bWest\b/gi, 'W')
+        .replace(/\s+/g, '');
+    }
     if (!bearing && el.Quad) {
       const deg = el.Degrees ?? 0;
       const min = el.Minutes ?? 0;
@@ -709,7 +1289,13 @@ Return ONLY a valid JSON object in this EXACT format. No markdown fences, no exp
     }
   ],
   "ReferencedParcelName": null,
-  "Parcels": null
+  "Parcels": null,
+  "ConceptualAnalysis": {
+    "Description": "Thorough text analysis of the lots, blocks, or tracts mentioned in the deed, identifying the parent tract and subdivision lot/block hierarchy.",
+    "ParentTractSizeEstimate": "Estimated or calculated size of the parent tract (e.g. '3.2 acres', '40 acres', or 'unknown').",
+    "LotSizeEstimate": "Standard lot size assumption based on location/context (e.g. '0.15 acres' or 'unknown').",
+    "RelativeComparison": "Comparison of the size of the subject parcel/easement to standard lots (e.g. 'The 1.098 acre easement is equivalent to about 7 standard residential lots')."
+  }
 }
 
 IMPORTANT: Segments array must be in CLOCKWISE order starting with the first course
@@ -732,5 +1318,8 @@ and set Segments to the first parcel's segments only.
 Otherwise set Parcels to null.
 
 RULE 12 — NO PLACEHOLDER HALLUCINATION:
-Under no circumstances should you ever return the exact example segments (e.g., N45°22'10"E, 150.25', etc.) shown in the output schema. If you cannot find any valid boundary courses or metes-and-bounds traverse calls in the document, you MUST return an empty segments array ("Segments": []) and set the classification to "LOT_BLOCK" or "PLAT" as appropriate.`;
+Under no circumstances should you ever return the exact example segments (e.g., N45°22'10"E, 150.25', etc.) shown in the output schema. If you cannot find any valid boundary courses or metes-and-bounds traverse calls in the document, you MUST return an empty segments array ("Segments": []) and set the classification to "LOT_BLOCK" or "PLAT" as appropriate. In this case, you MUST also populate the "ConceptualAnalysis" field with a thorough analysis of the subdivision lot/block hierarchy, estimating parent tract and lot sizes to provide relative perspective.
+
+RULE 13 — TITLE COMMITMENTS & EXHIBITS:
+If the text contains title commitment headers, commitment numbers, or references to "Exhibit A" or "Schedule A" (e.g. "OLD REPUBLIC INSURANCE", "Commitment Number", "Exhibit A"), you MUST ignore the document metadata (do not return "See Exhibit A"). Instead, locate the metes-and-bounds description starting with "more particularly described as follows" or "Begin at" on that page, and extract the bearings and distances into the Segments array.`;
 }

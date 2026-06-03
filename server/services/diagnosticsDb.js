@@ -55,6 +55,7 @@ function initializeDatabase() {
       AgentTurnsJson TEXT,
       TrustScore REAL,
       SolutionStepsJson TEXT,
+      FileHash TEXT,
       FOREIGN KEY (BatchId) REFERENCES BatchRuns(BatchId)
     );
 
@@ -92,6 +93,7 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ReferencePointEasting REAL'); } catch {}
   try { db.exec('ALTER TABLE DeedLogs ADD COLUMN PobNorthing REAL'); } catch {}
   try { db.exec('ALTER TABLE DeedLogs ADD COLUMN PobEasting REAL'); } catch {}
+  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN FileHash TEXT'); } catch {}
 
   // Seed heuristics if empty
   const count = db.prepare('SELECT COUNT(*) as c FROM HeuristicTracking').get().c;
@@ -113,21 +115,21 @@ export function saveBatchRun(batchId, totalFiles, passRate) {
     .run(batchId, now(), totalFiles, passRate);
 }
 
-export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null) {
+export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
   db.prepare(`
     INSERT INTO DeedLogs (
       BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
       ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson,
-      ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting, FileHash
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, now(),
     extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
-    referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting
+    referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
   );
 }
 
-export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null) {
+export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
   const row = db.prepare("SELECT Id, BatchId FROM DeedLogs WHERE FileName = ? ORDER BY Timestamp DESC LIMIT 1").get(fileName);
   const batchId = row ? row.BatchId : 'CORRECTED';
   
@@ -135,11 +137,11 @@ export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed,
     db.prepare(`
       UPDATE DeedLogs 
       SET Status = ?, RepairStageUsed = ?, ExtractionJson = ?, TraverseJson = ?, AgentTurnsJson = ?, TrustScore = ?, SolutionStepsJson = ?, Timestamp = ?,
-          ReferencePointName = ?, ReferencePointNorthing = ?, ReferencePointEasting = ?, PobNorthing = ?, PobEasting = ?
+          ReferencePointName = ?, ReferencePointNorthing = ?, ReferencePointEasting = ?, PobNorthing = ?, PobEasting = ?, FileHash = ?
       WHERE Id = ?
     `).run(
       status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson, now(),
-      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, row.Id
+      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash, row.Id
     );
     return row.Id;
   } else {
@@ -147,12 +149,12 @@ export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed,
       INSERT INTO DeedLogs (
         BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
         ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson,
-        ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting, FileHash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       batchId, fileName, parcelName || 'Manual Corrected', 0, 0, 0, status, repairStageUsed, now(),
       extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
-      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting
+      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
     );
     return result.lastInsertRowid;
   }
@@ -170,24 +172,32 @@ export function searchDeedLogs(query, status, maxError) {
   return db.prepare(sql).all(...params).map(mapDeedLog);
 }
 
-export function findSolvedCase(fileName) {
-  // Find the most recent PASS entry with real extraction data.
+export function findSolvedCase(fileName, fileHash = null) {
+  // Find the most recent PASS or MEANDER entry with real extraction data.
   // Guards against stale cache from degenerate/zero-segment runs:
   //   1. Must have ExtractionJson with at least 1 course
-  //   2. PrecisionRatio must be a genuine survey value (>= 500), not the 999999999
-  //      sentinel that zero-segment traverses produce
-  //   3. Must have TraverseJson (computed result)
-  //   4. GeoCallCount > 0 (courses were actually extracted)
-  const rows = db.prepare(
-    `SELECT * FROM DeedLogs
-     WHERE FileName = ? AND Status = 'PASS'
-       AND TraverseJson IS NOT NULL
-       AND ExtractionJson IS NOT NULL
-       AND GeoCallCount > 0
-       AND PrecisionRatio >= 500
-       AND PrecisionRatio < 999999990
-     ORDER BY Timestamp DESC LIMIT 5`
-  ).all(fileName);
+  //   2. Must have TraverseJson (computed result)
+  //   3. GeoCallCount > 0 (courses were actually extracted)
+  let rows;
+  if (fileHash) {
+    rows = db.prepare(
+      `SELECT * FROM DeedLogs
+       WHERE (FileName = ? OR FileHash = ?) AND Status IN ('PASS', 'MEANDER')
+         AND TraverseJson IS NOT NULL
+         AND ExtractionJson IS NOT NULL
+         AND GeoCallCount > 0
+       ORDER BY Timestamp DESC LIMIT 5`
+    ).all(fileName, fileHash);
+  } else {
+    rows = db.prepare(
+      `SELECT * FROM DeedLogs
+       WHERE FileName = ? AND Status IN ('PASS', 'MEANDER')
+         AND TraverseJson IS NOT NULL
+         AND ExtractionJson IS NOT NULL
+         AND GeoCallCount > 0
+       ORDER BY Timestamp DESC LIMIT 5`
+    ).all(fileName);
+  }
 
   // Pick the first row whose ExtractionJson actually contains courses
   for (const row of rows) {
@@ -195,7 +205,7 @@ export function findSolvedCase(fileName) {
       const ex = JSON.parse(row.ExtractionJson);
       const courses = ex.courses || ex.Courses || [];
       if (courses.length > 0) {
-        console.log(`Cache hit for ${fileName}: ${courses.length} courses, ratio=${row.PrecisionRatio}`);
+        console.log(`Cache hit for ${fileName} (hash=${fileHash}): ${courses.length} courses, ratio=${row.PrecisionRatio}`);
         return mapDeedLog(row);
       }
     } catch { /* invalid JSON — skip */ }

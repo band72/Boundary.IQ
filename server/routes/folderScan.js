@@ -1,5 +1,6 @@
 // ─── Folder Scan Route ──────────────────────────────────────────────────────
 import { Router } from 'express';
+import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -308,7 +309,7 @@ router.post('/reset-lock', (req, res) => {
 });
 
 // Wrapper helper to inject Point of Reference parameters automatically into saveDeedLog
-function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null) {
+function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, fileHash = null) {
   const refName = req.query.refName || null;
   const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
   const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
@@ -318,7 +319,7 @@ function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, li
   db.saveDeedLog(
     batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed,
     extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
-    refName, refN, refE, pobN, pobE
+    refName, refN, refE, pobN, pobE, fileHash
   );
 }
 
@@ -512,7 +513,7 @@ router.post('/process-batch', async (req, res) => {
                 } catch {}
               }
 
-              const pRes = { fileName: parcelFileName, status: pStatus === 'PASS' ? 'success' : 'error', extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
+              const pRes = { fileName: parcelFileName, status: (pStatus === 'PASS' || pStatus === 'MEANDER') ? 'success' : 'error', extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
               parcelResults.push(pRes);
 
               saveDeedLogWrapper(req, 
@@ -658,7 +659,7 @@ router.post('/process-batch', async (req, res) => {
           return;
         }
 
-        results[index] = { fileName, status: status === 'PASS' ? 'success' : 'error', extraction, traverse, legalDescription: writeResult, error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction, solutionSteps: repairResult.solutionSteps || null };
+        results[index] = { fileName, status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error', extraction, traverse, legalDescription: writeResult, error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction, solutionSteps: repairResult.solutionSteps || null };
 
         const parcelLabel = county && state ? `${county}, ${state}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
         const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
@@ -732,7 +733,8 @@ router.post('/process-file', async (req, res) => {
     let filePath = path.join(validPath, fileName);
     if (!fs.existsSync(filePath)) {
       // Fallback: search in common training and dataset directories
-      const trainingBase = path.join(os.homedir(), 'Downloads', 'training-20260530T124201Z-3-001', 'training');
+      const downloadsDir = path.join(os.homedir(), 'Downloads');
+      const trainingBase = path.join(downloadsDir, 'training-20260530T124201Z-3-001', 'training');
       const candidates = [
         path.join(trainingBase, 'Legal Descriptions', fileName),
         path.join(trainingBase, 'TrainPDF', fileName),
@@ -740,11 +742,36 @@ router.post('/process-file', async (req, res) => {
         path.join(trainingBase, 'TrainPDF', 'LIDO', fileName),
         path.join(trainingBase, 'Bowtie-Failures', fileName),
         path.join(trainingBase, 'Bowtie-Test', fileName),
+        path.join(downloadsDir, 'drive-download-20260602T132437Z-3-001', fileName),
       ];
       for (const cand of candidates) {
         if (fs.existsSync(cand)) {
           filePath = cand;
           break;
+        }
+      }
+
+      // If still not found, dynamically search any subfolders in Downloads (1 level deep)
+      if (!fs.existsSync(filePath) && fs.existsSync(downloadsDir)) {
+        try {
+          const items = fs.readdirSync(downloadsDir);
+          for (const item of items) {
+            const itemPath = path.join(downloadsDir, item);
+            if (fs.statSync(itemPath).isDirectory()) {
+              const possibleFile = path.join(itemPath, fileName);
+              if (fs.existsSync(possibleFile)) {
+                filePath = possibleFile;
+                break;
+              }
+              const possibleNested = path.join(itemPath, 'training', 'TrainPDF', 'Regency-Title', fileName);
+              if (fs.existsSync(possibleNested)) {
+                filePath = possibleNested;
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Dynamic Downloads folder search fallback failed:', err.message);
         }
       }
     }
@@ -782,15 +809,22 @@ router.post('/process-file', async (req, res) => {
       }
     }, 15000);
 
+    const upperName = fileName.toUpperCase();
+    const isOpenEnded = ['EASEMENT', 'EAESMENT', 'EASMENT', 'ROAD', 'BLVD', 'R/W', 'RIGHT OF WAY', 'CENTERLINE'].some(k => upperName.includes(k));
+
+    let imageBytes = await fs.promises.readFile(filePath);
+    let mime = inferMimeType(fileName);
+    const fileHash = crypto.createHash('sha256').update(imageBytes).digest('hex');
+
     db.saveBatchRun(batchId, 1, 0.0);
-    console.log(`FolderScan processing single file: ${fileName}`);
+    console.log(`FolderScan processing single file: ${fileName} (hash=${fileHash})`);
 
     // Check cache (unless forced)
     const force = req.query.force === 'true';
     if (!force) {
-      const solvedCase = db.findSolvedCase(fileName);
+      const solvedCase = db.findSolvedCase(fileName, fileHash);
       if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-        console.log(`Cache hit for ${fileName}`);
+        console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
         const cachedEx = JSON.parse(solvedCase.extractionJson);
         const cachedTr = JSON.parse(solvedCase.traverseJson);
         let cachedWrite = null;
@@ -817,8 +851,8 @@ router.post('/process-file', async (req, res) => {
         const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
         saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED',
           courses.length, linErr,
-          parsePrecisionRatio(precRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved',
-          solvedCase.extractionJson, solvedCase.traverseJson);
+          parsePrecisionRatio(precRatio), solvedCase.status || 'PASS', 'Stage 5: SQLite Case Finder Solved',
+          solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
 
         if (keepAlive) clearInterval(keepAlive);
         res.write(JSON.stringify({ status: 'success', result }));
@@ -826,12 +860,6 @@ router.post('/process-file', async (req, res) => {
         return;
       }
     }
-
-    const upperName = fileName.toUpperCase();
-    const isOpenEnded = ['EASEMENT', 'EAESMENT', 'EASMENT', 'ROAD', 'BLVD', 'R/W', 'RIGHT OF WAY', 'CENTERLINE'].some(k => upperName.includes(k));
-
-    let imageBytes = await fs.promises.readFile(filePath);
-    let mime = inferMimeType(fileName);
 
     if (isWordDocument(fileName)) {
       console.log(`Converting Word doc ${fileName} to PDF with fallback...`);
@@ -932,9 +960,10 @@ router.post('/process-file', async (req, res) => {
         error: null,
         skipReason: `Document contains no traversable boundary geometry (AI classification: ${extraction.classification}).`,
         cached: false,
+        conceptualAnalysis: extraction.conceptualAnalysis || null
       };
       saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
-        'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
+        'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null, fileHash);
 
       if (keepAlive) clearInterval(keepAlive);
       res.write(JSON.stringify({ status: 'skipped', result }));
@@ -942,11 +971,22 @@ router.post('/process-file', async (req, res) => {
       return;
     }
 
-    const result = { fileName, status: status === 'PASS' ? 'success' : 'error', extraction, traverse, legalDescription: writeResult, error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction, cached: false, solutionSteps: repairResult.solutionSteps || null };
+    const result = {
+      fileName,
+      status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error',
+      extraction,
+      traverse,
+      legalDescription: writeResult,
+      error: repairResult.traverseError,
+      originalExtraction: repairResult.originalExtraction,
+      cached: false,
+      solutionSteps: repairResult.solutionSteps || null,
+      conceptualAnalysis: extraction.conceptualAnalysis || null
+    };
 
     const parcelLabel = county && state ? `${county}, ${state}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
     const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-    saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson);
+    saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson, fileHash);
     if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
 
     // Auto-output
@@ -958,7 +998,7 @@ router.post('/process-file', async (req, res) => {
     }
 
     if (keepAlive) clearInterval(keepAlive);
-    res.write(JSON.stringify({ status: status === 'PASS' ? 'success' : 'error', result }));
+    res.write(JSON.stringify({ status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error', result }));
     res.end();
   } catch (ex) {
     if (keepAlive) clearInterval(keepAlive);
@@ -1073,10 +1113,10 @@ router.post('/chain-adjacent', async (req, res) => {
     );
 
     res.json({
-      status: status === 'PASS' ? 'success' : 'error',
+      status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error',
       result: {
         fileName,
-        status: status === 'PASS' ? 'success' : 'error',
+        status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error',
         extraction: { courses: resolvedCourses, classification: 'METES_BOUNDS' },
         traverse,
         legalDescription: writeResult,

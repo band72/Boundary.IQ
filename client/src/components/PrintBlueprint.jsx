@@ -66,7 +66,8 @@ export default function PrintBlueprint({
   originalCourses = null,          // Pre-repair original extraction courses
   originalLegalDescription = '',   // Pre-repair original legal description
   closure = null,
-  onClose
+  onClose,
+  conceptualAnalysis = null        // Shaded parcel relative size assumptions
 }) {
   const [canvasElement, setCanvasElement] = useState(null);
   const [printCanvasElement, setPrintCanvasElement] = useState(null);
@@ -814,11 +815,72 @@ export default function PrintBlueprint({
               {/* LANDSCAPE CONTAINER */}
               <div className="blueprint-grid">
                 
-                {/* LEFT SIDE: Map Canvas drawing */}
-                <div className="blueprint-map-column">
-                  <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
-                  <canvas ref={setCanvasElement} className="blueprint-canvas-element" />
-                </div>
+                {/* LEFT SIDE: Map Canvas drawing or Conceptual Analysis */}
+                {courses.length > 0 ? (
+                  <div className="blueprint-map-column">
+                    <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
+                    <canvas ref={setCanvasElement} className="blueprint-canvas-element" />
+                  </div>
+                ) : conceptualAnalysis ? (
+                  <div className="blueprint-map-column" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', boxSizing: 'border-box' }}>
+                    <div className="blueprint-section-title">CONCEPTUAL LOT & BLOCK ANALYSIS</div>
+                    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '12px', boxSizing: 'border-box' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: '#1a365d', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', textTransform: 'uppercase' }}>
+                        Deed Summary & Interpretation
+                      </div>
+                      <p style={{ fontSize: '0.8rem', lineHeight: 1.5, color: '#333', margin: 0, fontFamily: 'sans-serif' }}>
+                        {conceptualAnalysis.Description || conceptualAnalysis.description}
+                      </p>
+                      
+                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: '#1a365d', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginTop: '8px', textTransform: 'uppercase' }}>
+                        1. General Assumptions for Lot & Block Sizes
+                      </div>
+                      <div style={{ fontSize: '0.72rem', lineHeight: 1.4, color: '#475569', display: 'flex', flexDirection: 'column', gap: '6px', fontFamily: 'sans-serif' }}>
+                        <p style={{ margin: '0 0 6px 0' }}>
+                          When a deed does not explicitly state dimensions or acreage and instead refers to a subdivision Plat (e.g., "Lot X, Block Y of Subdivision Z"), surveyors and database systems use the following size assumptions:
+                        </p>
+                        <div>
+                          <strong>Subdivision Lots (Residential):</strong> Standard modern residential lots (like Lot 107 of Westwood Estates mentioned in the deed) typically range between 0.10 to 0.25 acres (approx. 4,350 to 10,000 sq. ft.). A common standard is 0.15 acres (e.g., a 60' × 110' lot, or 6,600 sq. ft.).
+                        </div>
+                        <div>
+                          <strong>Subdivision Tracts / Blocks (Commercial/Industrial):</strong> "Tracts" or "Blocks" inside replats (like Tract 1 of Peninsular Life Insurance Company's Replat) are generally much larger parcels set aside for commercial use, parks, or future subdivision. These typically range from 1.0 to 5.0+ acres.
+                        </div>
+                        <div>
+                          <strong>Government Lots:</strong> Fractional sections of land along section boundaries, water bodies, or correction lines (like Government Lot 7 and Government Lot 2) are typically larger parcels ranging from 10 to 50 acres.
+                        </div>
+                      </div>
+
+                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: '#1a365d', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginTop: '8px', textTransform: 'uppercase' }}>
+                        2. Relative Size Breakdown for the Provided Deed Example
+                      </div>
+                      <p style={{ fontSize: '0.72rem', color: '#475569', margin: '0 0 6px 0', fontFamily: 'sans-serif' }}>
+                        Using the specific dimensions and descriptions given in the image, we can estimate and compare the relative sizes of the properties in question:
+                      </p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '0.72rem', fontFamily: 'sans-serif' }}>
+                        <div>
+                          <strong style={{ color: '#475569' }}>PARENT TRACT SIZE:</strong>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'monospace', marginTop: '2px', color: '#0f172a' }}>
+                            {conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}
+                          </div>
+                        </div>
+                        <div>
+                          <strong style={{ color: '#475569' }}>STANDARD LOT SIZE:</strong>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'monospace', marginTop: '2px', color: '#0f172a' }}>
+                            {conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#0f172a', fontStyle: 'italic', marginTop: '6px', borderTop: '0.5px solid #cbd5e1', paddingTop: '6px', fontFamily: 'sans-serif' }}>
+                        {conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="blueprint-map-column">
+                    <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
+                    <canvas ref={setCanvasElement} className="blueprint-canvas-element" />
+                  </div>
+                )}
 
                 {/* RIGHT SIDE: Information, tables and title block */}
                 <div className="blueprint-info-column">
@@ -901,285 +963,436 @@ export default function PrintBlueprint({
 
         {/* 2. Print Multi-Page (Always hidden on screen, shown only during print if multi-page mode is active) */}
         <div className="blueprint-multi-container only-print">
-          {/* SHEET 1: Main Map, Title Block, and Mapcheck at the Bottom */}
-          <div className="blueprint-sheet">
-            <div className="blueprint-border-outer">
-              <div className="blueprint-border-inner">
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
-                  
-                  {/* Map occupies upper space */}
-                  <div style={{ flex: 1, minHeight: 0, position: 'relative', border: '1.5px solid #000000', boxSizing: 'border-box', marginBottom: '12px' }}>
-                    <canvas ref={setPrintCanvasElement} className="blueprint-canvas-element" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
-                  </div>
+          {courses.length > 0 ? (
+            <>
+              {/* SHEET 1: Main Map, Title Block, and Mapcheck at the Bottom */}
+              <div className="blueprint-sheet">
+                <div className="blueprint-border-outer">
+                  <div className="blueprint-border-inner">
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div className="blueprint-section-title">BOUNDARY SURVEY SKETCH</div>
+                      
+                      {/* Map occupies upper space */}
+                      <div style={{ flex: 1, minHeight: 0, position: 'relative', border: '1.5px solid #000000', boxSizing: 'border-box', marginBottom: '12px' }}>
+                        <canvas ref={setPrintCanvasElement} className="blueprint-canvas-element" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+                      </div>
 
-                  {/* Footer with Title Block and Mapcheck */}
-                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0 }}>
-                    
-                    {/* Mapcheck / Closure Box */}
-                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-                      <div className="panel-header">MAPCHECK / CLOSURE VERIFICATION</div>
-                      <div style={{ padding: '8px', fontSize: '0.65rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', flex: 1, alignContent: 'center' }}>
-                        <div>
-                          <span style={{ fontWeight: 600, color: '#555555' }}>PRECISION RATIO:</span>
-                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.8rem', fontWeight: 700, color: computedClosure?.status?.includes('FAIL') || computedClosure?.status?.includes('✗') ? '#cc0000' : '#007700' }}>
-                            {computedClosure?.precisionRatio || '1:∞'}
+                      {/* Footer with Title Block and Mapcheck */}
+                      <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0 }}>
+                        
+                        {/* Mapcheck / Closure Box */}
+                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+                          <div className="panel-header">MAPCHECK / CLOSURE VERIFICATION</div>
+                          <div style={{ padding: '8px', fontSize: '0.65rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', flex: 1, alignContent: 'center' }}>
+                            <div>
+                              <span style={{ fontWeight: 600, color: '#555555' }}>PRECISION RATIO:</span>
+                              <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.8rem', fontWeight: 700, color: computedClosure?.status?.includes('FAIL') || computedClosure?.status?.includes('✗') ? '#cc0000' : '#007700' }}>
+                                {computedClosure?.precisionRatio || '1:∞'}
+                              </div>
+                            </div>
+                            <div>
+                              <span style={{ fontWeight: 600, color: '#555555' }}>LINEAR CLOSURE ERROR:</span>
+                              <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.8rem', fontWeight: 700 }}>
+                                {computedClosure?.linearError ? `${parseFloat(computedClosure.linearError).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+                              </div>
+                            </div>
+                            <div>
+                              <span style={{ fontWeight: 600, color: '#555555' }}>ERROR NORTHING:</span>
+                              <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>
+                                {computedClosure?.errorNorthing ? `${parseFloat(computedClosure.errorNorthing).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+                              </div>
+                            </div>
+                            <div>
+                              <span style={{ fontWeight: 600, color: '#555555' }}>ERROR EASTING:</span>
+                              <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>
+                                {computedClosure?.errorEasting ? `${parseFloat(computedClosure.errorEasting).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+                              </div>
+                            </div>
+                            <div style={{ gridColumn: 'span 2', borderTop: '0.5px solid #ccc', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: 600, color: '#555555' }}>TRAVERSE AUDIT STATUS:</span>
+                              <span style={{ fontWeight: 700, color: computedClosure?.status?.includes('FAIL') || computedClosure?.status?.includes('✗') ? '#cc0000' : '#007700' }}>
+                                {computedClosure?.status || 'PASS'}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        <div>
-                          <span style={{ fontWeight: 600, color: '#555555' }}>LINEAR CLOSURE ERROR:</span>
-                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.8rem', fontWeight: 700 }}>
-                            {computedClosure?.linearError ? `${parseFloat(computedClosure.linearError).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+
+                        {/* Title Block */}
+                        <div style={{ width: '420px', flexShrink: 0 }}>
+                          {renderTitleBlock()}
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SHEET 2: Legal Description */}
+              <div className="blueprint-sheet page-break">
+                <div className="blueprint-border-outer">
+                  <div className="blueprint-border-inner">
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div className="blueprint-section-title">METES & BOUNDS LEGAL DESCRIPTION</div>
+                      
+                      {/* Legal description box expands to fill space above the footer */}
+                      <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                        <div className="panel-header">RECORD DESCRIPTION</div>
+                        <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
+                          {legalDesc ? (
+                            <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
+                          ) : (
+                            <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
+                              [No legal description provided. Click "Auto-Write" in the sidebar editor to generate a professional metes & bounds legal description dynamically.]
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bottom section with Page Notes and Title Block */}
+                      <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                        
+                        {/* Left side: Notes and Page Info */}
+                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                          <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES & CERTIFICATION</div>
+                          <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                            <div>1. This legal description represents a mathematical compilation of recorded deed and plat data.</div>
+                            <div>2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.</div>
+                            <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                              <span>SHEET IDENTIFIER: METES & BOUNDS DESC</span>
+                              <span>PAGE 2 OF 5</span>
+                            </div>
                           </div>
                         </div>
-                        <div>
-                          <span style={{ fontWeight: 600, color: '#555555' }}>ERROR NORTHING:</span>
-                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>
-                            {computedClosure?.errorNorthing ? `${parseFloat(computedClosure.errorNorthing).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+                        
+                        {/* Right side: Title Block */}
+                        <div style={{ width: '420px', flexShrink: 0 }}>
+                          {renderTitleBlock()}
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SHEET 3: Line & Curve Tables */}
+              <div className="blueprint-sheet page-break">
+                <div className="blueprint-border-outer">
+                  <div className="blueprint-border-inner">
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div className="blueprint-section-title">SURVEY COMPILATION — LINE AND CURVE DATA TABLES</div>
+                      
+                      {/* Tables area occupies upper space */}
+                      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', minHeight: 0, overflow: 'hidden' }}>
+                        {/* Left Side: Line Table */}
+                        <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+                          <div className="panel-header">LINE TABLE</div>
+                          <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                            {linesList.length > 0 ? (
+                              <table className="survey-table" style={{ fontSize: '0.78rem' }}>
+                                <thead>
+                                  <tr><th>ID</th><th>BEARING</th><th>DISTANCE</th></tr>
+                                </thead>
+                                <tbody>
+                                  {linesList.map(line => (
+                                    <tr key={line.id}>
+                                      <td className="bold" style={{ fontSize: '0.78rem' }}>{line.id}</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.bearing}</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.distance}'</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Line Data Available</p>
+                            )}
                           </div>
                         </div>
-                        <div>
-                          <span style={{ fontWeight: 600, color: '#555555' }}>ERROR EASTING:</span>
-                          <div style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>
-                            {computedClosure?.errorEasting ? `${parseFloat(computedClosure.errorEasting).toFixed(4)} ${units === 'Feet' ? 'FT' : 'M'}` : '0.0000 FT'}
+
+                        {/* Right Side: Curve Table */}
+                        <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+                          <div className="panel-header">CURVE TABLE</div>
+                          <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                            {curvesList.length > 0 ? (
+                              <table className="survey-table" style={{ fontSize: '0.72rem' }}>
+                                <thead>
+                                  <tr>
+                                    <th>ID</th>
+                                    <th>RADIUS</th>
+                                    <th>ARC LEN</th>
+                                    <th>CHORD BRG</th>
+                                    <th>CHORD DIST</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {curvesList.map(curve => (
+                                    <tr key={curve.id}>
+                                      <td className="bold" style={{ fontSize: '0.72rem' }}>{curve.id}</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.radius}'</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.arcLength}'</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.68rem' }}>{curve.chordBearing}</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.chordDistance}'</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Curve Data Available</p>
+                            )}
                           </div>
                         </div>
-                        <div style={{ gridColumn: 'span 2', borderTop: '0.5px solid #ccc', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontWeight: 600, color: '#555555' }}>TRAVERSE AUDIT STATUS:</span>
-                          <span style={{ fontWeight: 700, color: computedClosure?.status?.includes('FAIL') || computedClosure?.status?.includes('✗') ? '#cc0000' : '#007700' }}>
-                            {computedClosure?.status || 'PASS'}
-                          </span>
+                      </div>
+
+                      {/* Bottom section with Page Notes and Title Block */}
+                      <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                        
+                        {/* Left side: Notes and Page Info */}
+                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                          <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>DATA TABLE METADATA</div>
+                          <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                            <div>1. Line and curve identifiers match corresponding labels shown on sheet 1.</div>
+                            <div>2. Distances and radii are shown in standard survey {units.toLowerCase()}.</div>
+                            <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                              <span>SHEET IDENTIFIER: COGO TABLES</span>
+                              <span>PAGE 3 OF 5</span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Title Block */}
-                    <div style={{ width: '420px', flexShrink: 0 }}>
-                      {renderTitleBlock()}
-                    </div>
-
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* SHEET 2: Legal Description */}
-          <div className="blueprint-sheet page-break">
-            <div className="blueprint-border-outer">
-              <div className="blueprint-border-inner">
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div className="blueprint-section-title">METES & BOUNDS LEGAL DESCRIPTION</div>
-                  
-                  {/* Legal description box expands to fill space above the footer */}
-                  <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
-                    <div className="panel-header">RECORD DESCRIPTION</div>
-                    <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
-                      {legalDesc ? (
-                        <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
-                      ) : (
-                        <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
-                          [No legal description provided. Click "Auto-Write" in the sidebar editor to generate a professional metes & bounds legal description dynamically.]
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Bottom section with Page Notes and Title Block */}
-                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
-                    
-                    {/* Left side: Notes and Page Info */}
-                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
-                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES & CERTIFICATION</div>
-                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
-                        <div>1. This legal description represents a mathematical compilation of recorded deed and plat data.</div>
-                        <div>2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.</div>
-                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                          <span>SHEET IDENTIFIER: METES & BOUNDS DESC</span>
-                          <span>PAGE 2 OF 5</span>
+                        
+                        {/* Right side: Title Block */}
+                        <div style={{ width: '420px', flexShrink: 0 }}>
+                          {renderTitleBlock()}
                         </div>
+
                       </div>
-                    </div>
-                    
-                    {/* Right side: Title Block */}
-                    <div style={{ width: '420px', flexShrink: 0 }}>
-                      {renderTitleBlock()}
-                    </div>
-
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* SHEET 3: Line & Curve Tables */}
-          <div className="blueprint-sheet page-break">
-            <div className="blueprint-border-outer">
-              <div className="blueprint-border-inner">
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div className="blueprint-section-title">SURVEY COMPILATION — LINE AND CURVE DATA TABLES</div>
-                  
-                  {/* Tables area occupies upper space */}
-                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', minHeight: 0, overflow: 'hidden' }}>
-                    {/* Left Side: Line Table */}
-                    <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-                      <div className="panel-header">LINE TABLE</div>
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                        {linesList.length > 0 ? (
-                          <table className="survey-table" style={{ fontSize: '0.78rem' }}>
-                            <thead>
-                              <tr><th>ID</th><th>BEARING</th><th>DISTANCE</th></tr>
-                            </thead>
-                            <tbody>
-                              {linesList.map(line => (
-                                <tr key={line.id}>
-                                  <td className="bold" style={{ fontSize: '0.78rem' }}>{line.id}</td>
-                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.bearing}</td>
-                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.distance}'</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Line Data Available</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right Side: Curve Table */}
-                    <div style={{ border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-                      <div className="panel-header">CURVE TABLE</div>
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                        {curvesList.length > 0 ? (
-                          <table className="survey-table" style={{ fontSize: '0.72rem' }}>
-                            <thead>
-                              <tr>
-                                <th>ID</th>
-                                <th>RADIUS</th>
-                                <th>ARC LEN</th>
-                                <th>CHORD BRG</th>
-                                <th>CHORD DIST</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {curvesList.map(curve => (
-                                <tr key={curve.id}>
-                                  <td className="bold" style={{ fontSize: '0.72rem' }}>{curve.id}</td>
-                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.radius}'</td>
-                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.arcLength}'</td>
-                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.68rem' }}>{curve.chordBearing}</td>
-                                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.chordDistance}'</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <p style={{ fontSize: '0.75rem', color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No Curve Data Available</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bottom section with Page Notes and Title Block */}
-                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
-                    
-                    {/* Left side: Notes and Page Info */}
-                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
-                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>DATA TABLE METADATA</div>
-                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
-                        <div>1. Line and curve identifiers match corresponding labels shown on sheet 1.</div>
-                        <div>2. Distances and radii are shown in standard survey {units.toLowerCase()}.</div>
-                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                          <span>SHEET IDENTIFIER: COGO TABLES</span>
-                          <span>PAGE 3 OF 5</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Right side: Title Block */}
-                    <div style={{ width: '420px', flexShrink: 0 }}>
-                      {renderTitleBlock()}
-                    </div>
-
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* SHEET 4: Original Legal Description */}
-          <div className="blueprint-sheet page-break">
-            <div className="blueprint-border-outer">
-              <div className="blueprint-border-inner">
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div className="blueprint-section-title">ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION)</div>
-                  
-                  <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
-                    <div className="panel-header">ORIGINAL RECORD DESCRIPTION</div>
-                    <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
-                      {(originalLegalDescription || legalDesc) ? (
-                        <p style={{ textIndent: '2rem' }}>{originalLegalDescription || legalDesc}</p>
-                      ) : (
-                        <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
-                          [No original legal description available.]
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
-                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
-                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES</div>
-                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
-                        <div>1. This page contains the original deed legal description as extracted prior to AI-assisted repair.</div>
-                        <div>2. Refer to Page 2 for the corrected metes & bounds legal description after traverse closure repair.</div>
-                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                          <span>SHEET IDENTIFIER: ORIGINAL LEGAL DESC</span>
-                          <span>PAGE 4 OF 5</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ width: '420px', flexShrink: 0 }}>
-                      {renderTitleBlock()}
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* SHEET 5: Original Uncorrected Sketch */}
-          <div className="blueprint-sheet page-break">
-            <div className="blueprint-border-outer">
-              <div className="blueprint-border-inner">
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div className="blueprint-section-title">ORIGINAL DEED — UNCORRECTED BOUNDARY SKETCH</div>
-                  
-                  <div style={{ flex: 1, minHeight: 0, position: 'relative', border: '1.5px solid #000000', boxSizing: 'border-box', marginBottom: '12px' }}>
-                    <canvas ref={setOriginalCanvasElement} className="blueprint-canvas-element" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
-                  </div>
+              {/* SHEET 4: Original Legal Description */}
+                <div className="blueprint-sheet page-break">
+                  <div className="blueprint-border-outer">
+                    <div className="blueprint-border-inner">
+                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div className="blueprint-section-title">ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION)</div>
+                        
+                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                          <div className="panel-header">ORIGINAL RECORD DESCRIPTION</div>
+                          <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
+                            {(originalLegalDescription || legalDesc) ? (
+                              <p style={{ textIndent: '2rem' }}>{originalLegalDescription || legalDesc}</p>
+                            ) : (
+                              <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
+                                [No original legal description available.]
+                              </p>
+                            )}
+                          </div>
+                        </div>
 
-                  <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0 }}>
-                    <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
-                      <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>ORIGINAL SKETCH NOTES</div>
-                      <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
-                        <div>1. This sketch represents the original boundary geometry as extracted from the deed prior to any AI-assisted corrections.</div>
-                        <div>2. Dashed lines indicate uncorrected traverse — compare with the corrected solid-line sketch on Page 1.</div>
-                        <div>3. Closure errors and self-intersections (bow-ties) may be present in this original geometry.</div>
-                        <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                          <span>SHEET IDENTIFIER: UNCORRECTED SKETCH</span>
-                          <span>PAGE 5 OF 5</span>
+                        <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                          <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                            <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES</div>
+                            <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                              <div>1. This page contains the original deed legal description as extracted prior to AI-assisted repair.</div>
+                              <div>2. Refer to Page 2 for the corrected metes & bounds legal description after traverse closure repair.</div>
+                              <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                <span>SHEET IDENTIFIER: ORIGINAL LEGAL DESC</span>
+                                <span>PAGE 4 OF 5</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ width: '420px', flexShrink: 0 }}>
+                            {renderTitleBlock()}
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div style={{ width: '420px', flexShrink: 0 }}>
-                      {renderTitleBlock()}
+                  </div>
+                </div>
+
+                {/* SHEET 5: Original Uncorrected Sketch */}
+                <div className="blueprint-sheet page-break">
+                  <div className="blueprint-border-outer">
+                    <div className="blueprint-border-inner">
+                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div className="blueprint-section-title">ORIGINAL DEED — UNCORRECTED BOUNDARY SKETCH</div>
+                        
+                        <div style={{ flex: 1, minHeight: 0, position: 'relative', border: '1.5px solid #000000', boxSizing: 'border-box', marginBottom: '12px' }}>
+                          <canvas ref={setOriginalCanvasElement} className="blueprint-canvas-element" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0 }}>
+                          <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                            <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>ORIGINAL SKETCH NOTES</div>
+                            <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                              <div>1. This sketch represents the original boundary geometry as extracted from the deed prior to any AI-assisted corrections.</div>
+                              <div>2. Dashed lines indicate uncorrected traverse — compare with the corrected solid-line sketch on Page 1.</div>
+                              <div>3. Closure errors and self-intersections (bow-ties) may be present in this original geometry.</div>
+                              <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                <span>SHEET IDENTIFIER: UNCORRECTED SKETCH</span>
+                                <span>PAGE 5 OF 5</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ width: '420px', flexShrink: 0 }}>
+                            {renderTitleBlock()}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
+              </>
+            ) : conceptualAnalysis ? (
+              <>
+                {/* CONCEPTUAL SHEET 1: Legal Description */}
+                <div className="blueprint-sheet">
+                  <div className="blueprint-border-outer">
+                    <div className="blueprint-border-inner">
+                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div className="blueprint-section-title">METES & BOUNDS LEGAL DESCRIPTION</div>
+                        
+                        {/* Legal description box expands to fill space above the footer */}
+                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                          <div className="panel-header">RECORD DESCRIPTION</div>
+                          <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
+                            {legalDesc ? (
+                              <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
+                            ) : (
+                              <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
+                                [No legal description provided.]
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bottom section with Page Notes and Title Block */}
+                        <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                          
+                          {/* Left side: Notes and Page Info */}
+                          <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                            <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES & CERTIFICATION</div>
+                            <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                              <div>1. This legal description represents a mathematical compilation of recorded deed and plat data.</div>
+                              <div>2. No mathematical boundary traverse could be computed due to reference to recorded plat.</div>
+                              <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                <span>SHEET IDENTIFIER: RECORD LEGAL DESCRIPTION</span>
+                                <span>PAGE 1 OF 2</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Right side: Title Block */}
+                          <div style={{ width: '420px', flexShrink: 0 }}>
+                            {renderTitleBlock()}
+                          </div>
+
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CONCEPTUAL SHEET 2: Conceptual Lot & Block Analysis */}
+                <div className="blueprint-sheet page-break">
+                  <div className="blueprint-border-outer">
+                    <div className="blueprint-border-inner">
+                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div className="blueprint-section-title">CONCEPTUAL LOT & BLOCK ANALYSIS</div>
+                        
+                        {/* Analysis box expands to fill space above the footer */}
+                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                          <div className="panel-header">LOT & BLOCK ASSUMPTIONS & COMPARATIVE ANALYSIS</div>
+                          <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', color: '#000000' }}>
+                            
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1a365d', borderBottom: '1.5px solid #cbd5e1', paddingBottom: '3px', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                Deed Summary & Interpretation
+                              </div>
+                              <p style={{ fontSize: '0.8rem', lineHeight: 1.5, color: '#334155', margin: 0, fontFamily: 'sans-serif' }}>
+                                {conceptualAnalysis.Description || conceptualAnalysis.description}
+                              </p>
+                            </div>
+                            
+                            <div style={{ marginTop: '4px' }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1a365d', borderBottom: '1.5px solid #cbd5e1', paddingBottom: '3px', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                1. General Assumptions for Lot & Block Sizes
+                              </div>
+                              <div style={{ fontSize: '0.78rem', lineHeight: 1.45, color: '#334155', display: 'flex', flexDirection: 'column', gap: '6px', fontFamily: 'sans-serif' }}>
+                                <p style={{ margin: '0 0 6px 0' }}>
+                                  When a deed does not explicitly state dimensions or acreage and instead refers to a subdivision Plat (e.g., "Lot X, Block Y of Subdivision Z"), surveyors and database systems use the following size assumptions:
+                                </p>
+                                <div>
+                                  <strong>Subdivision Lots (Residential):</strong> Standard modern residential lots (like Lot 107 of Westwood Estates mentioned in the deed) typically range between 0.10 to 0.25 acres (approx. 4,350 to 10,000 sq. ft.). A common standard is 0.15 acres (e.g., a 60' × 110' lot, or 6,600 sq. ft.).
+                                </div>
+                                <div>
+                                  <strong>Subdivision Tracts / Blocks (Commercial/Industrial):</strong> "Tracts" or "Blocks" inside replats (like Tract 1 of Peninsular Life Insurance Company's Replat) are generally much larger parcels set aside for commercial use, parks, or future subdivision. These typically range from 1.0 to 5.0+ acres.
+                                </div>
+                                <div>
+                                  <strong>Government Lots:</strong> Fractional sections of land along section boundaries, water bodies, or correction lines (like Government Lot 7 and Government Lot 2) are typically larger parcels ranging from 10 to 50 acres.
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ marginTop: '8px' }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1a365d', borderBottom: '1.5px solid #cbd5e1', paddingBottom: '3px', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                2. Relative Size Breakdown for the Provided Deed Example
+                              </div>
+                              <p style={{ fontSize: '0.78rem', color: '#334155', margin: '0 0 6px 0', fontFamily: 'sans-serif' }}>
+                                Using the specific dimensions and descriptions given in the image, we can estimate and compare the relative sizes of the properties in question:
+                              </p>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '0.76rem', fontFamily: 'sans-serif', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '10px' }}>
+                                <div>
+                                  <strong style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase' }}>Parent Tract Size Estimate:</strong>
+                                  <div style={{ fontSize: '0.9rem', fontWeight: 700, fontFamily: 'monospace', marginTop: '2px', color: '#0f172a' }}>
+                                    {conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <strong style={{ color: '#475569', fontSize: '0.68rem', textTransform: 'uppercase' }}>Standard Lot Size Estimate:</strong>
+                                  <div style={{ fontSize: '0.9rem', fontWeight: 700, fontFamily: 'monospace', marginTop: '2px', color: '#0f172a' }}>
+                                    {conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.76rem', color: '#0f172a', fontStyle: 'italic', marginTop: '6px', borderTop: '0.5px solid #e2e8f0', paddingTop: '6px', fontFamily: 'sans-serif', lineHeight: 1.45 }}>
+                                {conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison}
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
+
+                        {/* Bottom section with Page Notes and Title Block */}
+                        <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                          
+                          {/* Left side: Notes and Page Info */}
+                          <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                            <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>CONCEPTUAL SHEET NOTES</div>
+                            <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                              <div>1. This analysis provides a conceptual representation based on standard lot, block, and tract sizing guidelines.</div>
+                              <div>2. True dimensions and boundaries require a professional land survey of the referenced plat map.</div>
+                              <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                <span>SHEET IDENTIFIER: CONCEPTUAL ANALYSIS</span>
+                                <span>PAGE 2 OF 2</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Right side: Title Block */}
+                          <div style={{ width: '420px', flexShrink: 0 }}>
+                            {renderTitleBlock()}
+                          </div>
+
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : null}
         </div>
       </div>
     </div>,

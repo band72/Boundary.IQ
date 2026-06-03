@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API } from '../config';
 
 export default function LoginScreen({ onAuthSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -88,7 +89,7 @@ export default function LoginScreen({ onAuthSuccess }) {
 
       const mockJwt = `${encodeBase64Url(headerStr)}.${encodeBase64Url(payloadStr)}.mocksignature`;
 
-      const res = await fetch('/api/auth/google-login', {
+      const res = await fetch(`${API}/auth/google-login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,7 +121,7 @@ export default function LoginScreen({ onAuthSuccess }) {
     setSuccessMsg('');
 
     try {
-      const res = await fetch('/api/auth/google-login', {
+      const res = await fetch(`${API}/auth/google-login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -204,7 +205,7 @@ export default function LoginScreen({ onAuthSuccess }) {
     if (!validateForm()) return;
 
     setLoading(true);
-    const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
+    const endpoint = isRegister ? `${API}/auth/register` : `${API}/auth/login`;
 
     try {
       const response = await fetch(endpoint, {

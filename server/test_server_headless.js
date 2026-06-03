@@ -78,6 +78,11 @@ async function runTests() {
   let failedCount = 0;
   let passedCount = 0;
 
+  // --- Programmatic Auth for Guarded Commercial Releases ---
+  let authToken = null;
+  const testUsername = `testuser_${Math.random().toString(36).substring(7)}`;
+  const testPassword = 'testpassword123';
+
   async function testCase(name, fn) {
     console.log(`\n▶ Running: ${ANSI_COLORS.bright}${name}${ANSI_COLORS.reset}...`);
     try {
@@ -100,9 +105,26 @@ async function runTests() {
     console.log(`  Response: status=${data.status}, service="${data.service}"`);
   });
 
+  // --- Auth Seeding ---
+  await testCase('POST /api/auth/register (Test User Seeding)', async () => {
+    const res = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: testUsername, password: testPassword })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.token) throw new Error('Failed to retrieve authentication token from register endpoint.');
+    authToken = data.token;
+    console.log(`  Seeded test user: ${testUsername} (Token extracted)`);
+  });
+
   // --- 2. Settings Endpoint Test ---
   await testCase('GET /api/settings/model', async () => {
-    const res = await fetch(`${BASE_URL}/api/settings/model`);
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    
+    const res = await fetch(`${BASE_URL}/api/settings/model`, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data.activeProvider) throw new Error('Missing "activeProvider" in settings payload.');
@@ -198,7 +220,10 @@ async function runTests() {
 
   // --- 6. Diagnostics Database Test ---
   await testCase('GET /api/diagnostics/stats', async () => {
-    const res = await fetch(`${BASE_URL}/api/diagnostics/stats`);
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    
+    const res = await fetch(`${BASE_URL}/api/diagnostics/stats`, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.deedLogCount === undefined) throw new Error('Missing deedLogCount in database stats.');

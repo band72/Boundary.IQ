@@ -1,9 +1,13 @@
 // ─── Diagnostics Route ──────────────────────────────────────────────────────
 import { Router } from 'express';
 import * as db from '../services/diagnosticsDb.js';
+import { requireAuth } from '../middleware/auth.js';
 import fs from 'fs';
 import path from 'path';
 const router = Router();
+
+// Secure all diagnostics routes with session authentication
+router.use(requireAuth);
 
 // GET /api/diagnostics/recent-batches  — last 30 runs with inline stats
 router.get('/recent-batches', (req, res) => {
