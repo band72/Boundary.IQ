@@ -106,11 +106,17 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
         );
 
         const pageLabels = ['conceptual_map', 'record_legal', 'conceptual_analysis'];
+        const pageBuffers = [];
         Object.entries(pages).forEach(([key, buf], i) => {
           const outPath = path.join(outputFolder, `${baseName}_${pageLabels[i]}.png`);
           fs.writeFileSync(outPath, buf);
+          pageBuffers.push(buf);
           console.log(`Output: wrote PNG conceptual page ${i + 1} — ${path.basename(outPath)}`);
         });
+
+        // Save combined PDF deliverable
+        const outPdfPath = path.join(outputFolder, `${baseName}_conceptual.pdf`);
+        saveCombinedPdf(outPdfPath, pageBuffers);
       } catch (pngEx) {
         console.warn(`Output: Conceptual PNG sketch failed for ${sourceFileName}:`, pngEx.message);
       }
@@ -158,17 +164,48 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
         );
 
         const pageLabels = ['sketch_p1', 'sketch_p2', 'sketch_p3', 'sketch_p4', 'sketch_p5'];
+        const pageBuffers = [];
         Object.entries(pages).forEach(([key, buf], i) => {
           const outPath = path.join(outputFolder, `${baseName}_${pageLabels[i]}.png`);
           fs.writeFileSync(outPath, buf);
+          pageBuffers.push(buf);
           console.log(`Output: wrote PNG page ${i + 1} — ${path.basename(outPath)}`);
         });
+
+        // Save combined PDF deliverable
+        const outPdfPath = path.join(outputFolder, `${baseName}_blueprint.pdf`);
+        saveCombinedPdf(outPdfPath, pageBuffers);
       } catch (pngEx) {
         console.warn(`Output: PNG sketch failed for ${sourceFileName}:`, pngEx.message);
       }
     }
   } catch (ex) {
     console.warn(`Failed to write output files for ${sourceFileName}:`, ex.message);
+  }
+}
+
+/**
+ * Helper to compile and write a combined PDF using pdf-lib (runs asynchronously).
+ */
+async function saveCombinedPdf(outPdfPath, pageBuffers) {
+  try {
+    const { PDFDocument } = await import('pdf-lib');
+    const pdfDoc = await PDFDocument.create();
+    for (const buf of pageBuffers) {
+      const img = await pdfDoc.embedPng(buf);
+      const page = pdfDoc.addPage([792, 612]);
+      page.drawImage(img, {
+        x: 0,
+        y: 0,
+        width: 792,
+        height: 612
+      });
+    }
+    const pdfBytes = await pdfDoc.save();
+    fs.writeFileSync(outPdfPath, pdfBytes);
+    console.log(`Output: compiled and wrote combined PDF deliverable — ${path.basename(outPdfPath)}`);
+  } catch (pdfEx) {
+    console.warn(`Output: failed to compile PDF deliverable:`, pdfEx.message);
   }
 }
 
