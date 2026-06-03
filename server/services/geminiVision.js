@@ -227,6 +227,23 @@ function pruneLongText(text) {
       }
     }
   }
+
+  // Lot & Block indicators to capture subdivision descriptions early
+  const lotBlockIndicators = [
+    /\b(?:lot|tract|parcel)\s+\d+/i,
+    /\bblock\s+[a-z0-9]\b/i,
+    /\bsubdivision\b/i,
+    /\breplat\s+of\b/i,
+    /\bplat\s+book\b/i
+  ];
+  for (const regex of lotBlockIndicators) {
+    const match = text.match(regex);
+    if (match) {
+      if (earliestIdx === -1 || match.index < earliestIdx) {
+        earliestIdx = match.index;
+      }
+    }
+  }
   
   let startIdx = 0;
   if (earliestIdx !== -1) {
