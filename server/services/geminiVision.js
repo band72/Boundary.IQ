@@ -13,6 +13,17 @@ import crypto from 'crypto';
 const execFileAsync = promisify(execFile);
 const pdfOcrCache = new Map();
 
+// Persistent Disk OCR Cache for Scanned PDFs
+const CONFIG_DIR = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+const OCR_CACHE_DIR = path.join(CONFIG_DIR, 'BoundaryQC', 'OcrCache');
+if (!fsSync.existsSync(OCR_CACHE_DIR)) {
+  try {
+    fsSync.mkdirSync(OCR_CACHE_DIR, { recursive: true });
+  } catch (err) {
+    console.warn('Failed to create persistent OCR cache directory:', err.message);
+  }
+}
+
 /**
  * Extract digital text from a PDF buffer.
  */
@@ -342,6 +353,31 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
     const pdfHash = crypto.createHash('sha256').update(buffer).digest('hex');
     let cacheEntry = pdfOcrCache.get(pdfHash);
     
+    // Check disk-based persistent cache if not in memory
+    if (!cacheEntry && OCR_CACHE_DIR) {
+      try {
+        const metaPath = path.join(OCR_CACHE_DIR, `${pdfHash}.json`);
+        const pngPath = path.join(OCR_CACHE_DIR, `${pdfHash}_page1.png`);
+        if (fsSync.existsSync(metaPath)) {
+          console.log(`💾 Disk Cache Hit: Loading persistent OCR text for PDF (hash=${pdfHash})`);
+          const metaJson = JSON.parse(fsSync.readFileSync(metaPath, 'utf8'));
+          let firstPageBuffer = Buffer.alloc(0);
+          if (fsSync.existsSync(pngPath)) {
+            firstPageBuffer = fsSync.readFileSync(pngPath);
+          }
+          cacheEntry = {
+            isScanned: metaJson.isScanned,
+            extractedText: metaJson.extractedText || '',
+            combinedOcrText: metaJson.combinedOcrText || '',
+            firstPageBuffer
+          };
+          pdfOcrCache.set(pdfHash, cacheEntry);
+        }
+      } catch (cacheErr) {
+        console.warn('Failed to load from persistent OCR cache:', cacheErr.message);
+      }
+    }
+    
     if (!cacheEntry) {
       console.log(`Ollama PDF: Cache miss. Processing PDF (hash=${pdfHash})...`);
       const extractedText = await extractTextFromPdf(buffer);
@@ -401,7 +437,26 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
           firstPageBuffer
         };
       }
+      
+      // Save cache entry in memory and write to disk
       pdfOcrCache.set(pdfHash, cacheEntry);
+      try {
+        const metaPath = path.join(OCR_CACHE_DIR, `${pdfHash}.json`);
+        const pngPath = path.join(OCR_CACHE_DIR, `${pdfHash}_page1.png`);
+        
+        fsSync.writeFileSync(metaPath, JSON.stringify({
+          isScanned: cacheEntry.isScanned,
+          extractedText: cacheEntry.extractedText,
+          combinedOcrText: cacheEntry.combinedOcrText
+        }, null, 2), 'utf8');
+        
+        if (cacheEntry.firstPageBuffer && cacheEntry.firstPageBuffer.length > 0) {
+          fsSync.writeFileSync(pngPath, cacheEntry.firstPageBuffer);
+        }
+        console.log(`💾 Persisted OCR cache entry to disk for PDF (hash=${pdfHash})`);
+      } catch (writeErr) {
+        console.warn('Failed to write persistent OCR cache:', writeErr.message);
+      }
     } else {
       console.log(`⚡ Cache hit: Reusing OCR/text extraction for PDF (hash=${pdfHash})`);
     }

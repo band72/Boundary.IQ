@@ -323,6 +323,48 @@ function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, li
   );
 }
 
+// GET /api/folderscan/download-batch-zip
+router.get('/download-batch-zip', async (req, res) => {
+  try {
+    const folderPath = req.query.path;
+    const validPath = validatePath(folderPath);
+    if (!validPath) {
+      return res.status(403).json({ error: 'Path is not allowed.' });
+    }
+    if (!fs.existsSync(validPath)) {
+      return res.status(404).json({ error: `Directory not found: ${validPath}` });
+    }
+
+    const files = fs.readdirSync(validPath);
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'Directory is empty' });
+    }
+
+    const tempZipPath = path.join(os.tmpdir(), `batch_download_${uuidv4().substring(0,8)}.zip`);
+    const zipCmd = `zip -r "${tempZipPath}" .`;
+    
+    const { exec } = await import('child_process');
+    exec(zipCmd, { cwd: validPath }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('Failed to create ZIP archive:', err);
+        return res.status(500).json({ error: 'Failed to create ZIP archive' });
+      }
+      
+      res.download(tempZipPath, `${path.basename(validPath)}_deliverables.zip`, (downloadErr) => {
+        try {
+          fs.unlinkSync(tempZipPath);
+        } catch {}
+        if (downloadErr) {
+          console.warn('ZIP download streaming interrupted:', downloadErr.message);
+        }
+      });
+    });
+  } catch (ex) {
+    console.error('ZIP download route error:', ex);
+    res.status(500).json({ error: ex.message });
+  }
+});
+
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
   let keepAlive = null;

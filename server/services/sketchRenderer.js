@@ -45,6 +45,28 @@ function newCanvas() {
   const canvas = createCanvas(W * DPR, H * DPR);
   const ctx    = canvas.getContext('2d');
   ctx.scale(DPR, DPR);
+
+  // Redefine ctx.font setter to automatically map generic 'sans-serif'
+  // to '"DejaVu Sans", "Liberation Sans", sans-serif' for accurate font metrics
+  const proto = Object.getPrototypeOf(ctx);
+  const desc = Object.getOwnPropertyDescriptor(proto, 'font');
+  if (desc && desc.set) {
+    Object.defineProperty(ctx, 'font', {
+      set(val) {
+        let mapped = val;
+        if (typeof val === 'string' && val.includes('sans-serif') && !val.includes('DejaVu')) {
+          mapped = val.replace('sans-serif', '"DejaVu Sans", "Liberation Sans", sans-serif');
+        }
+        desc.set.call(ctx, mapped);
+      },
+      get() {
+        return desc.get.call(ctx);
+      },
+      configurable: true,
+      enumerable: true
+    });
+  }
+
   return { canvas, ctx };
 }
 
@@ -108,38 +130,81 @@ function drawTitleBlock(ctx, x, y, w, h, meta, pageN, pageTotal) {
   const hdrH = 18;
   drawPanelHeader(ctx, x, y, w, hdrH, 'METES & BOUNDS PLATTED SKETCH');
 
-  // Field rows
-  const fields = [
-    ['PARCEL',         meta.parcel        || 'SUBJECT PARCEL'],
-    ['COUNTY / REGION',meta.county        || 'UNINCORPORATED AREA'],
-    ['STATE',          meta.state         || 'GENERAL RECORD'],
-    ['AREA',           meta.areaAcres     ? `${parseFloat(meta.areaAcres).toFixed(4)} AC` : '—'],
-    ['PERIMETER',      meta.perimeter     ? `${parseFloat(meta.perimeter).toFixed(2)} FT` : '—'],
-    ['BASIS OF BEARINGS', meta.basisOfBearings || 'DEED OF RECORD'],
-    ['STATUS',         meta.status        || '—'],
-    ['PLATFORM',       'BOUNDARY.IQ PLATFORM'],
-    ['DATE',           new Date().toISOString().slice(0, 10)],
+  // Field rows in pairs
+  const pairs = [
+    [
+      ['PARCEL', meta.parcel || 'SUBJECT PARCEL'],
+      ['DATE', new Date().toISOString().slice(0, 10)]
+    ],
+    [
+      ['COUNTY / REGION', meta.county || 'UNINCORPORATED AREA'],
+      ['STATE', meta.state || 'GENERAL RECORD']
+    ],
+    [
+      ['AREA', meta.areaAcres ? `${parseFloat(meta.areaAcres).toFixed(4)} AC` : '—'],
+      ['PERIMETER', meta.perimeter ? `${parseFloat(meta.perimeter).toFixed(2)} FT` : '—']
+    ],
+    [
+      ['BASIS OF BEARINGS', meta.basisOfBearings || 'DEED OF RECORD'],
+      ['STATUS', meta.status || '—']
+    ],
+    [
+      ['PLATFORM', 'BOUNDARY.IQ PLATFORM'],
+      pageN && pageTotal ? ['PAGE', `${pageN} OF ${pageTotal}`] : ['CLIENT', 'RECORD HOLDER']
+    ]
   ];
 
-  if (pageN && pageTotal) {
-    fields.push([`PAGE`, `${pageN} OF ${pageTotal}`]);
-  }
-
   let fy = y + hdrH + 3;
-  const colX = x + 6;
-  const colW = w - 12;
-  const availRows = fields.length;
-  const rowH = Math.min(14, (h - hdrH - 6) / availRows);
+  const colX1 = x + 6;
+  const colW1 = Math.floor((w - 12) / 2) - 4;
+  const colX2 = x + 6 + Math.floor((w - 12) / 2) + 4;
+  const availRows = pairs.length;
+  const rowH = (h - hdrH - 6) / availRows;
+
+  // Draw vertical separator down the middle
+  ctx.strokeStyle = C_BORDER;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2, y + hdrH);
+  ctx.lineTo(x + w / 2, y + h);
+  ctx.stroke();
 
   ctx.textBaseline = 'alphabetic';
-  for (const [label, value] of fields) {
-    if (fy + rowH > y + h - 4) break;
-    ctx.font = '6px sans-serif'; ctx.fillStyle = '#888888'; ctx.textAlign = 'left';
-    ctx.fillText(label.toUpperCase(), colX, fy + 6);
-    ctx.font = 'bold 7.5px sans-serif'; ctx.fillStyle = C_BLACK;
-    ctx.fillText(String(value), colX, fy + 6 + 9);
+  for (const [f1, f2] of pairs) {
+    if (fy + rowH > y + h - 2) break;
+
+    // Draw field 1 (left column)
+    if (f1) {
+      ctx.font = '6px sans-serif'; ctx.fillStyle = '#888888'; ctx.textAlign = 'left';
+      ctx.fillText(f1[0].toUpperCase(), colX1, fy + 7);
+      ctx.font = 'bold 7.5px sans-serif'; ctx.fillStyle = C_BLACK;
+      let val1 = String(f1[1]);
+      if (ctx.measureText(val1).width > colW1) {
+        while (val1.length > 0 && ctx.measureText(val1 + '...').width > colW1) {
+          val1 = val1.slice(0, -1);
+        }
+        val1 += '...';
+      }
+      ctx.fillText(val1, colX1, fy + 17);
+    }
+
+    // Draw field 2 (right column)
+    if (f2) {
+      ctx.font = '6px sans-serif'; ctx.fillStyle = '#888888'; ctx.textAlign = 'left';
+      ctx.fillText(f2[0].toUpperCase(), colX2, fy + 7);
+      ctx.font = 'bold 7.5px sans-serif'; ctx.fillStyle = C_BLACK;
+      let val2 = String(f2[1]);
+      if (ctx.measureText(val2).width > colW1) {
+        while (val2.length > 0 && ctx.measureText(val2 + '...').width > colW1) {
+          val2 = val2.slice(0, -1);
+        }
+        val2 += '...';
+      }
+      ctx.fillText(val2, colX2, fy + 17);
+    }
+
     fy += rowH;
-    hRule(ctx, colX, fy, colW);
+    hRule(ctx, x + 4, fy, w - 8);
   }
   return y + h;
 }
@@ -194,7 +259,7 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
   const offY   = ry + PAD + (availH - drawH) / 2;
 
   const tx = e => offX + (e - minE) * scale;
-  const ty = n => offY + availH - (n - minN) * scale;
+  const ty = n => offY + drawH - (n - minN) * scale;
 
   // Clip to region
   ctx.save();
@@ -1148,16 +1213,35 @@ function renderConceptualPage1(conceptualAnalysis, legalDesc = '', meta = {}) {
   ctx.strokeRect(MARGIN, footerY, noteW, FOOTER_H);
   drawPanelHeader(ctx, MARGIN, footerY, noteW, HDR_H, 'CONCEPTUAL ANALYSIS SUMMARY');
 
+  // Notes Box content
+  let curY = footerY + HDR_H + 18;
+
+  // Parent Tract Estimate
   ctx.fillStyle = C_BLACK;
   ctx.font = 'bold 8.5px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`Parent Tract Estimate: ${conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}`, MARGIN + 12, footerY + HDR_H + 20);
-  ctx.fillText(`Standard Lot Size: ${conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}`, MARGIN + 12, footerY + HDR_H + 35);
+  const parentLabel = 'Parent Tract Estimate: ';
+  ctx.fillText(parentLabel, MARGIN + 12, curY);
+  const parentLabelW = ctx.measureText(parentLabel).width;
+  ctx.font = '8.5px sans-serif';
+  const parentVal = conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown';
+  curY = drawWrappedText(ctx, parentVal, MARGIN + 12 + parentLabelW, curY, noteW - 24 - parentLabelW, 12);
+  curY += 2;
+
+  // Standard Lot Size
+  ctx.font = 'bold 8.5px sans-serif';
+  const lotLabel = 'Standard Lot Size: ';
+  ctx.fillText(lotLabel, MARGIN + 12, curY);
+  const lotLabelW = ctx.measureText(lotLabel).width;
+  ctx.font = '8.5px sans-serif';
+  const lotVal = conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres';
+  curY = drawWrappedText(ctx, lotVal, MARGIN + 12 + lotLabelW, curY, noteW - 24 - lotLabelW, 12);
+  curY += 4;
   
+  // Relative Comparison
   ctx.font = 'italic 8.5px sans-serif';
   ctx.fillStyle = '#444444';
-  const descY = footerY + HDR_H + 55;
-  drawWrappedText(ctx, conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison || '', MARGIN + 12, descY, noteW - 24, 13);
+  const relComp = conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison || '';
+  drawWrappedText(ctx, relComp, MARGIN + 12, curY, noteW - 24, 13);
 
   // Title Block
   drawTitleBlock(ctx, MARGIN + noteW + 12, footerY, tbWidth, FOOTER_H, meta, 1, 3);
@@ -1286,15 +1370,32 @@ function renderConceptualPage3(conceptualAnalysis, meta = {}) {
   ctx.fillText('2. SPECIFIC SIZE ESTIMATES & RELATIVE COMPARISON', descX + 20, curY);
   curY += 16;
   
+  // Parent Tract size estimate
   ctx.fillStyle = C_BLACK;
   ctx.font = 'bold 9.5px sans-serif';
-  ctx.fillText(`Parent Tract size estimate: ${conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown'}`, descX + 20, curY);
-  curY += 13;
-  ctx.fillText(`Standard Lot size estimate: ${conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres'}`, descX + 20, curY);
-  curY += 15;
+  const parentLabel = 'Parent Tract size estimate: ';
+  ctx.fillText(parentLabel, descX + 20, curY);
+  const parentLabelW = ctx.measureText(parentLabel).width;
+  ctx.font = '9.5px sans-serif';
+  const parentVal = conceptualAnalysis.ParentTractSizeEstimate || conceptualAnalysis.parentTractSizeEstimate || 'unknown';
+  curY = drawWrappedText(ctx, parentVal, descX + 20 + parentLabelW, curY, descW - 40 - parentLabelW, 13);
+  curY += 2;
+
+  // Standard Lot size estimate
+  ctx.font = 'bold 9.5px sans-serif';
+  const lotLabel = 'Standard Lot size estimate: ';
+  ctx.fillText(lotLabel, descX + 20, curY);
+  const lotLabelW = ctx.measureText(lotLabel).width;
+  ctx.font = '9.5px sans-serif';
+  const lotVal = conceptualAnalysis.LotSizeEstimate || conceptualAnalysis.lotSizeEstimate || '0.15 acres';
+  curY = drawWrappedText(ctx, lotVal, descX + 20 + lotLabelW, curY, descW - 40 - lotLabelW, 13);
+  curY += 4;
+
+  // Relative comparison
   ctx.font = 'italic 9.5px sans-serif';
   ctx.fillStyle = '#444444';
-  drawWrappedText(ctx, conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison || '', descX + 20, curY, descW - 40, 14);
+  const relComp = conceptualAnalysis.RelativeComparison || conceptualAnalysis.relativeComparison || '';
+  drawWrappedText(ctx, relComp, descX + 20, curY, descW - 40, 14);
 
   // Footer notes and Title block
   const footerY = H - FOOTER_H - MARGIN;

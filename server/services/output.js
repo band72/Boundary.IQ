@@ -238,7 +238,54 @@ export function writeBatchSummary(outputFolder, sourcePath, results, elapsedMs) 
     };
 
     fs.writeFileSync(path.join(outputFolder, '_BATCH_SUMMARY.json'), JSON.stringify(summary, null, 2));
-    console.log(`Wrote batch summary: ${path.join(outputFolder, '_BATCH_SUMMARY.json')}`);
+    console.log(`Wrote batch summary JSON: ${path.join(outputFolder, '_BATCH_SUMMARY.json')}`);
+
+    // Generate human-readable text summary
+    const separator = '='.repeat(80);
+    const lineRule = '─'.repeat(80);
+    const skippedCount = results.filter(r => r?.status === 'skipped').length;
+    const txtLines = [
+      separator,
+      '                           BOUNDARY.IQ BATCH SCAN SUMMARY',
+      separator,
+      `Processed At:   ${new Date().toISOString()}`,
+      `Source Folder:  ${sourcePath}`,
+      `Output Folder:  ${outputFolder}`,
+      `Elapsed Time:   ${(Math.round(elapsedMs / 100) / 10).toFixed(1)} seconds`,
+      '',
+      `Total Files:    ${total}`,
+      `Passed:         ${passed} (Success: ${passed - meander}, Meander/Open-ended: ${meander})`,
+      `Skipped:        ${skippedCount}`,
+      `Failed:         ${failed}`,
+      `Pass Rate:      ${total > 0 ? `${(100 * passed / total).toFixed(1)}%` : 'N/A'}`,
+      '',
+      separator,
+      '                                 FILE DETAILS',
+      separator,
+      'STATUS   COURSES  PRECISION   ERROR (FT)  FILE NAME / DETAILS',
+      lineRule
+    ];
+
+    results.forEach(r => {
+      if (!r) return;
+      const statusField = (r.status || 'FAIL').toUpperCase().padEnd(9);
+      const coursesField = String(r.extraction?.courses?.length || 0).padEnd(9);
+      const prec = r.traverse?.closure?.precisionRatio || '—';
+      const precisionField = prec.padEnd(12);
+      const errVal = r.traverse?.closure?.linearError != null ? r.traverse.closure.linearError.toFixed(4) : '—';
+      const errorField = errVal.padEnd(12);
+      
+      txtLines.push(`${statusField}${coursesField}${precisionField}${errorField}${r.fileName}`);
+      if (r.status === 'skipped' && r.skipReason) {
+        txtLines.push(`         [SKIP REASON] ${r.skipReason}`);
+      } else if (r.status === 'error' && r.error) {
+        txtLines.push(`         [ERROR] ${r.error}`);
+      }
+    });
+
+    txtLines.push(lineRule);
+    fs.writeFileSync(path.join(outputFolder, '_BATCH_SUMMARY.txt'), txtLines.join('\n'));
+    console.log(`Wrote batch summary TXT: ${path.join(outputFolder, '_BATCH_SUMMARY.txt')}`);
   } catch (ex) {
     console.warn('Failed to write batch summary:', ex.message);
   }

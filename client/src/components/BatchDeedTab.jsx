@@ -771,6 +771,16 @@ export default function BatchDeedTab() {
     a.click();
   };
 
+  const downloadBatchZip = () => {
+    if (!lastOutputFolder) return;
+    const url = `${API}/folderscan/download-batch-zip?path=${encodeURIComponent(lastOutputFolder)}`;
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: '',
+    });
+    a.click();
+  };
+
   const scanFolder = async () => {
     const path = (folderPath ?? '').trim();
     if (!path) { setFolderError('Please enter a folder path.'); return; }
@@ -1344,6 +1354,19 @@ export default function BatchDeedTab() {
                 >
                   📋 Copy Path
                 </button>
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={downloadBatchZip}
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    fontSize: '0.7rem',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  ⬇ Download ZIP
+                </button>
               </div>
             )}
 
@@ -1594,6 +1617,22 @@ export default function BatchDeedTab() {
                 <button className="btn btn-ghost btn-sm" onClick={downloadDxf} style={{ color: '#c97a00', border: '1px solid rgba(201,122,0,0.4)' }}>⬇ DXF</button>
               )}
               <button className="btn btn-success btn-sm" onClick={downloadAll}>⬇ Download All (.txt)</button>
+              {lastOutputFolder && (
+                <button
+                  className="btn btn-sm"
+                  onClick={downloadBatchZip}
+                  style={{
+                    background: 'rgba(0, 212, 168, 0.12)',
+                    border: '1px solid rgba(0, 212, 168, 0.25)',
+                    color: '#fff',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  ⬇ Download ZIP
+                </button>
+              )}
             </div>
           </div>
 
