@@ -545,6 +545,10 @@ export default function BatchDeedTab() {
         alert(`✓ Reprocessed ${fileName} successfully! The boundary has closed.`);
         searchDatabase();
         triggerStatsRefresh();
+      } else if (data.status === 'skipped') {
+        alert(`✓ Reprocessed ${fileName} successfully: ${data.result?.skipReason || 'Document skipped (non-traversable lot/block/plat).'}`);
+        searchDatabase();
+        triggerStatsRefresh();
       } else {
         const errorMsg = data.result?.error || data.result?.traverseError || 'Closure failure or skipping occurred.';
         alert(`⚠ Reprocess complete for ${fileName}: ${errorMsg}`);
