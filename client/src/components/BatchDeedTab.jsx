@@ -422,6 +422,19 @@ export default function BatchDeedTab() {
     setCorrectionStatus('🤖 Dispatching AI vision and automated repairs (ignoring cache)...');
     try {
       const { n: activePobN, e: activePobE } = getPobCoordinates();
+      const autoOutputEnabled = (() => {
+        try { return JSON.parse(localStorage.getItem('boundaryiq_auto_output') || 'true'); }
+        catch { return true; }
+      })();
+      const shortFileNamesEnabled = (() => {
+        try { return JSON.parse(localStorage.getItem('boundaryiq_short_file_names') || 'true'); }
+        catch { return true; }
+      })();
+      const showConceptualDetailEnabled = (() => {
+        try { return localStorage.getItem('boundaryiq_show_conceptual_detail') !== 'false'; }
+        catch { return true; }
+      })();
+
       const params = new URLSearchParams({
         path: folderPath.trim(),
         file: active.fileName,
@@ -429,6 +442,9 @@ export default function BatchDeedTab() {
         pobE: activePobE,
         units: 'Feet',
         force: 'true',
+        ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
+        ...(shortFileNamesEnabled ? { shortFileNames: 'true' } : {}),
+        ...(showConceptualDetailEnabled ? { showConceptualDetail: 'true' } : {}),
         ...(county ? { county } : {}),
         ...(stateVal ? { state: stateVal } : {}),
         ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
@@ -529,6 +545,19 @@ export default function BatchDeedTab() {
     setReprocessLoading(prev => ({ ...prev, [fileName]: true }));
     try {
       const { n: activePobN, e: activePobE } = getPobCoordinates();
+      const autoOutputEnabled = (() => {
+        try { return JSON.parse(localStorage.getItem('boundaryiq_auto_output') || 'true'); }
+        catch { return true; }
+      })();
+      const shortFileNamesEnabled = (() => {
+        try { return JSON.parse(localStorage.getItem('boundaryiq_short_file_names') || 'true'); }
+        catch { return true; }
+      })();
+      const showConceptualDetailEnabled = (() => {
+        try { return localStorage.getItem('boundaryiq_show_conceptual_detail') !== 'false'; }
+        catch { return true; }
+      })();
+
       const params = new URLSearchParams({
         path: folderDir,
         file: fileName,
@@ -536,6 +565,9 @@ export default function BatchDeedTab() {
         pobE: activePobE,
         units: 'Feet',
         force: 'true',
+        ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
+        ...(shortFileNamesEnabled ? { shortFileNames: 'true' } : {}),
+        ...(showConceptualDetailEnabled ? { showConceptualDetail: 'true' } : {}),
         ...(county ? { county } : {}),
         ...(stateVal ? { state: stateVal } : {}),
         ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
@@ -814,9 +846,17 @@ export default function BatchDeedTab() {
     setFolderError('');
     setLastOutputFolder('');
 
-    // Read auto-output setting from localStorage
+    // Read auto-output and short-filenames setting from localStorage
     const autoOutputEnabled = (() => {
       try { return JSON.parse(localStorage.getItem('boundaryiq_auto_output') || 'true'); }
+      catch { return true; }
+    })();
+    const shortFileNamesEnabled = (() => {
+      try { return JSON.parse(localStorage.getItem('boundaryiq_short_file_names') || 'true'); }
+      catch { return true; }
+    })();
+    const showConceptualDetailEnabled = (() => {
+      try { return localStorage.getItem('boundaryiq_show_conceptual_detail') !== 'false'; }
       catch { return true; }
     })();
 
@@ -829,6 +869,8 @@ export default function BatchDeedTab() {
         units: 'Feet',
         concurrency: concurrentAgents,
         ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
+        ...(shortFileNamesEnabled ? { shortFileNames: 'true' } : {}),
+        ...(showConceptualDetailEnabled ? { showConceptualDetail: 'true' } : {}),
         ...(county   ? { county }          : {}),
         ...(stateVal ? { state: stateVal } : {}),
         ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
@@ -1457,7 +1499,7 @@ export default function BatchDeedTab() {
         {/* Model cascade legend */}
         <div style={{ padding: '0 1rem 0.6rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
           <span>Model cascade:</span>
-          {['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b'].map((m, i) => (
+          {['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b', 'gemma4:26b'].map((m, i) => (
             <span key={m} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
               {i > 0 && <span>→</span>}
               <span style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 7px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem' }}>{m}</span>
@@ -1575,8 +1617,8 @@ export default function BatchDeedTab() {
                     </span>
                     <span style={{ flex: 1, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{(f.size / 1024).toFixed(0)} KB</span>
-                    {done && r?.traverse && (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap', color: r.traverse.closure.status.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>
+                    {done && r?.traverse?.closure && (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap', color: r.traverse.closure.status?.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>
                         {r.traverse.closure.precisionRatio}
                       </span>
                     )}

@@ -178,17 +178,31 @@ export function findSolvedCase(fileName, fileHash = null) {
   //   1. Must have ExtractionJson with at least 1 course
   //   2. Must have TraverseJson (computed result)
   //   3. GeoCallCount > 0 (courses were actually extracted)
-  let rows;
+  let rows = [];
   if (fileHash) {
+    // 1. Search by exact file hash (highest precision)
     rows = db.prepare(
       `SELECT * FROM DeedLogs
-       WHERE (FileName = ? OR FileHash = ?) AND Status IN ('PASS', 'MEANDER')
+       WHERE FileHash = ? AND Status IN ('PASS', 'MEANDER')
          AND TraverseJson IS NOT NULL
          AND ExtractionJson IS NOT NULL
          AND GeoCallCount > 0
        ORDER BY Timestamp DESC LIMIT 5`
-    ).all(fileName, fileHash);
+    ).all(fileHash);
+
+    // 2. Fall back to filename match only for legacy entries with no hash stored
+    if (rows.length === 0) {
+      rows = db.prepare(
+        `SELECT * FROM DeedLogs
+         WHERE FileName = ? AND (FileHash IS NULL OR FileHash = '') AND Status IN ('PASS', 'MEANDER')
+           AND TraverseJson IS NOT NULL
+           AND ExtractionJson IS NOT NULL
+           AND GeoCallCount > 0
+         ORDER BY Timestamp DESC LIMIT 5`
+      ).all(fileName);
+    }
   } else {
+    // Legacy / no hash provided
     rows = db.prepare(
       `SELECT * FROM DeedLogs
        WHERE FileName = ? AND Status IN ('PASS', 'MEANDER')
@@ -212,6 +226,33 @@ export function findSolvedCase(fileName, fileHash = null) {
   }
 
   return null; // No valid cache entry found
+}
+
+export function findSkippedCase(fileName, fileHash = null) {
+  let rows = [];
+  if (fileHash) {
+    rows = db.prepare(
+      `SELECT * FROM DeedLogs
+       WHERE FileHash = ? AND Status = 'SKIPPED'
+       ORDER BY Timestamp DESC LIMIT 1`
+    ).all(fileHash);
+
+    if (rows.length === 0) {
+      rows = db.prepare(
+        `SELECT * FROM DeedLogs
+         WHERE FileName = ? AND (FileHash IS NULL OR FileHash = '') AND Status = 'SKIPPED'
+         ORDER BY Timestamp DESC LIMIT 1`
+      ).all(fileName);
+    }
+  } else {
+    rows = db.prepare(
+      `SELECT * FROM DeedLogs
+       WHERE FileName = ? AND Status = 'SKIPPED'
+       ORDER BY Timestamp DESC LIMIT 1`
+    ).all(fileName);
+  }
+
+  return rows.length > 0 ? mapDeedLog(rows[0]) : null;
 }
 
 /**

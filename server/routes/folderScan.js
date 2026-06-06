@@ -1,5 +1,6 @@
 // ─── Folder Scan Route ──────────────────────────────────────────────────────
 import { Router } from 'express';
+import * as lockService from '../services/lockService.js';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
@@ -36,7 +37,10 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
 
   if (fs.existsSync(extractedTxtPath)) {
     try {
-      return fs.readFileSync(extractedTxtPath, 'utf-8');
+      const cachedText = fs.readFileSync(extractedTxtPath, 'utf-8');
+      if (cachedText && cachedText.trim().length >= 80 && geminiVision.hasBoundaryKeywords(cachedText)) {
+        return cachedText;
+      }
     } catch {}
   }
 
@@ -51,6 +55,24 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
       console.log(`Extracting text from converted Word PDF: ${fileName}`);
       const data = await pdfParse(fileBytes);
       text = data.text ? data.text.trim() : '';
+    }
+
+    // Fallback: if digital text is empty or lacks boundary keywords, check the persistent disk OCR cache
+    if (!text || text.length < 80 || !geminiVision.hasBoundaryKeywords(text)) {
+      const fileHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
+      const CONFIG_DIR = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+      const metaPath = path.join(CONFIG_DIR, 'BoundaryQC', 'OcrCache', `${fileHash}.json`);
+      if (fs.existsSync(metaPath)) {
+        try {
+          const metaJson = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+          if (metaJson.combinedOcrText) {
+            console.log(`💾 Disk OCR Cache Hit in ensureExtractedText for scanned PDF ${fileName} (hash=${fileHash})`);
+            text = metaJson.combinedOcrText;
+          }
+        } catch (cacheErr) {
+          console.warn('Failed to parse from disk OCR cache:', cacheErr.message);
+        }
+      }
     }
 
     if (text) {
@@ -73,7 +95,17 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
 function shouldInterceptPLSS(text) {
   if (!text) return false;
   const upper = text.toUpperCase();
-  const mbTerms = ['THENCE', 'DEGREES', 'MINUTES', 'SECONDS', 'FEET'];
+
+  // If it's a subdivision plat reference, we should not intercept it as PLSS.
+  const lotBlockKeywords = ['PLAT BOOK', 'MAP BOOK', 'SUBDIVISION', 'CONDOMINIUM', 'ACCORDING TO THE PLAT', 'RECORDED IN PLAT', 'PLAT THEREOF', 'PLAT OF'];
+  if (lotBlockKeywords.some(kw => upper.includes(kw))) {
+    return false;
+  }
+  if (/\bBLOCK\s+([A-Z]|\d+)\b/i.test(text)) {
+    return false;
+  }
+
+  const mbTerms = ['THENCE', 'DEGREES', 'MINUTES', 'SECONDS', 'FEET', '°', '*', "'", '"', 'FT', 'CHORD', 'RADIUS'];
   let mbCount = 0;
   for (const term of mbTerms) {
     if (upper.includes(term)) mbCount++;
@@ -190,6 +222,14 @@ function classifyByFilename(fileName) {
   if (upper.includes('ROAD') || upper.includes('BLVD')) return 'ROAD_CLOSING';
   if (upper.includes('DEED') || upper.includes('GRANT')) return 'DEED';
   if (upper.includes('COMMITMENT') || upper.includes('COMMITTMENT')) return 'DEED';
+  
+  // Generic or unknown filenames: if it's a PDF/Word/TXT file, let's treat it as a potential DEED 
+  // so we can inspect its content, rather than skipping it preemptively.
+  const ext = path.extname(fileName).toLowerCase();
+  if (['.pdf', '.doc', '.docx', '.txt'].includes(ext)) {
+    return 'DEED';
+  }
+
   return 'SKIP';
 }
 
@@ -342,34 +382,22 @@ router.get('/debug-skipped', (req, res) => {
 // Ollama is single-threaded. Concurrent batch requests each queue 20+ LLM calls
 // that all block for up to 30 min. This lock ensures only ONE batch or retry run
 // is active at a time, returning 503 immediately if already busy.
-let _processingLock = false;
-let _processingInfo = null; // { type, startTime, path }
-
 function acquireLock(type, path) {
-  if (_processingLock) return false;
-  _processingLock = true;
-  _processingInfo = { type, path, startTime: Date.now() };
-  return true;
+  return lockService.acquire(type, path);
 }
 function releaseLock() {
-  _processingLock = false;
-  _processingInfo = null;
+  lockService.release();
 }
 
 // GET /api/folderscan/status  — is the server currently processing?
 router.get('/status', (req, res) => {
-  if (_processingLock && _processingInfo) {
-    const elapsedSec = Math.round((Date.now() - _processingInfo.startTime) / 1000);
-    return res.json({ busy: true, type: _processingInfo.type, path: _processingInfo.path, elapsedSec });
-  }
-  res.json({ busy: false });
+  const stat = lockService.status();
+  res.json(stat);
 });
 
 // POST /api/folderscan/reset-lock — force-release the processing lock
 router.post('/reset-lock', (req, res) => {
-  const wasLocked = _processingLock;
-  const previousInfo = _processingInfo;
-  releaseLock();
+  const { wasLocked, previousInfo } = lockService.reset();
   console.log('🔓 Processing lock was force-released by manual client request.');
   res.json({
     success: true,
@@ -439,10 +467,19 @@ router.get('/download-batch-zip', async (req, res) => {
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
   let keepAlive = null;
+  let hasLock = false;
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
     if (!fs.existsSync(validPath)) return res.status(404).json({ error: `Directory not found: ${validPath}` });
+
+    if (!acquireLock('folderscan-batch', validPath)) {
+      const info = lockService.status();
+      return res.status(503).json({
+        error: `Server is already processing (${info.type || 'unknown'} — ${info.elapsedSec || 0}s elapsed). Please wait for it to finish.`
+      });
+    }
+    hasLock = true;
 
     const batchIndex = parseInt(req.query.batchIndex) || 0;
     const pobN = parseFloat(req.query.pobN) || 5000;
@@ -463,11 +500,12 @@ router.post('/process-batch', async (req, res) => {
     }
 
     const autoOutput = req.query.autoOutput === 'true';
+    const shortFileNames = req.query.shortFileNames === 'true';
+    const showConceptualDetail = req.query.showConceptualDetail === 'true';
 
     const allProcessable = getSupportedFiles(validPath).filter(f => {
       const stats = fs.statSync(f);
-      const docType = getDocType(f, path.basename(f));
-      return docType !== 'SKIP' && stats.size <= MAX_FILE_SIZE;
+      return stats.size <= MAX_FILE_SIZE;
     });
 
     if (allProcessable.length === 0) return res.json({ message: 'No processable deed PDFs found.', results: [] });
@@ -502,16 +540,36 @@ router.post('/process-batch', async (req, res) => {
     db.saveBatchRun(batchId, batch.length, 0.0);
     console.log(`FolderScan batch ${batchIndex}/${totalBatches - 1}: ${batch.length} files from ${req.query.path} using ${geminiVision.getActiveProvider()}/${geminiVision.getActiveModel()}`);
 
-    const semaphore = { current: 0, max: concurrency };
+    const sem = new lockService.FifoSemaphore(concurrency);
     const tasks = batch.map((filePath, index) => async () => {
       const fileName = path.basename(filePath);
       console.log(`FolderScan processing: ${fileName}`);
+      let rawDocText = '';
+      let fileHash = null;
 
       try {
+        let imageBytes = await fs.promises.readFile(filePath);
+        let mime = inferMimeType(fileName);
+        fileHash = crypto.createHash('sha256').update(imageBytes).digest('hex');
+
+        // Check if getDocType returns 'SKIP'
+        const docType = getDocType(filePath, fileName);
+        if (docType === 'SKIP') {
+          console.log(`FolderScan batch: ${fileName} — SKIPPED (getDocType returned SKIP)`);
+          results[index] = {
+            fileName, status: 'skipped', extraction: { courses: [], classification: 'LOT_BLOCK' }, traverse: null, legalDescription: null,
+            error: null, skipReason: `Excluded by document classifier (SKIP)`,
+            conceptualAnalysis: null
+          };
+          saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+            'SKIPPED', 'Excluded by document classifier (SKIP)', JSON.stringify({ courses: [], classification: 'LOT_BLOCK' }), null, null, null, null, fileHash);
+          return;
+        }
+
         // Check cache
-        const solvedCase = db.findSolvedCase(fileName);
+        const solvedCase = db.findSolvedCase(fileName, fileHash);
         if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-          console.log(`Cache hit for ${fileName}`);
+          console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
           const cachedEx = JSON.parse(solvedCase.extractionJson);
           const cachedTr = JSON.parse(solvedCase.traverseJson);
           let cachedWrite = null;
@@ -521,15 +579,31 @@ router.post('/process-batch', async (req, res) => {
             } catch {}
           }
           results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
-          saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED', cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson);
+          saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED', cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
+          return;
+        }
+
+        // Check skipped cache
+        const skippedCase = db.findSkippedCase(fileName, fileHash);
+        if (skippedCase?.extractionJson) {
+          console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
+          const cachedEx = JSON.parse(skippedCase.extractionJson);
+          results[index] = {
+            fileName,
+            status: 'skipped',
+            extraction: cachedEx,
+            traverse: null,
+            legalDescription: null,
+            error: null,
+            skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
+            conceptualAnalysis: cachedEx.conceptualAnalysis || null
+          };
+          saveDeedLogWrapper(req, batchId, fileName, skippedCase.parcelName || `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, fileHash);
           return;
         }
 
         const upperName = fileName.toUpperCase();
         const isOpenEnded = ['EASEMENT', 'EAESMENT', 'EASMENT', 'ROAD', 'BLVD', 'R/W', 'RIGHT OF WAY', 'CENTERLINE'].some(k => upperName.includes(k));
-
-        let imageBytes = await fs.promises.readFile(filePath);
-        let mime = inferMimeType(fileName);
 
         if (isWordDocument(fileName)) {
           console.log(`Converting Word doc ${fileName} to PDF with fallback...`);
@@ -541,7 +615,7 @@ router.post('/process-batch', async (req, res) => {
         const pob = { northing: pobN, easting: pobE };
 
         // ── Multi-Parcel Fan-Out ───────────────────────────────────────────────
-        const rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+        rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
         const namedParcels = extractNamedParcels(rawDocText);
         if (namedParcels && namedParcels.length >= 2) {
           console.log(`FolderScan: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels: ${namedParcels.map(p => p.label).join(', ')}`);
@@ -551,6 +625,70 @@ router.post('/process-batch', async (req, res) => {
             const ext = path.extname(fileName);
             const base = path.parse(fileName).name;
             const parcelFileName = `${base}__${label}${ext}`;
+            const parcelHash = crypto.createHash('sha256').update(parcelText).digest('hex');
+
+            // Check solved cache for this parcel
+            const solvedCase = db.findSolvedCase(parcelFileName, parcelHash);
+            if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
+              console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
+              const cachedEx = JSON.parse(solvedCase.extractionJson);
+              const cachedTr = JSON.parse(solvedCase.traverseJson);
+              let cachedWrite = null;
+              if (cachedEx.courses?.length > 0) {
+                try {
+                  cachedWrite = {
+                    legalDescription: legalWriter.write({
+                      courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
+                    }),
+                    courseCount: cachedEx.courses.length
+                  };
+                } catch {}
+              }
+              const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
+              parcelResults.push(pRes);
+              const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+              saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
+              continue;
+            }
+
+            // Check skipped cache for this parcel
+            const skippedCase = db.findSkippedCase(parcelFileName, parcelHash);
+            if (skippedCase?.extractionJson) {
+              console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
+              const cachedEx = JSON.parse(skippedCase.extractionJson);
+              const pRes = {
+                fileName: parcelFileName,
+                status: 'skipped',
+                extraction: cachedEx,
+                traverse: null,
+                legalDescription: null,
+                error: null,
+                skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
+                conceptualAnalysis: cachedEx.conceptualAnalysis || null
+              };
+              parcelResults.push(pRes);
+              const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+              saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, parcelHash);
+              continue;
+            }
+
+            if (!geminiVision.hasBoundaryKeywords(parcelText)) {
+              console.log(`FolderScan: skipping parcel ${label} (${parcelFileName}) - no boundary keywords`);
+              const pRes = {
+                fileName: parcelFileName,
+                status: 'skipped',
+                extraction: { courses: [], classification: 'LOT_BLOCK', rawText: parcelText },
+                traverse: null,
+                legalDescription: null,
+                error: null,
+                skipReason: 'Non-traversable (no boundary keywords)'
+              };
+              parcelResults.push(pRes);
+              const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+              saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(pRes.extraction), null, null, null, null, parcelHash);
+              continue;
+            }
+
             const isOE = detectOpenEnded(parcelText, parcelFileName, false);
             console.log(`FolderScan: Processing parcel ${label} → ${parcelFileName} (isOpenEnded=${isOE})`);
             
@@ -588,7 +726,7 @@ router.post('/process-batch', async (req, res) => {
 
                 const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
                 const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
-                saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+                saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
                 
                 continue; // successfully processed this parcel offline!
               }
@@ -596,11 +734,22 @@ router.post('/process-batch', async (req, res) => {
 
             try {
               const pResult = await runRepairPipeline(Buffer.from(parcelText, 'utf-8'), 'text/plain', pob, units, isOE, parcelFileName);
-              const pEx = pResult.finalExtraction;
-              const pTr = pResult.finalTraverse;
-              const pStatus = pResult.status;
-              const pStage  = pResult.repairStageUsed;
+              let pEx = pResult.finalExtraction;
+              let pTr = pResult.finalTraverse;
+              let pStatus = pResult.status;
+              let pStage  = pResult.repairStageUsed;
               const pLabel  = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+
+              const isNonTraversable = (!pEx.courses || pEx.courses.length === 0) &&
+                (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(pEx.classification) ||
+                 (pResult.traverseError || '').toLowerCase().includes('no traversable') ||
+                 (pResult.traverseError || '').toLowerCase().includes('zero segment') ||
+                 !geminiVision.hasBoundaryKeywords(pEx.rawText || parcelText || ''));
+
+              if (isNonTraversable) {
+                pStatus = 'SKIPPED';
+                pStage = 'Non-traversable document';
+              }
               
               let pWrite = null;
               if (pEx.courses?.length > 0) {
@@ -614,7 +763,14 @@ router.post('/process-batch', async (req, res) => {
                 } catch {}
               }
 
-              const pRes = { fileName: parcelFileName, status: (pStatus === 'PASS' || pStatus === 'MEANDER') ? 'success' : 'error', extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
+              let finalStatus = 'error';
+              if (pStatus === 'PASS' || pStatus === 'MEANDER') {
+                finalStatus = 'success';
+              } else if (pStatus === 'SKIPPED') {
+                finalStatus = 'skipped';
+              }
+
+              const pRes = { fileName: parcelFileName, status: finalStatus, extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
               parcelResults.push(pRes);
 
               saveDeedLogWrapper(req, 
@@ -628,6 +784,7 @@ router.post('/process-batch', async (req, res) => {
                 pResult.agentTurns ? JSON.stringify(pResult.agentTurns) : null,
                 pResult.trustScore ?? null,
                 pResult.solutionSteps ? JSON.stringify(pResult.solutionSteps) : null,
+                fileHash
               );
               console.log(`FolderScan: Parcel ${label} saved as ${parcelFileName} — ${pStatus}`);
             } catch (parcelEx) {
@@ -693,14 +850,30 @@ router.post('/process-batch', async (req, res) => {
 
             results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
             const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-            saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+            saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
             return;
           }
+        }
+
+        if (!geminiVision.hasBoundaryKeywords(rawDocText || '')) {
+          console.log(`FolderScan batch: ${fileName} — SKIPPED (non-traversable: no boundary keywords in document text)`);
+          const extraction = { courses: [], classification: 'LOT_BLOCK', rawText: rawDocText || '' };
+          results[index] = {
+            fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
+            error: null, skipReason: `Document contains no boundary keywords (LOT_BLOCK).`,
+            conceptualAnalysis: null
+          };
+          saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+            'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(extraction), null, null, null, null, fileHash);
+          return;
         }
 
         const repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName);
 
         const extraction = repairResult.finalExtraction;
+        if (extraction && !extraction.rawText) {
+          extraction.rawText = rawDocText || '';
+        }
         const traverse = repairResult.finalTraverse;
         const status = repairResult.status;
         const stageUsed = repairResult.repairStageUsed;
@@ -736,7 +909,7 @@ router.post('/process-batch', async (req, res) => {
               try { writeResult = { legalDescription: legalWriter.write({ courses: platResult.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: platResult.areaAcres, perimeter: traverse?.perimeter }), courseCount: platResult.courses.length }; } catch {}
               const stageLabel = `Stage 3.5: PlatLookup Tier ${platResult.tier} (${isLotBlock ? 'LOT_BLOCK' : 'PLSS'})${platResult.isFallback ? ' [fallback grid]' : ''}`;
               results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
-              saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+              saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
               return;
             } else if (platResult?.needsManual) {
               results[index] = {
@@ -752,7 +925,7 @@ router.post('/process-batch', async (req, res) => {
                 conceptualAnalysis: extraction.conceptualAnalysis || null
               };
               saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
-                'SKIPPED', 'Stage 4: LOT_BLOCK needs manual plat coordinates', JSON.stringify(extraction), null);
+                'SKIPPED', 'Stage 4: LOT_BLOCK needs manual plat coordinates', JSON.stringify(extraction), null, null, null, null, fileHash);
               return;
             }
           } catch (platEx) {
@@ -773,7 +946,8 @@ router.post('/process-batch', async (req, res) => {
         const isNonTraversable = (!extraction.courses || extraction.courses.length === 0) &&
           (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(extraction.classification) ||
            (repairResult.traverseError || '').toLowerCase().includes('no traversable') ||
-           (repairResult.traverseError || '').toLowerCase().includes('zero segment'));
+           (repairResult.traverseError || '').toLowerCase().includes('zero segment') ||
+           !geminiVision.hasBoundaryKeywords(extraction.rawText || rawDocText || ''));
 
         if (isNonTraversable) {
           console.log(`FolderScan batch: ${fileName} — SKIPPED (${extraction.classification})`);
@@ -783,7 +957,7 @@ router.post('/process-batch', async (req, res) => {
             conceptualAnalysis: extraction.conceptualAnalysis || null
           };
           saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
-            'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
+            'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null, fileHash);
           return;
         }
 
@@ -791,20 +965,18 @@ router.post('/process-batch', async (req, res) => {
 
         const parcelLabel = county && state ? `${county}, ${state}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
         const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-        saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson);
+        saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson, fileHash);
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
       } catch (ex) {
         console.error(`FolderScan item failed: ${fileName}`, ex.message);
-        results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message };
-        saveDeedLogWrapper(req, batchId, fileName, 'ERROR', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null);
+        results[index] = { fileName, status: 'error', extraction: { rawText: rawDocText || '' }, traverse: null, legalDescription: null, error: ex.message };
+        saveDeedLogWrapper(req, batchId, fileName, 'ERROR', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, fileHash);
       }
     });
 
-    // Run with concurrency
     await Promise.all(tasks.map(async (fn) => {
-      while (semaphore.current >= semaphore.max) await new Promise(r => setTimeout(r, 50));
-      semaphore.current++;
-      try { await fn(); } finally { semaphore.current--; }
+      await sem.acquire();
+      try { await fn(); } finally { sem.release(); }
     }));
 
     const succeeded = results.filter(r => r?.status === 'success').length;
@@ -821,10 +993,10 @@ router.post('/process-batch', async (req, res) => {
           if (!r) continue;
           if (r.isMultiParcel && r.parcels) {
             for (const pr of r.parcels) {
-              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription);
+              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
             }
           } else {
-            output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription);
+            output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription, shortFileNames, showConceptualDetail);
           }
         }
         output.writeBatchSummary(outputFolder, req.query.path, results, Date.now() - start);
@@ -843,6 +1015,10 @@ router.post('/process-batch', async (req, res) => {
       res.end();
     } else {
       res.status(500).json({ error: ex.message });
+    }
+  } finally {
+    if (hasLock) {
+      releaseLock();
     }
   }
 });
@@ -916,6 +1092,8 @@ router.post('/process-file', async (req, res) => {
     const state = req.query.state || null;
     const batchId = req.query.batchId || uuidv4();
     const autoOutput = req.query.autoOutput === 'true';
+    const shortFileNames = req.query.shortFileNames === 'true';
+    const showConceptualDetail = req.query.showConceptualDetail === 'true';
 
     // Start keepalive heartbeat immediately to prevent idle connection timeout
     res.setHeader('Content-Type', 'application/json');
@@ -946,6 +1124,34 @@ router.post('/process-file', async (req, res) => {
 
     db.saveBatchRun(batchId, 1, 0.0);
     console.log(`FolderScan processing single file: ${fileName} (hash=${fileHash})`);
+
+    // Check if getDocType returns 'SKIP'
+    const docType = getDocType(filePath, fileName);
+    if (docType === 'SKIP') {
+      console.log(`FolderScan: ${fileName} — SKIPPED (getDocType returned SKIP)`);
+      const result = {
+        fileName, status: 'skipped',
+        extraction: { courses: [], classification: 'LOT_BLOCK' }, traverse: null, legalDescription: null,
+        error: null,
+        skipReason: `Excluded by document classifier (SKIP)`,
+        cached: false,
+        conceptualAnalysis: null
+      };
+      saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+        'SKIPPED', 'Excluded by document classifier (SKIP)', JSON.stringify({ courses: [], classification: 'LOT_BLOCK' }), null, null, null, null, fileHash);
+
+      if (autoOutput) {
+        try {
+          const outputFolder = output.createOutputFolder(validPath);
+          output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+        } catch (ex) { console.warn('Auto-output failed:', ex.message); }
+      }
+
+      if (keepAlive) clearInterval(keepAlive);
+      res.write(JSON.stringify({ status: 'success', result }));
+      res.end();
+      return;
+    }
 
     // Check cache (unless forced)
     const force = req.query.force === 'true';
@@ -987,6 +1193,29 @@ router.post('/process-file', async (req, res) => {
         res.end();
         return;
       }
+
+      const skippedCase = db.findSkippedCase(fileName, fileHash);
+      if (skippedCase?.extractionJson) {
+        console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
+        const cachedEx = JSON.parse(skippedCase.extractionJson);
+        const result = {
+          fileName,
+          status: 'skipped',
+          extraction: cachedEx,
+          traverse: null,
+          legalDescription: null,
+          error: null,
+          skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
+          conceptualAnalysis: cachedEx.conceptualAnalysis || null,
+          cached: true
+        };
+        saveDeedLogWrapper(req, batchId, fileName, skippedCase.parcelName || `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, fileHash);
+
+        if (keepAlive) clearInterval(keepAlive);
+        res.write(JSON.stringify({ status: 'success', result }));
+        res.end();
+        return;
+      }
     }
 
     if (isWordDocument(fileName)) {
@@ -1010,6 +1239,71 @@ router.post('/process-file', async (req, res) => {
       const ext = path.extname(fileName);
       for (const { label, text: parcelText } of namedParcels) {
         const parcelFileName = `${baseName}__${label}${ext}`;
+        const parcelHash = crypto.createHash('sha256').update(parcelText).digest('hex');
+
+        // Check cache (unless forced)
+        if (!force) {
+          const solvedCase = db.findSolvedCase(parcelFileName, parcelHash);
+          if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
+            console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
+            const cachedEx = JSON.parse(solvedCase.extractionJson);
+            const cachedTr = JSON.parse(solvedCase.traverseJson);
+            let cachedWrite = null;
+            if (cachedEx.courses?.length > 0) {
+              try {
+                cachedWrite = {
+                  legalDescription: legalWriter.write({
+                    courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
+                  }),
+                  courseCount: cachedEx.courses.length
+                };
+              } catch {}
+            }
+            const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
+            parcelResults.push(pRes);
+            const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+            saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
+            continue;
+          }
+
+          const skippedCase = db.findSkippedCase(parcelFileName, parcelHash);
+          if (skippedCase?.extractionJson) {
+            console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
+            const cachedEx = JSON.parse(skippedCase.extractionJson);
+            const pRes = {
+              fileName: parcelFileName,
+              status: 'skipped',
+              extraction: cachedEx,
+              traverse: null,
+              legalDescription: null,
+              error: null,
+              skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
+              conceptualAnalysis: cachedEx.conceptualAnalysis || null
+            };
+            parcelResults.push(pRes);
+            const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+            saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, parcelHash);
+            continue;
+          }
+        }
+
+        if (!geminiVision.hasBoundaryKeywords(parcelText)) {
+          console.log(`FolderScan process-file: skipping parcel ${label} (${parcelFileName}) - no boundary keywords`);
+          const pRes = {
+            fileName: parcelFileName,
+            status: 'skipped',
+            extraction: { courses: [], classification: 'LOT_BLOCK', rawText: parcelText },
+            traverse: null,
+            legalDescription: null,
+            error: null,
+            skipReason: 'Non-traversable (no boundary keywords)'
+          };
+          parcelResults.push(pRes);
+          const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+          saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(pRes.extraction), null, null, null, null, parcelHash);
+          continue;
+        }
+
         const isOE = detectOpenEnded(parcelText, parcelFileName, false);
         
         // Try offline PLSS intercept first for the parcel
@@ -1054,11 +1348,22 @@ router.post('/process-file', async (req, res) => {
 
         try {
           const pResult = await runRepairPipeline(Buffer.from(parcelText, 'utf-8'), 'text/plain', pob, units, isOE, parcelFileName);
-          const pEx = pResult.finalExtraction;
-          const pTr = pResult.finalTraverse;
-          const pStatus = pResult.status;
-          const pStage  = pResult.repairStageUsed;
+          let pEx = pResult.finalExtraction;
+          let pTr = pResult.finalTraverse;
+          let pStatus = pResult.status;
+          let pStage  = pResult.repairStageUsed;
           const pLabel  = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+
+          const isNonTraversable = (!pEx.courses || pEx.courses.length === 0) &&
+            (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(pEx.classification) ||
+             (pResult.traverseError || '').toLowerCase().includes('no traversable') ||
+             (pResult.traverseError || '').toLowerCase().includes('zero segment') ||
+             !geminiVision.hasBoundaryKeywords(pEx.rawText || parcelText || ''));
+
+          if (isNonTraversable) {
+            pStatus = 'SKIPPED';
+            pStage = 'Non-traversable document';
+          }
           
           let pWrite = null;
           if (pEx.courses?.length > 0) {
@@ -1072,7 +1377,14 @@ router.post('/process-file', async (req, res) => {
             } catch {}
           }
 
-          const pRes = { fileName: parcelFileName, status: (pStatus === 'PASS' || pStatus === 'MEANDER') ? 'success' : 'error', extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
+          let finalStatus = 'error';
+          if (pStatus === 'PASS' || pStatus === 'MEANDER') {
+            finalStatus = 'success';
+          } else if (pStatus === 'SKIPPED') {
+            finalStatus = 'skipped';
+          }
+
+          const pRes = { fileName: parcelFileName, status: finalStatus, extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
           parcelResults.push(pRes);
 
           saveDeedLogWrapper(req, 
@@ -1119,7 +1431,7 @@ router.post('/process-file', async (req, res) => {
           try {
             const outputFolder = output.createOutputFolder(validPath);
             for (const pr of parcelResults) {
-              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription);
+              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
             }
           } catch (ex) { console.warn('Auto-output failed:', ex.message); }
         }
@@ -1167,7 +1479,7 @@ router.post('/process-file', async (req, res) => {
           if (autoOutput) {
             try {
               const outputFolder = output.createOutputFolder(validPath);
-              output.writeResultFiles(outputFolder, fileName, result, writeResult);
+              output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
             } catch (ex) { console.warn('Auto-output failed:', ex.message); }
           }
 
@@ -1179,9 +1491,39 @@ router.post('/process-file', async (req, res) => {
       }
     }
 
+    if (!geminiVision.hasBoundaryKeywords(rawDocText || '')) {
+      console.log(`FolderScan: ${fileName} — SKIPPED (non-traversable: no boundary keywords in document text)`);
+      const extraction = { courses: [], classification: 'LOT_BLOCK', rawText: rawDocText || '' };
+      const result = {
+        fileName, status: 'skipped',
+        extraction, traverse: null, legalDescription: null,
+        error: null,
+        skipReason: `Document contains no boundary keywords (LOT_BLOCK).`,
+        cached: false,
+        conceptualAnalysis: null
+      };
+      saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+        'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(extraction), null, null, null, null, fileHash);
+
+      if (autoOutput) {
+        try {
+          const outputFolder = output.createOutputFolder(validPath);
+          output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+        } catch (ex) { console.warn('Auto-output failed:', ex.message); }
+      }
+
+      if (keepAlive) clearInterval(keepAlive);
+      res.write(JSON.stringify({ status: 'success', result }));
+      res.end();
+      return;
+    }
+
     const repairResult = await runRepairPipeline(imageBytes, mime, pob, units, isOpenEnded, fileName);
 
     const extraction = repairResult.finalExtraction;
+    if (extraction && !extraction.rawText) {
+      extraction.rawText = rawDocText || '';
+    }
     const traverse = repairResult.finalTraverse;
     const status = repairResult.status;
     const stageUsed = repairResult.repairStageUsed;
@@ -1197,7 +1539,8 @@ router.post('/process-file', async (req, res) => {
     const isNonTraversable = (!extraction.courses || extraction.courses.length === 0) &&
       (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(extraction.classification) ||
        (repairResult.traverseError || '').toLowerCase().includes('no traversable') ||
-       (repairResult.traverseError || '').toLowerCase().includes('zero segment'));
+       (repairResult.traverseError || '').toLowerCase().includes('zero segment') ||
+       !geminiVision.hasBoundaryKeywords(extraction.rawText || rawDocText || ''));
 
     if (isNonTraversable) {
       console.log(`FolderScan: ${fileName} — SKIPPED (non-traversable: ${extraction.classification})`);
@@ -1216,7 +1559,7 @@ router.post('/process-file', async (req, res) => {
       if (autoOutput) {
         try {
           const outputFolder = output.createOutputFolder(validPath);
-          output.writeResultFiles(outputFolder, fileName, result, null);
+          output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
@@ -1248,7 +1591,7 @@ router.post('/process-file', async (req, res) => {
     if (autoOutput) {
       try {
         const outputFolder = output.createOutputFolder(validPath);
-        output.writeResultFiles(outputFolder, fileName, result, writeResult);
+        output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 
@@ -1456,18 +1799,18 @@ router.post('/retry-failed', async (req, res) => {
   const PER_FILE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 min max per file
 
   // Local model cascade — dynamically query available models from local Ollama
-  let LOCAL_MODELS = ['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b'];
+  let LOCAL_MODELS = ['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b', 'gemma4:26b'];
   try {
     const status = await ollamaSvc.getStatus();
     if (status.online && status.models && status.models.length > 0) {
       // Sort status.models so that faster/smaller models come first:
       // - Prioritize models containing '1.5b', '2b', '3b', '4b', 'gemma3'
-      // - Deprioritize models containing 'deepseek', 'r1', '8b', '7b'
+      // - Deprioritize models containing 'deepseek', 'r1', '8b', '7b', '26b'
       const sortedModels = [...status.models].sort((a, b) => {
         const aLower = a.toLowerCase();
         const bLower = b.toLowerCase();
         
-        const isSlow = (name) => name.includes('deepseek') || name.includes('r1') || name.includes('8b') || name.includes('7b');
+        const isSlow = (name) => name.includes('deepseek') || name.includes('r1') || name.includes('8b') || name.includes('7b') || name.includes('26b');
         const aSlow = isSlow(aLower);
         const bSlow = isSlow(bLower);
         

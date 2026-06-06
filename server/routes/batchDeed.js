@@ -10,6 +10,8 @@ import * as legalWriter from '../services/legalWriter.js';
 import * as db from '../services/diagnosticsDb.js';
 import { isWordDocument, convertToPdf } from '../services/docConversion.js';
 import * as geminiVision from '../services/geminiVision.js';
+import crypto from 'crypto';
+import * as lockService from '../services/lockService.js';
 const router = Router();
 
 const upload = multer({ limits: { fileSize: 51 * 1024 * 1024 } }); // 51MB per file
@@ -43,7 +45,16 @@ function parsePrecisionRatio(precisionStr) {
 
 router.post('/process', upload.array('images', 20), async (req, res) => {
   let keepAlive = null;
+  let hasLock = false;
   try {
+    if (!lockService.acquire('batchdeed-process', 'upload')) {
+      const info = lockService.status();
+      return res.status(503).json({
+        error: `Server is already processing (${info.type || 'unknown'} — ${info.elapsedSec || 0}s elapsed). Please wait for it to finish.`
+      });
+    }
+    hasLock = true;
+
     const files = req.files;
     if (!files || files.length === 0) return res.status(400).json({ error: 'No images provided.' });
     if (files.length > 20) return res.status(400).json({ error: 'Maximum 20 images per batch.' });
@@ -96,15 +107,18 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     const queue = files.map((file, index) => async () => {
       const fileName = file.originalname;
       console.log(`Batch processing: ${fileName}`);
+      let fileHash = null;
 
       try {
         if (file.size > MAX_FILE_SIZE)
           throw new Error(`File exceeds 51 MB (${(file.size / 1024 / 1024).toFixed(1)} MB).`);
 
+        fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
         // Check cache
-        const solvedCase = db.findSolvedCase(fileName);
+        const solvedCase = db.findSolvedCase(fileName, fileHash);
         if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-          console.log(`SQLite Case Finder: Found PASS for ${fileName}`);
+          console.log(`SQLite Case Finder: Found PASS for ${fileName} (hash=${fileHash})`);
           const cachedExtraction = JSON.parse(solvedCase.extractionJson);
           const cachedTraverse = JSON.parse(solvedCase.traverseJson);
 
@@ -130,7 +144,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
             parsePrecisionRatio(precRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved',
             solvedCase.extractionJson, solvedCase.traverseJson,
             solvedCase.agentTurnsJson ?? null, solvedCase.trustScore ?? null, solvedCase.solutionStepsJson ?? null,
-            refName, refN, refE, pobN, pobE);
+            refName, refN, refE, pobN, pobE, fileHash);
           db.incrementHeuristic('SQLite Case Finder Solved', 'Auto-retrieve Solved Boundary');
           return;
         }
@@ -181,8 +195,27 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
           } catch {}
         }
 
+        const isNonTraversable = (!extraction.courses || extraction.courses.length === 0) &&
+          (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(extraction.classification) ||
+           (repairResult.traverseError || '').toLowerCase().includes('no traversable') ||
+           (repairResult.traverseError || '').toLowerCase().includes('zero segment') ||
+           !geminiVision.hasBoundaryKeywords(extraction.rawText || extraction.rawJson || ''));
+
+        if (isNonTraversable) {
+          results[index] = {
+            fileName, status: 'skipped',
+            extraction, traverse: null, legalDescription: null,
+            error: null, skipReason: `Non-traversable: ${extraction.classification}`,
+            conceptualAnalysis: extraction.conceptualAnalysis || null
+          };
+          db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+            'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null,
+            refName, refN, refE, pobN, pobE, fileHash);
+          return;
+        }
+
         results[index] = {
-          fileName, status: status === 'PASS' ? 'success' : 'error',
+          fileName, status: status === 'PASS' || status === 'MEANDER' ? 'success' : 'error',
           extraction, traverse, legalDescription: writeResult,
           error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction,
           // Fix #11 / Fix #12: Surface trust score and bust index
@@ -204,22 +237,21 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
           JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null,
           agentTurnsJson, repairResult.trustScore ?? null,
           repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null,
-          refName, refN, refE, pobN, pobE);
+          refName, refN, refE, pobN, pobE, fileHash);
 
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'Auto-repair pipeline');
       } catch (ex) {
         console.error(`Batch item failed: ${fileName}`, ex.message);
         results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message };
-        db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE);
+        db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE, fileHash);
       }
     });
 
     // Run with concurrency
-    const semaphore = { current: 0, max: concurrency };
+    const sem = new lockService.FifoSemaphore(concurrency);
     await Promise.all(queue.map(async (fn) => {
-      while (semaphore.current >= semaphore.max) await new Promise(r => setTimeout(r, 50));
-      semaphore.current++;
-      try { await fn(); } finally { semaphore.current--; }
+      await sem.acquire();
+      try { await fn(); } finally { sem.release(); }
     }));
 
     const succeeded = results.filter(r => r?.status === 'success').length;
@@ -237,6 +269,10 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
       res.end();
     } else {
       res.status(500).json({ error: ex.message });
+    }
+  } finally {
+    if (hasLock) {
+      lockService.release();
     }
   }
 });

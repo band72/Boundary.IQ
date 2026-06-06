@@ -63,7 +63,9 @@ async function callOllama(model, prompt) {
     model,
     prompt,
     stream: false,
-    options: { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
+    options: isReasoning 
+      ? { temperature: 0.0, num_predict: 4096, num_ctx: 8192 }
+      : { temperature: 0.0, num_predict: 2048, num_ctx: 4096 }
   };
   if (!isReasoning) {
     payload.format = 'json';
@@ -106,6 +108,56 @@ async function callOllama(model, prompt) {
   throw new Error('Exceeded maximum retry attempts for Ollama /api/generate.');
 }
 
+function cleanInvalidJsonValues(jsonStr) {
+  const lines = jsonStr.split(/\r?\n/);
+  const cleanedLines = lines.map(line => {
+    // Match "key": value, or "key": value
+    const match = line.match(/^(\s*)"([^"]+)"\s*:\s*([\s\S]+?)\s*(,?)\s*$/);
+    if (!match) return line;
+
+    const indent = match[1];
+    const key = match[2];
+    const val = match[3].trim();
+    const comma = match[4] || '';
+
+    // Ignore structural lines
+    if (val === '{' || val === '[' || val === '}' || val === ']') {
+      return line;
+    }
+
+    // If it starts with " and ends with ", check for unescaped double quotes inside
+    if (val.startsWith('"') && val.endsWith('"')) {
+      let internal = val.slice(1, -1);
+      // Escape all unescaped double quotes inside
+      internal = internal.replace(/(?<!\\)"/g, '\\"');
+      return `${indent}"${key}": "${internal}"${comma}`;
+    }
+
+    // If it starts with ' and ends with ', convert to double quotes and escape internal double quotes
+    if (val.startsWith("'") && val.endsWith("'")) {
+      let internal = val.slice(1, -1);
+      internal = internal.replace(/(?<!\\)"/g, '\\"');
+      return `${indent}"${key}": "${internal}"${comma}`;
+    }
+
+    // Check if it's a valid JSON constant or number
+    const isConstant = ['true', 'false', 'null', 'undefined'].includes(val);
+    const isNumber = /^-?\d+\.?\d*(?:[eE][-+]?\d+)?$/.test(val);
+
+    if (isConstant || isNumber) {
+      return `${indent}"${key}": ${val}${comma}`;
+    }
+
+    // Escape any unescaped double quotes in the value, then wrap in double quotes
+    let cleanVal = val;
+    cleanVal = cleanVal.replace(/(?<!\\)"/g, '\\"');
+
+    return `${indent}"${key}": "${cleanVal}"${comma}`;
+  });
+
+  return cleanedLines.join('\n');
+}
+
 // ── JSON parser — robust to common local LLM formatting issues ────────────────
 function parseExtractionJson(raw) {
   let text = raw.trim();
@@ -119,6 +171,9 @@ function parseExtractionJson(raw) {
   if (firstBrace !== -1 && lastBrace !== -1) {
     text = text.slice(firstBrace, lastBrace + 1);
   }
+
+  // Robustly quote any unquoted property values
+  text = cleanInvalidJsonValues(text);
 
   let root;
   try {

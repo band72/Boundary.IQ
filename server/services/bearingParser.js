@@ -3,6 +3,8 @@
 // Supports: "N45°30'00"E", "N45-30-00E", "N 45 30 00 E", "N45.3000E"
 
 const EXPANDED = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*([EWew])\s*$/;
+const DEG_MIN  = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\s]*([EWew])\s*$/;
+const DEG_ONLY = /^\s*([NSns])\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])\s*$/;
 const PACKED   = /^\s*([NSns])\s*(\d+\.\d+)\s*([EWew])\s*$/;
 
 function getQuadrant(ns, ew) {
@@ -53,6 +55,17 @@ export function parse(bearing) {
     .replace(/MINUTES|MIN/gi, "'")
     .replace(/SECONDS|SEC/gi, '"');
 
+  // Check if it's a cardinal/ordinal direction word directly
+  const cardAz = parseCardinalAzimuth(clean);
+  if (cardAz !== null) {
+    let quadrant = 1;
+    if (cardAz <= 90) quadrant = 1;      // NE
+    else if (cardAz <= 180) quadrant = 2; // SE
+    else if (cardAz <= 270) quadrant = 3; // SW
+    else quadrant = 4;                    // NW
+    return { azimuthDeg: cardAz, azimuthRad: cardAz * Math.PI / 180.0, quadrant, parseConfidence: 'HIGH' };
+  }
+
   // Remove dot after N/S and before/after E/W (e.g., "N.45" -> "N45", "E." -> "E")
   clean = clean
     .replace(/^([NSns])\s*\./i, '$1')
@@ -84,6 +97,9 @@ export function parse(bearing) {
     .replace(/\s*['’‘`]\s*/g, "'")
     .replace(/\s*(?:"|”|“|'')\s*/g, '"');
 
+  // Handle OCR/scrivener errors where the degree symbol is misread as a letter (e.g. S00P56'28"E -> S00°56'28"E)
+  clean = clean.replace(/([NSns]\s*\d{1,3})\s*([^0-9NSEWns\s])\s*(\d{1,2}\s*['])/gi, '$1°$3');
+
   // Handle smashed degree symbol OCR errors (e.g. S5719'54"W -> S57°19'54"W, S5719'W -> S57°19'00"W)
   if (!clean.includes('°')) {
     const smashedMatch = /^([NSns])\s*(\d{3,4})\s*[']\s*(?:(\d{1,2}(?:\.\d+)?)\s*["])?\s*([EWew])$/i.exec(clean);
@@ -110,6 +126,36 @@ export function parse(bearing) {
     const quadrant = getQuadrant(ns, ew);
     const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
     const parseConfidence = assessConfidence(deg, min, sec, 'expanded');
+    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
+  }
+
+  // Try degree + minute only (no seconds)
+  m = DEG_MIN.exec(clean);
+  if (m) {
+    const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = parseFloat(m[3]);
+    const sec = 0;
+    const ew = m[4].toUpperCase();
+    const decDeg = deg + min / 60.0;
+    const quadrant = getQuadrant(ns, ew);
+    const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
+    const parseConfidence = assessConfidence(deg, min, sec, 'expanded_deg_min');
+    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
+  }
+
+  // Try degree only
+  m = DEG_ONLY.exec(clean);
+  if (m) {
+    const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = 0;
+    const sec = 0;
+    const ew = m[3].toUpperCase();
+    const decDeg = deg;
+    const quadrant = getQuadrant(ns, ew);
+    const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
+    const parseConfidence = assessConfidence(deg, min, sec, 'expanded_deg_only');
     return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
   }
 

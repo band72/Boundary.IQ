@@ -28,6 +28,8 @@ export default function SettingsTab({
   const [maxFileSize, setMaxFileSize]           = useLocalStorage('boundaryiq_max_file_size', 51);
   const [retentionDays, setRetentionDays]       = useLocalStorage('boundaryiq_retention_days', 90);
   const [autoOutput, setAutoOutput]             = useLocalStorage('boundaryiq_auto_output', true);
+  const [shortFileNames, setShortFileNames]     = useLocalStorage('boundaryiq_short_file_names', true);
+  const [showConceptualDetail, setShowConceptualDetail] = useLocalStorage('boundaryiq_show_conceptual_detail', true);
 
   // Database stats
   const [dbStats, setDbStats]       = useState(null);
@@ -1202,6 +1204,122 @@ export default function SettingsTab({
             </div>
           </div>
 
+          <div style={{
+            height: '1px',
+            background: 'var(--border)',
+            margin: '0.25rem 0'
+          }} />
+
+          {/* Short File Names Toggle */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+            <label style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              marginTop: '2px',
+            }}>
+              <input
+                type="checkbox"
+                checked={shortFileNames}
+                onChange={e => setShortFileNames(e.target.checked)}
+                style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+              />
+              <div style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                background: shortFileNames
+                  ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)'
+                  : 'rgba(255,255,255,0.1)',
+                border: `1px solid ${shortFileNames ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                position: 'relative',
+                transition: 'all 0.3s ease',
+                boxShadow: shortFileNames ? '0 0 12px rgba(0, 212, 168, 0.3)' : 'none',
+              }}>
+                <div style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  background: '#fff',
+                  position: 'absolute',
+                  top: '2px',
+                  left: shortFileNames ? '22px' : '3px',
+                  transition: 'left 0.3s ease',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </label>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.35rem' }}>
+                Use Short File Names
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                When enabled, outputs are saved with simple standardized names (Map, OCR, Summary, Cogo, Script, DXF) inside a folder named after the deed, rather than using the deed's filename as a prefix.
+              </p>
+            </div>
+          </div>
+
+          <div style={{
+            height: '1px',
+            background: 'var(--border)',
+            margin: '0.25rem 0'
+          }} />
+
+          {/* Conceptual Detail Toggle */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+            <label style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              marginTop: '2px',
+            }}>
+              <input
+                type="checkbox"
+                checked={showConceptualDetail}
+                onChange={e => setShowConceptualDetail(e.target.checked)}
+                style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+              />
+              <div style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                background: showConceptualDetail
+                  ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)'
+                  : 'rgba(255,255,255,0.1)',
+                border: `1px solid ${showConceptualDetail ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                position: 'relative',
+                transition: 'all 0.3s ease',
+                boxShadow: showConceptualDetail ? '0 0 12px rgba(0, 212, 168, 0.3)' : 'none',
+              }}>
+                <div style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  background: '#fff',
+                  position: 'absolute',
+                  top: '2px',
+                  left: showConceptualDetail ? '22px' : '3px',
+                  transition: 'left 0.3s ease',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </label>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.35rem' }}>
+                Add Conceptual Details to Maps
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                When enabled, metes-and-bounds survey check plots will automatically overlay conceptual detail backdrops including neighboring lots, a bottom roadway with street name, utility easements, and inline course dimensions.
+              </p>
+            </div>
+          </div>
+
           {/* Output Details Info Box */}
           <div style={{
             background: autoOutput ? 'rgba(0, 212, 168, 0.04)' : 'var(--bg-elevated)',
@@ -1226,7 +1344,7 @@ export default function SettingsTab({
               </code>{' '}
               (e.g. <code style={{ fontSize: '0.72rem', color: 'var(--accent)' }}>25052026.142</code>)
             </div>
-            <div>• <strong style={{ color: 'var(--text-primary)' }}>Per deed:</strong> <code style={{ fontSize: '0.72rem' }}>_corrected.txt</code> + <code style={{ fontSize: '0.72rem' }}>_original.txt</code> + <code style={{ fontSize: '0.72rem' }}>_report.json</code></div>
+            <div>• <strong style={{ color: 'var(--text-primary)' }}>Per deed:</strong> <code style={{ fontSize: '0.72rem' }}>_corrected.txt</code> + <code style={{ fontSize: '0.72rem' }}>_ocr.txt</code> + <code style={{ fontSize: '0.72rem' }}>_summary.json</code></div>
             <div>• <strong style={{ color: 'var(--text-primary)' }}>Batch summary:</strong> <code style={{ fontSize: '0.72rem' }}>_BATCH_SUMMARY.json</code> with pass/fail stats</div>
             <div>• <strong style={{ color: 'var(--text-primary)' }}>Location:</strong> Created inside the scanned source folder</div>
           </div>

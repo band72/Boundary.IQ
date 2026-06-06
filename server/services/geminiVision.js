@@ -108,8 +108,8 @@ async function convertPdfPagesToPngs(buffer, maxPages = 5) {
 }
 
 // ── Provider Config (mutable at runtime via /api/settings/model) ────────────
-let activeProvider = 'ollama';     // 'gemini' | 'ollama' | 'openai'
-let activeModel = 'gemma3:4b';
+let activeProvider = process.env.ACTIVE_PROVIDER || 'ollama';     // 'gemini' | 'ollama' | 'openai'
+let activeModel = process.env.ACTIVE_MODEL || (process.env.ACTIVE_PROVIDER === 'gemini' ? 'gemini-3.5-flash' : 'gemma4:26b');
 let geminiApiKey = null;
 let activeOpenAiBaseUrl = process.env.OPENAI_BASE_URL || 'http://127.0.0.1:11434/v1';
 
@@ -118,7 +118,14 @@ const BASE_DELAY_MS = 2000;
 
 // ── Public Config API ───────────────────────────────────────────────────────
 
-export function init(key) { geminiApiKey = key; }
+export function init(key) {
+  geminiApiKey = key;
+  if (key && !process.env.ACTIVE_PROVIDER) {
+    activeProvider = 'gemini';
+    activeModel = process.env.ACTIVE_MODEL || 'gemini-3.5-flash';
+    console.log(`💡 Gemini API key loaded. Automatically set default provider to: gemini / ${activeModel}`);
+  }
+}
 
 export function getActiveProvider() { return activeProvider; }
 export function getActiveModel() { return activeModel; }
@@ -131,7 +138,7 @@ export function setProvider(provider, model, baseUrl) {
   if (provider === 'gemini') {
     activeModel = model || 'gemini-3.5-flash';
   } else if (provider === 'ollama') {
-    activeModel = model || 'gemma3:4b';
+    activeModel = model || 'gemma4:26b';
   } else {
     // openai-compatible
     activeModel = model || 'llama3';
@@ -325,7 +332,7 @@ async function performLocalOcr(pngBuffer) {
   }
 }
 
-function hasBoundaryKeywords(text) {
+export function hasBoundaryKeywords(text) {
   if (!text) return false;
   const lower = text.toLowerCase();
   const hasDegrees = lower.includes('°') || lower.includes('*') || lower.includes('deg') || lower.includes('degree');
@@ -464,35 +471,31 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
     // Now construct activePrompt and activeBuffer using the cacheEntry
     if (!cacheEntry.isScanned) {
       const extractedText = cacheEntry.extractedText;
-      if (modelIsVision) {
-        console.log(`Ollama PDF [CACHED]: vision model "${model}" — injecting text + PNG.`);
-        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted from PDF — use as primary source):\n=========================================\n${pruneLongText(extractedText)}`;
-        activeBuffer = cacheEntry.firstPageBuffer;
-        activeMime = 'image/png';
-      } else {
-        console.log(`Ollama PDF [CACHED]: text-only model "${model}" — text injection.`);
-        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${pruneLongText(extractedText)}`;
-        activeBuffer = Buffer.alloc(0);
-        activeMime = 'image/png';
-      }
+      console.log(`Ollama PDF [CACHED]: digitally-born PDF (no scan) — running in text-only mode for speed.`);
+      activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted from PDF — use as primary source):\n=========================================\n${pruneLongText(extractedText)}`;
+      activeBuffer = Buffer.alloc(0);
+      activeMime = 'image/png';
     } else {
       const combinedOcrText = cacheEntry.combinedOcrText;
-      activeBuffer = cacheEntry.firstPageBuffer;
-      activeMime = 'image/png';
-      
-      if (!modelIsVision) {
-        if (combinedOcrText.trim().length > 50) {
-          console.log(`Ollama PDF [CACHED]: text-only model "${model}" — injecting combined OCR text.`);
-          activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via combined local EasyOCR):\n=========================================\n${pruneLongText(combinedOcrText)}`;
-          activeBuffer = Buffer.alloc(0);
-        } else {
-          console.warn('Ollama PDF [CACHED]: Insufficient text. Falling back to raw image.');
-        }
+      if (combinedOcrText && combinedOcrText.trim().length > 50) {
+        console.log(`Ollama PDF [CACHED]: scanned PDF with local OCR — running in text-only mode for speed.`);
+        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via combined local EasyOCR):\n=========================================\n${pruneLongText(combinedOcrText)}`;
+        activeBuffer = Buffer.alloc(0);
+        activeMime = 'image/png';
       } else {
-        if (combinedOcrText.trim().length > 50) {
-          console.log(`Ollama PDF [CACHED]: vision model "${model}" — injecting combined OCR text + page PNG.`);
-          activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via combined local EasyOCR):\n=========================================\n${pruneLongText(combinedOcrText)}`;
+        if (!modelIsVision) {
+          console.warn(`⚠️ Ollama PDF: model "${model}" is text-only and PDF (hash=${pdfHash}) has insufficient OCR text. Short-circuiting to empty output to avoid slow hallucination/error.`);
+          return JSON.stringify({
+            Classification: "LOT_BLOCK",
+            PreambleFound: false,
+            IsOpenEnded: false,
+            MentalMapSummary: "Insufficient OCR text for text-only model processing.",
+            Segments: []
+          });
         }
+        console.warn('Ollama PDF [CACHED]: Insufficient OCR text. Falling back to raw image.');
+        activeBuffer = cacheEntry.firstPageBuffer;
+        activeMime = 'image/png';
       }
     }
   }
@@ -682,8 +685,10 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
           docText = (cached.extractedText || '') + '\n' + (cached.combinedOcrText || '');
         }
       }
-      if (docText) {
+      if (docText && docText.trim().length > 15) {
         conceptualAnalysis = await generateConceptualAnalysisFallback(docText);
+      } else {
+        conceptualAnalysis = "Insufficient text for conceptual analysis.";
       }
     } catch (fallbackErr) {
       console.warn('⚠️ Conceptual analysis fallback generation failed:', fallbackErr.message);
@@ -866,6 +871,55 @@ export function parseFromTextFallback(text) {
 
   return courses.length >= 2 ? { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson: text, mentalMapSummary: null } : null;
 }
+function cleanInvalidJsonValues(jsonStr) {
+  const lines = jsonStr.split(/\r?\n/);
+  const cleanedLines = lines.map(line => {
+    // Match "key": value, or "key": value
+    const match = line.match(/^(\s*)"([^"]+)"\s*:\s*([\s\S]+?)\s*(,?)\s*$/);
+    if (!match) return line;
+
+    const indent = match[1];
+    const key = match[2];
+    const val = match[3].trim();
+    const comma = match[4] || '';
+
+    // Ignore structural lines
+    if (val === '{' || val === '[' || val === '}' || val === ']') {
+      return line;
+    }
+
+    // If it starts with " and ends with ", check for unescaped double quotes inside
+    if (val.startsWith('"') && val.endsWith('"')) {
+      let internal = val.slice(1, -1);
+      // Escape all unescaped double quotes inside
+      internal = internal.replace(/(?<!\\)"/g, '\\"');
+      return `${indent}"${key}": "${internal}"${comma}`;
+    }
+
+    // If it starts with ' and ends with ', convert to double quotes and escape internal double quotes
+    if (val.startsWith("'") && val.endsWith("'")) {
+      let internal = val.slice(1, -1);
+      internal = internal.replace(/(?<!\\)"/g, '\\"');
+      return `${indent}"${key}": "${internal}"${comma}`;
+    }
+
+    // Check if it's a valid JSON constant or number
+    const isConstant = ['true', 'false', 'null', 'undefined'].includes(val);
+    const isNumber = /^-?\d+\.?\d*(?:[eE][-+]?\d+)?$/.test(val);
+
+    if (isConstant || isNumber) {
+      return `${indent}"${key}": ${val}${comma}`;
+    }
+
+    // Escape any unescaped double quotes in the value, then wrap in double quotes
+    let cleanVal = val;
+    cleanVal = cleanVal.replace(/(?<!\\)"/g, '\\"');
+
+    return `${indent}"${key}": "${cleanVal}"${comma}`;
+  });
+
+  return cleanedLines.join('\n');
+}
 
 function parseStructuredResponse(raw) {
   let cleanJson = raw.trim();
@@ -884,6 +938,15 @@ function parseStructuredResponse(raw) {
     cleanJson = cleanJson.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
   }
   
+  // Clean JSON comments and trailing commas (DeepSeek-R1 / local LLM output sanitization)
+  cleanJson = cleanJson.replace(/\/\/[^\n]*/g, '');
+  cleanJson = cleanJson.replace(/\/\*[\s\S]*?\*\//g, '');
+  cleanJson = cleanJson.replace(/,\s*([}\]])/g, '$1');
+  cleanJson = cleanJson.trim();
+
+  // Robustly quote any unquoted property values
+  cleanJson = cleanInvalidJsonValues(cleanJson);
+
   // Try direct parsing first
   try {
     const root = JSON.parse(cleanJson);
@@ -1113,6 +1176,10 @@ function getStructureFromRoot(root, cleanJson) {
 }
 
 function parseSegmentArray(arr) {
+  if (!arr || !Array.isArray(arr)) {
+    console.warn('⚠️ parseSegmentArray received a non-array:', typeof arr, arr);
+    return [];
+  }
   return arr.map(el => {
     const type = el.Type || el.type || 'Line';
     const isUnknown = el.IsUnknown === true || el.isUnknown === true;
@@ -1224,9 +1291,10 @@ STEP 1 — MENTAL MAP PRE-ANALYSIS
 =========================================
 Before generating JSON, perform these checks:
   a) Count the total number of segments (lines + curves) forming the PRIMARY boundary.
-  b) Describe the general shape: "East side runs ~N, North side runs ~W," etc.
-  c) Confirm path does NOT cross itself (no bow-tie). If it does, correct it now.
-  d) Identify the Point of Beginning (POB) and confirm your last segment closes back to it.
+  b) Count the number of "thence" calls in the boundary description (excluding commencement). Every "thence" call in the boundary description MUST correspond to exactly one segment in your JSON Segments list. Do not omit, skip, or merge courses.
+  c) Describe the general shape: "East side runs ~N, North side runs ~W," etc.
+  d) Confirm path does NOT cross itself (no bow-tie). If it does, correct it now.
+  e) Identify the Point of Beginning (POB) and confirm your last segment closes back to it.
 
 =========================================
 CORE MATHEMATICAL & DRAFTING RULES
@@ -1273,6 +1341,7 @@ RULE 7 — DECOY ELIMINATION:
 
 RULE 7b — COMMENCEMENT RUNS ELIMINATION:
   IGNORE any "THENCE" clauses or course descriptions that occur BEFORE the actual "POINT OF BEGINNING" or "TO THE POINT OF BEGINNING" (these are commencement or reference runs leading TO the POB, not boundary lines). Only extract courses that describe the actual property boundary starting FROM the Point of Beginning.
+  TIP: If a boundary course refers to a bearing from a commencement run (e.g. "continue the aforementioned bearing" or "along said Westerly boundary line"), resolve and extract that bearing for the boundary course, even though the commencement run itself is ignored in the JSON Segments list.
 
 RULE 8 — STRICT JSON FORMATTING:
   No leading zeros on integers. No unescaped newlines inside strings.

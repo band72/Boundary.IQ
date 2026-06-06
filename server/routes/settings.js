@@ -80,6 +80,9 @@ router.post('/model', (req, res) => {
 
     gemini.setProvider(provider, model, openaiBaseUrl || undefined);
 
+    // Save active provider/model settings to .env
+    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined);
+
     res.json({
       message: `Switched to ${provider}/${model || '(default)'}`,
       activeProvider: gemini.getActiveProvider(),
@@ -158,7 +161,7 @@ router.post('/keys', (req, res) => {
 });
 
 // Helper to save system settings back to .env file for persistence
-function saveSystemSettingsToEnv(newDbPath, newScanRoots) {
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel) {
   const envPath = path.resolve(process.cwd(), '.env');
   
   let envContent = '';
@@ -181,6 +184,8 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots) {
 
   if (newDbPath !== undefined) vars['DATABASE_PATH'] = newDbPath;
   if (newScanRoots !== undefined) vars['BOUNDARY_SCAN_ROOTS'] = newScanRoots;
+  if (newProvider !== undefined) vars['ACTIVE_PROVIDER'] = newProvider;
+  if (newModel !== undefined) vars['ACTIVE_MODEL'] = newModel;
 
   const newLines = [];
   newLines.push('# Boundary.IQ — Environment Variables');

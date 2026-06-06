@@ -34,18 +34,30 @@ export function createOutputFolder(sourceFolder) {
 /**
  * Write output files for a single processed deed result.
  */
-export function writeResultFiles(outputFolder, sourceFileName, result, writeResult) {
+export function writeResultFiles(outputFolder, sourceFileName, result, writeResult, shortFileNames = false, showConceptualDetail = false) {
   const baseName = path.parse(sourceFileName).name;
+  let targetFolder = outputFolder;
+  if (shortFileNames) {
+    targetFolder = path.join(outputFolder, baseName);
+    if (!fs.existsSync(targetFolder)) {
+      fs.mkdirSync(targetFolder, { recursive: true });
+    }
+  }
 
   try {
     // 1. Corrected legal description
     const legalDesc = writeResult?.legalDescription || result.legalDescription || result.extraction?.legalDesc || result.extraction?.legalDescription || '';
     if (legalDesc) {
-      fs.writeFileSync(path.join(outputFolder, `${baseName}_corrected.txt`), legalDesc);
+      const correctedFile = shortFileNames ? 'Corrected.txt' : `${baseName}_corrected.txt`;
+      fs.writeFileSync(path.join(targetFolder, correctedFile), legalDesc);
     }
 
-    // 2. Original extraction summary
-    if (result.originalExtraction?.courses?.length > 0) {
+    // 2. OCR / Original text file
+    const rawOCR = result.extraction?.rawText || result.originalExtraction?.rawText || result.rawText || '';
+    const ocrFile = shortFileNames ? 'OCR.txt' : `${baseName}_ocr.txt`;
+    if (rawOCR) {
+      fs.writeFileSync(path.join(targetFolder, ocrFile), rawOCR);
+    } else if (result.originalExtraction?.courses?.length > 0) {
       const lines = [
         `ORIGINAL EXTRACTION — ${sourceFileName}`,
         `Classification: ${result.originalExtraction.classification}`,
@@ -62,10 +74,10 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
           lines.push(`  L${i + 1}: ${c.type} — ${c.bearing}  ${(c.distance || 0).toFixed(2)}'${c.isUnknown ? ' [UNKNOWN/MEANDER]' : ''}`);
         }
       });
-      fs.writeFileSync(path.join(outputFolder, `${baseName}_original.txt`), lines.join('\n'));
+      fs.writeFileSync(path.join(targetFolder, ocrFile), lines.join('\n'));
     }
 
-    // 3. Full JSON report
+    // 3. Full JSON report / Summary
     const report = {
       sourceFile: sourceFileName,
       processedAt: new Date().toISOString(),
@@ -77,14 +89,42 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
       originalExtraction: result.originalExtraction,
       conceptualAnalysis: result.conceptualAnalysis || result.extraction?.conceptualAnalysis || null
     };
-    fs.writeFileSync(path.join(outputFolder, `${baseName}_report.json`), JSON.stringify(report, null, 2));
+    const reportFile = shortFileNames ? 'Summary.json' : `${baseName}_summary.json`;
+    fs.writeFileSync(path.join(targetFolder, reportFile), JSON.stringify(report, null, 2));
 
     // 4. DXF — surveyor-grade CAD file
-    //    Only generated when we have stations (traverse computed successfully)
     const stations = result.traverse?.stations || [];
     const adjusted = result.traverse?.adjustedStations || [];
     const courses  = result.extraction?.courses || result.finalExtraction?.courses || [];
     const conceptual = result.conceptualAnalysis || result.extraction?.conceptualAnalysis;
+
+    // 4.1 Cogo file & Script file generation
+    if (stations.length > 0) {
+      const cogoLines = ['Point,Northing,Easting,Description'];
+      stations.forEach((s, idx) => {
+        const adj = adjusted[idx] || s;
+        cogoLines.push(`${s.seq + 1},${adj.northing.toFixed(4)},${adj.easting.toFixed(4)},${s.course || ''}`);
+      });
+      const cogoFile = shortFileNames ? 'Cogo.txt' : `${baseName}_cogo.txt`;
+      fs.writeFileSync(path.join(targetFolder, cogoFile), cogoLines.join('\n'));
+    }
+
+    if (courses.length > 0) {
+      const scriptLines = [];
+      const pobN = result.traverse?.stations?.[0]?.northing ?? 5000;
+      const pobE = result.traverse?.stations?.[0]?.easting ?? 5000;
+      scriptLines.push(`# COGO Script for ${sourceFileName}`);
+      scriptLines.push(`POB N ${pobN.toFixed(4)} E ${pobE.toFixed(4)}`);
+      courses.forEach((c, idx) => {
+        if (c.type?.toLowerCase() === 'curve') {
+          scriptLines.push(`Curve Radius=${c.radius || 0} Delta=${c.delta || 0} Direction=${c.curveDirection || 'Right'} ChordBearing=${c.chordBearing || ''} ChordDistance=${c.chordDistance || 0}`);
+        } else {
+          scriptLines.push(`${c.bearing || ''} ${c.distance || 0}`);
+        }
+      });
+      const scriptFile = shortFileNames ? 'Script.txt' : `${baseName}_script.txt`;
+      fs.writeFileSync(path.join(targetFolder, scriptFile), scriptLines.join('\n'));
+    }
 
     if (conceptual && (!courses || courses.length === 0)) {
       try {
@@ -108,14 +148,16 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
         const pageLabels = ['conceptual_map', 'record_legal', 'conceptual_analysis'];
         const pageBuffers = [];
         Object.entries(pages).forEach(([key, buf], i) => {
-          const outPath = path.join(outputFolder, `${baseName}_${pageLabels[i]}.png`);
+          const pngName = shortFileNames ? `Map_${pageLabels[i]}.png` : `${baseName}_map_${pageLabels[i]}.png`;
+          const outPath = path.join(targetFolder, pngName);
           fs.writeFileSync(outPath, buf);
           pageBuffers.push(buf);
           console.log(`Output: wrote PNG conceptual page ${i + 1} — ${path.basename(outPath)}`);
         });
 
         // Save combined PDF deliverable
-        const outPdfPath = path.join(outputFolder, `${baseName}_conceptual.pdf`);
+        const pdfName = shortFileNames ? 'Map.pdf' : `${baseName}_map.pdf`;
+        const outPdfPath = path.join(targetFolder, pdfName);
         saveCombinedPdf(outPdfPath, pageBuffers);
       } catch (pngEx) {
         console.warn(`Output: Conceptual PNG sketch failed for ${sourceFileName}:`, pngEx.message);
@@ -134,8 +176,9 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
           basisOfBearings: result.extraction?.basisOfBearings  || null,
         };
         const dxfStr = dxf.generateDxf(stations, adjusted, courses, meta);
-        fs.writeFileSync(path.join(outputFolder, `${baseName}.dxf`), dxfStr, 'utf-8');
-        console.log(`Output: wrote DXF — ${baseName}.dxf`);
+        const dxfFile = shortFileNames ? 'DXF.dxf' : `${baseName}_dxf.dxf`;
+        fs.writeFileSync(path.join(targetFolder, dxfFile), dxfStr, 'utf-8');
+        console.log(`Output: wrote DXF — ${path.basename(dxfFile)}`);
       } catch (dxfEx) {
         console.warn(`Output: DXF generation failed for ${sourceFileName}:`, dxfEx.message);
       }
@@ -160,20 +203,22 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
 
         const pages = sketch.renderSketchPages(
           stations, adjusted, courses, skMeta,
-          closure, legalDesc, origLegalDesc, origCourses,
+          closure, legalDesc, origLegalDesc, origCourses, showConceptualDetail
         );
 
         const pageLabels = ['sketch_p1', 'sketch_p2', 'sketch_p3', 'sketch_p4', 'sketch_p5'];
         const pageBuffers = [];
         Object.entries(pages).forEach(([key, buf], i) => {
-          const outPath = path.join(outputFolder, `${baseName}_${pageLabels[i]}.png`);
+          const pngName = shortFileNames ? `Map_p${i + 1}.png` : `${baseName}_map_p${i + 1}.png`;
+          const outPath = path.join(targetFolder, pngName);
           fs.writeFileSync(outPath, buf);
           pageBuffers.push(buf);
           console.log(`Output: wrote PNG page ${i + 1} — ${path.basename(outPath)}`);
         });
 
         // Save combined PDF deliverable
-        const outPdfPath = path.join(outputFolder, `${baseName}_blueprint.pdf`);
+        const pdfName = shortFileNames ? 'Map.pdf' : `${baseName}_map.pdf`;
+        const outPdfPath = path.join(targetFolder, pdfName);
         saveCombinedPdf(outPdfPath, pageBuffers);
       } catch (pngEx) {
         console.warn(`Output: PNG sketch failed for ${sourceFileName}:`, pngEx.message);

@@ -70,10 +70,21 @@ function newCanvas() {
   return { canvas, ctx };
 }
 
-/** Fill white background + double border. */
+/** Fill aged cream background + double border + 20px grid. */
 function drawPageFrame(ctx) {
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#f8f5ed';
   ctx.fillRect(0, 0, W, H);
+
+  // Draw 20px warm brown grid lines
+  ctx.strokeStyle = 'rgba(120, 90, 60, 0.08)';
+  ctx.lineWidth = 0.5;
+  for (let x = 20; x < W; x += 20) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 20; y < H; y += 20) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
   ctx.strokeStyle = C_BLACK;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(5, 5, W - 10, H - 10);
@@ -215,7 +226,7 @@ function drawTitleBlock(ctx, x, y, w, h, meta, pageN, pageTotal) {
 // ─────────────────────────────────────────────────────────────────────────────
 function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, meta = {}) {
   const { x: rx, y: ry, w: rw, h: rh } = region;
-  const { showRaw = true, showAdj = true, showGrid = true, showLabels = true, uncorrected = false } = opts;
+  const { showRaw = true, showAdj = true, showGrid = true, showLabels = true, uncorrected = false, showConceptualDetail = false } = opts;
 
   const activePts = adjPts.length >= 2 ? adjPts : rawPts;
 
@@ -397,6 +408,225 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
     ctx.closePath();
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // 3.5. Draw Conceptual Details (Angled labels, Roadway, Easement, Center label)
+  if (showConceptualDetail && adjPts.length > 1) {
+    const drawPts = adjPts;
+
+    // Calculate geometric center for text placements
+    const centerX = drawPts.reduce((sum, p) => sum + tx(p.easting), 0) / drawPts.length;
+    const centerY = drawPts.reduce((sum, p) => sum + ty(p.northing), 0) / drawPts.length;
+
+    // A. Angled Metes & Bounds Labels parallel to segments
+    drawPts.forEach((p1, i) => {
+      const p2 = drawPts[(i + 1) % drawPts.length];
+      const x1 = tx(p1.easting), y1 = ty(p1.northing);
+      const x2 = tx(p2.easting), y2 = ty(p2.northing);
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+
+      let theta = Math.atan2(y2 - y1, x2 - x1);
+      // Keep text readable (left-to-right, not upside down)
+      if (theta < -Math.PI / 2 || theta > Math.PI / 2) {
+        theta += Math.PI;
+      }
+
+      // Calculate perpendicular offset vector pointing outwards
+      const dx = x2 - x1, dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const px = -dy / len, py = dx / len;
+      let ox = px, oy = py;
+      const d1 = Math.hypot(mx + px * 5 - centerX, my + py * 5 - centerY);
+      const d2 = Math.hypot(mx - px * 5 - centerX, my - py * 5 - centerY);
+      if (d1 < d2) {
+        ox = -px; oy = -py;
+      }
+
+      // Offset text slightly outwards
+      const lx = mx + ox * 8;
+      const ly = my + oy * 8;
+
+      // Retrieve segment data
+      const c = courses[i];
+      let labelText = '';
+      if (c) {
+        if ((c.type || '').toLowerCase() === 'curve') {
+          labelText = `${c.chordBearing || ''} R=${c.radius ? parseFloat(c.radius).toFixed(1) : ''}' L=${c.arcLength ? parseFloat(c.arcLength).toFixed(1) : ''}'`;
+        } else {
+          labelText = `${c.bearing || ''} ${c.distance ? parseFloat(c.distance).toFixed(2) : ''}'`;
+        }
+      }
+
+      if (labelText) {
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(theta);
+        ctx.font = 'bold 7.5px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Background box for legibility (use aged cream background color)
+        const tw = ctx.measureText(labelText).width;
+        ctx.fillStyle = '#f8f5ed';
+        ctx.fillRect(-tw / 2 - 2, -4, tw + 4, 8);
+        ctx.fillStyle = '#000000';
+        ctx.fillText(labelText, 0, 0);
+        ctx.restore();
+      }
+    });
+
+    // B. Center Label
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const centerName = meta.parcel ? `PART OF ${meta.parcel.toUpperCase()}` : 'SUBJECT PARCEL';
+    const centerArea = meta.areaAcres ? `${parseFloat(meta.areaAcres).toFixed(4)} ACRES` : '';
+    ctx.fillText(centerName, centerX, centerY - 6);
+    if (centerArea) {
+      ctx.font = 'bold 8px sans-serif';
+      ctx.fillText(centerArea, centerX, centerY + 6);
+    }
+    ctx.restore();
+
+    // C. Roadway along bottom-most boundary segment
+    let bottomIdx = 0;
+    let maxMidY = -Infinity;
+    drawPts.forEach((p1, i) => {
+      const p2 = drawPts[(i + 1) % drawPts.length];
+      const my = (ty(p1.northing) + ty(p2.northing)) / 2;
+      if (my > maxMidY) {
+        maxMidY = my;
+        bottomIdx = i;
+      }
+    });
+
+    const p1 = drawPts[bottomIdx];
+    const p2 = drawPts[(bottomIdx + 1) % drawPts.length];
+    const ax = tx(p1.easting), ay = ty(p1.northing);
+    const bx = tx(p2.easting), by = ty(p2.northing);
+
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    let rnx = -dy / len, rny = dx / len;
+    if (rny < 0) {
+      rnx = -rnx; rny = -rny;
+    }
+
+    // Road edge lines (Curb property line & far road side)
+    const offsetCurb = 14;
+    const offsetFar = 42;
+    const offsetCenter = 28;
+
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1.25;
+
+    // Property curb line (solid)
+    ctx.beginPath();
+    ctx.moveTo(ax + rnx * offsetCurb - dx * 0.2, ay + rny * offsetCurb - dy * 0.2);
+    ctx.lineTo(bx + rnx * offsetCurb + dx * 0.2, by + rny * offsetCurb + dy * 0.2);
+    ctx.stroke();
+
+    // Far road edge (solid)
+    ctx.beginPath();
+    ctx.moveTo(ax + rnx * offsetFar - dx * 0.2, ay + rny * offsetFar - dy * 0.2);
+    ctx.lineTo(bx + rnx * offsetFar + dx * 0.2, by + rny * offsetFar + dy * 0.2);
+    ctx.stroke();
+
+    // Center line (dashed)
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 0.75;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(ax + rnx * offsetCenter - dx * 0.2, ay + rny * offsetCenter - dy * 0.2);
+    ctx.lineTo(bx + rnx * offsetCenter + dx * 0.2, by + rny * offsetCenter + dy * 0.2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Road Label
+    const rmx = (ax + bx) / 2 + rnx * offsetCenter;
+    const rmy = (ay + by) / 2 + rny * offsetCenter;
+    let rtheta = Math.atan2(by - ay, bx - ax);
+    if (rtheta < -Math.PI / 2 || rtheta > Math.PI / 2) {
+      rtheta += Math.PI;
+    }
+
+    // Try to extract street name from legal description text
+    const getStreetName = (text) => {
+      if (!text) return null;
+      const match = text.match(/([A-Za-z0-9\s]+?\s+(?:Boulevard|Blvd|Parkway|Pkwy|Avenue|Ave|Street|St|Road|Rd|Highway|Hwy|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir))/i);
+      if (match) {
+        const words = match[1].trim().split(/\s+/);
+        if (words.length > 3) return words.slice(-3).join(' ').toUpperCase();
+        return match[1].trim().toUpperCase();
+      }
+      return null;
+    };
+
+    const roadLabel = (getStreetName(meta.legalDescription || '') || 'PUBLIC ROADWAY') + ' R.O.W.';
+    ctx.save();
+    ctx.translate(rmx, rmy);
+    ctx.rotate(rtheta);
+    ctx.fillStyle = '#334155';
+    ctx.font = 'italic bold 7.5px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const rtw = ctx.measureText(roadLabel).width;
+    ctx.fillStyle = '#f8f5ed';
+    ctx.fillRect(-rtw / 2 - 3, -5, rtw + 6, 10);
+    ctx.fillStyle = '#334155';
+    ctx.fillText(roadLabel, 0, 0);
+    ctx.restore();
+
+    // D. Utility Easement along rear (opposite of bottom)
+    const rearIdx = (bottomIdx + Math.floor(drawPts.length / 2)) % drawPts.length;
+    const rp1 = drawPts[rearIdx];
+    const rp2 = drawPts[(rearIdx + 1) % drawPts.length];
+    const rcx = tx(rp1.easting), rcy = ty(rp1.northing);
+    const rdx_pt = tx(rp2.easting), rdy_pt = ty(rp2.northing);
+
+    const rdx = rdx_pt - rcx, rdy = rdy_pt - rcy;
+    const rlen = Math.hypot(rdx, rdy) || 1;
+    let einx = -rdy / rlen, einy = rdx / rlen;
+    const esmx = (rcx + rdx_pt) / 2;
+    const esmy = (rcy + rdy_pt) / 2;
+    const ed1 = Math.hypot(esmx + einx * 5 - centerX, esmy + einy * 5 - centerY);
+    const ed2 = Math.hypot(esmx - einx * 5 - centerX, esmy - einy * 5 - centerY);
+    if (ed2 < ed1) {
+      einx = -einx; einy = -einy;
+    }
+
+    // Draw easement line offset inwards by 12px
+    const eax = rcx + einx * 12, eay = rcy + einy * 12;
+    const ebx = rdx_pt + einx * 12, eby = rdy_pt + einy * 12;
+
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(eax, eay);
+    ctx.lineTo(ebx, eby);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label easement
+    const emx = (eax + ebx) / 2;
+    const emy = (eay + eby) / 2;
+    let etheta = Math.atan2(eby - eay, ebx - eax);
+    if (etheta < -Math.PI / 2 || etheta > Math.PI / 2) {
+      etheta += Math.PI;
+    }
+
+    ctx.save();
+    ctx.translate(emx, emy);
+    ctx.rotate(etheta);
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'italic bold 6.5px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText("10' UTILITY EASEMENT", 0, -2);
+    ctx.restore();
   }
 
   // Station nodes + vertex labels
@@ -635,7 +865,7 @@ function drawLegalDescBox(ctx, x, y, w, h, text, headerText) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 1 — Main boundary sketch + Mapcheck footer + Title block
 // ─────────────────────────────────────────────────────────────────────────────
-function renderPage1(stations, adjusted, courses, meta, closure) {
+function renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail = false) {
   const { canvas, ctx } = newCanvas();
   drawPageFrame(ctx);
 
@@ -663,7 +893,7 @@ function renderPage1(stations, adjusted, courses, meta, closure) {
 
   if (rawPts.length >= 2) {
     drawBoundaryGeometry(ctx, rawPts, adjPts, courses,
-      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH }, {}, meta);
+      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH }, { showConceptualDetail }, meta);
   } else {
     ctx.fillStyle = '#888888'; ctx.font = 'italic 16px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -968,9 +1198,12 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
  * @returns {{ page1, page2, page3, page4, page5 }}  Each value is a PNG Buffer
  */
 export function renderSketchPages(stations, adjusted, courses, meta = {},
-  closure, legalDescription, originalLegalDesc, originalCourses) {
+  closure, legalDescription, originalLegalDesc, originalCourses, showConceptualDetail = false) {
+  if (meta) {
+    meta.legalDescription = legalDescription || originalLegalDesc || '';
+  }
   return {
-    page1: renderPage1(stations, adjusted, courses, meta, closure),
+    page1: renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail),
     page2: renderPage2(legalDescription || null, meta),
     page3: renderPage3(courses, meta),
     page4: renderPage4(originalLegalDesc || legalDescription || null, meta),

@@ -124,7 +124,7 @@ async function generateVisionChat(buffer, model, prompt) {
     model,
     messages: [message],
     stream: false,
-    options: { temperature: 0.1, num_predict: 8192, num_ctx: 16384 },
+    options: { temperature: 0.1, num_predict: 2048, num_ctx: 8192 },
     // NOTE: Do NOT set format:'json' — vision models may not honor it and it
     // can suppress the entire response. Rely on prompt instructions instead.
   };
@@ -180,9 +180,11 @@ async function generateTextOnly(prompt, model) {
     model,
     prompt,
     stream: false,
-    options: { temperature: 0.1, num_predict: 8192, num_ctx: 16384 }
+    options: isReasoning 
+      ? { temperature: 0.1, num_predict: 4096, num_ctx: 8192 }
+      : { temperature: 0.1, num_predict: 2048, num_ctx: 4096 }
   };
-  if (!isReasoning) {
+  if (!isReasoning && !isVisionModel(model)) {
     payload.format = 'json';
   }
 

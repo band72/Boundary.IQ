@@ -128,7 +128,7 @@ async function runTests() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data.activeProvider) throw new Error('Missing "activeProvider" in settings payload.');
-    console.log(`  Response: activeProvider=${data.activeProvider}`);
+    console.log(`  Response: activeProvider=${data.activeProvider}, activeModel=${data.activeModel}`);
   });
 
   // --- 3. Traverse Calculation Test ---

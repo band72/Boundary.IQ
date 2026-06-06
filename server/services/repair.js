@@ -398,7 +398,7 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
       const steps3 = buildSolutionSteps(originalExtraction, stage3Extraction, 'Stage 3: AI Misclosure Repair', t3, Date.now() - pipelineStart);
       return { finalExtraction: stage3Extraction, finalTraverse: t3, status: 'PASS', repairStageUsed: 'Stage 3: AI Misclosure Repair', traverseError: null, originalExtraction, solutionSteps: steps3 };
     }
-    if (t3 && t3.closure.linearError < worstTraverse.closure.linearError) {
+    if (t3 && worstTraverse && worstTraverse.closure && t3.closure.linearError < worstTraverse.closure.linearError) {
       bestExtraction = stage3Extraction;
       bestTraverse = t3;
       console.log(`Stage 3 improved error: ${t3.closure.linearError}`);
@@ -418,7 +418,9 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     return {
       finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'MEANDER',
       repairStageUsed: 'Stage 4: Meander Deed (Water Boundary)',
-      traverseError: `Closure error ${bestTraverse?.closure?.linearError?.toFixed(4)} ft — deed contains meander/water boundary lines.`,
+      traverseError: bestTraverse
+        ? `Closure error ${bestTraverse.closure?.linearError?.toFixed(4)} ft — deed contains meander/water boundary lines.`
+        : (traverseError || 'Deed geometry contains calculation errors or missing meander parameters.'),
       originalExtraction,
     };
   }
@@ -427,7 +429,9 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
   return {
     finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'FAIL',
     repairStageUsed: 'Stage 4: Needs Adjacent Lot Review',
-    traverseError: `Closure error ${bestTraverse?.closure?.linearError?.toFixed(4)} ft after all repair stages.`,
+    traverseError: bestTraverse
+      ? `Closure error ${bestTraverse.closure?.linearError?.toFixed(4)} ft after all repair stages.`
+      : (traverseError || 'Deed geometry contains calculation errors or missing curve parameters.'),
     originalExtraction,
   };
 }
@@ -526,7 +530,7 @@ function isPassing(t) {
   }
 
   // Backtracking Check: Reject if there are backtracking/opposite consecutive courses
-  if (t.courses && detectBacktracking(t.courses)) {
+  if (t.courses && detectBacktracking(t.courses, true)) {
     console.log(`isPassing: Rejected traverse due to backtracking`);
     return false;
   }
@@ -796,7 +800,7 @@ export function detectSelfIntersection(stations) {
  * Robust Backtracking Detector
  * Verifies if consecutive courses travel backwards over each other.
  */
-export function detectBacktracking(courses) {
+export function detectBacktracking(courses, verbose = false) {
   if (!courses || courses.length < 2) return false;
   
   for (let i = 0; i < courses.length; i++) {
@@ -815,7 +819,9 @@ export function detectBacktracking(courses) {
       const isOpposite = Math.abs(diff - 180) < 0.01 || Math.abs(diff - 180) > 359.99;
       
       if (isOpposite) {
-        console.log(`Backtracking detected between segment ${i + 1} and segment ${((i + 1) % courses.length) + 1}!`);
+        if (verbose) {
+          console.log(`Backtracking detected between segment ${i + 1} and segment ${((i + 1) % courses.length) + 1}!`);
+        }
         return true;
       }
     } catch {
@@ -1299,7 +1305,28 @@ function isMeanderDeed(extraction) {
 export function detectOpenEnded(text, fileName, aiFlag) {
   if (aiFlag === true) return true;
   
-  const upperText = (text || '').toUpperCase();
+  let textToScan = text || '';
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.IsOpenEnded === true || parsed.isOpenEnded === true) {
+        return true;
+      }
+      if (parsed.Classification === 'OPEN_ENDED' || parsed.classification === 'OPEN_ENDED') {
+        return true;
+      }
+      // Filter out ConceptualAnalysis from the scan text to prevent false positive keyword matches
+      textToScan = [
+        parsed.MentalMapSummary || parsed.mentalMapSummary || '',
+        parsed.ReferencedParcelName || parsed.referencedParcelName || '',
+        JSON.stringify(parsed.Segments || parsed.segments || '')
+      ].join(' ');
+    }
+  } catch (e) {
+    // Standard text fallback
+  }
+
+  const upperText = textToScan.toUpperCase();
   const upperFile = (fileName || '').toUpperCase();
   const combined = upperText + ' ' + upperFile;
 
@@ -1326,8 +1353,10 @@ export function detectOpenEnded(text, fileName, aiFlag) {
   const hasIndicator = indicators.some(w => combined.includes(w));
   if (!hasIndicator) return false;
   
-  const hasPobReturn = combined.includes('POINT OF BEGINNING') && (combined.includes('RETURN') || combined.includes('CLOSE') || combined.includes('TO SAID'));
-  if (combined.includes('CLOSED') && hasPobReturn) {
+  const cleanCombined = combined.replace(/\./g, '');
+  const hasPobReturn = /\bT[O0]\s+(?:THE\s+)?(?:TRUE\s+)?(?:POIN[TI]\s+(?:OF\s+)?)?(?:BEGINNING|PLACE\s+OF\s+BEGINNING|POB|BEG)/.test(cleanCombined) ||
+                       combined.includes('RETURN TO') || combined.includes('CLOSE TO') || combined.includes('TO SAID');
+  if (hasPobReturn) {
     return false;
   }
   
@@ -1349,13 +1378,12 @@ export function detectOpenEnded(text, fileName, aiFlag) {
 export function extractNamedParcels(docText) {
   if (!docText || docText.length < 20) return null;
 
-  // Match "Parcel A", "PARCEL B", "DEED CASE 1", "DEED 1", "CASE 1" etc. as section dividers.
-  // Supports letters (A-Z) and numbers (1-9), with optional enclosing straight/smart/multiple quotes.
-  const headerRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL|DEED CASE|DEED|CASE)[ \t]+['"“‘'`]*([A-Z]|[1-9])['"”’'`]*\b/gi;
+  const dividers = [];
 
-  const matches = [];
+  // 1. Explicit headers (e.g., "Parcel A", "PARCEL 1", "Tract B", "LOT 2", etc.)
+  const explicitRe = /(?:^|\n)[ \t]*(?:Parcel|PARCEL|DEED CASE|DEED|CASE|Tract|TRACT|Lot|LOT)[ \t]+['"“‘'`]*([A-Z0-9]+)['"”’'`]*\b/gi;
   let m;
-  while ((m = headerRe.exec(docText)) !== null) {
+  while ((m = explicitRe.exec(docText)) !== null) {
     const nextNewline = docText.indexOf('\n', m.index + 1);
     const endOfLine = nextNewline !== -1 ? nextNewline : docText.length;
     const lineText = docText.slice(m.index, endOfLine).toLowerCase();
@@ -1363,20 +1391,99 @@ export function extractNamedParcels(docText) {
     // Ignore references disguised as headers
     const isReference = ['herein', 'described', 'referred', 'overlap', 'contiguity', 'as to'].some(k => lineText.includes(k));
     if (!isReference) {
-      matches.push({ label: m[1].toUpperCase(), index: m.index });
+      dividers.push({
+        type: 'explicit',
+        label: m[1].toUpperCase(),
+        index: m.index,
+        length: m[0].length
+      });
     }
   }
 
-  // Need at least 2 labeled parcels to split
-  if (matches.length < 2) return null;
+  // 2. Keyword dividers (e.g., "Together with", "Less and except", etc.)
+  const keywordRe = /(?:^|\n)[ \t]*(?:together\s+with|also\s+together\s+with|and\s+together\s+with|less\s+and\s+except|less\s+and\s+excepting|excepting\s+therefrom|also\s+together\s+with\s+an\s+easement|together\s+with\s+an\s+easement)\b/gi;
+  while ((m = keywordRe.exec(docText)) !== null) {
+    const nextNewline = docText.indexOf('\n', m.index + 1);
+    const endOfLine = nextNewline !== -1 ? nextNewline : docText.length;
+    const lineText = docText.slice(m.index, endOfLine).toLowerCase();
 
+    let labelType = 'Easement';
+    if (lineText.includes('except') || lineText.includes('therefrom')) {
+      labelType = 'Exception';
+    }
+
+    dividers.push({
+      type: 'keyword',
+      labelType,
+      index: m.index,
+      length: m[0].length
+    });
+  }
+
+  // Sort dividers by index
+  dividers.sort((a, b) => a.index - b.index);
+
+  // De-duplicate overlapping dividers
+  const uniqueDividers = [];
+  for (const div of dividers) {
+    if (uniqueDividers.length === 0 || div.index > uniqueDividers[uniqueDividers.length - 1].index + 10) {
+      uniqueDividers.push(div);
+    }
+  }
+
+  if (uniqueDividers.length === 0) return null;
+
+  // Let's build the splits
+  const splits = [];
+  let easementCount = 0;
+  let exceptionCount = 0;
+
+  // Check if we need to insert an implicit first parcel
+  const firstDiv = uniqueDividers[0];
+  if (firstDiv.index > 100) {
+    const preText = docText.slice(0, firstDiv.index);
+    if (gemini.hasBoundaryKeywords(preText)) {
+      // Determine label for implicit parcel
+      let firstLabel = '1';
+      if (firstDiv.type === 'explicit') {
+        if (firstDiv.label === 'B') firstLabel = 'A';
+        else if (firstDiv.label === '2') firstLabel = '1';
+        else firstLabel = '1';
+      } else {
+        firstLabel = '1';
+      }
+      splits.push({ label: firstLabel, start: 0, end: firstDiv.index });
+    }
+  }
+
+  // Add the explicit/keyword splits
+  for (let i = 0; i < uniqueDividers.length; i++) {
+    const div = uniqueDividers[i];
+    const start = div.index;
+    const end = i + 1 < uniqueDividers.length ? uniqueDividers[i + 1].index : docText.length;
+
+    let label = '';
+    if (div.type === 'explicit') {
+      label = div.label;
+    } else {
+      if (div.labelType === 'Easement') {
+        easementCount++;
+        label = `Easement_${easementCount}`;
+      } else {
+        exceptionCount++;
+        label = `Exception_${exceptionCount}`;
+      }
+    }
+
+    splits.push({ label, start, end });
+  }
+
+  // Map to final parcel array
   const parcels = [];
-  for (let i = 0; i < matches.length; i++) {
-    const start = matches[i].index;
-    const end   = i + 1 < matches.length ? matches[i + 1].index : docText.length;
-    const text  = docText.slice(start, end).trim();
-    if (text.length > 10) {
-      parcels.push({ label: matches[i].label, text });
+  for (const split of splits) {
+    const text = docText.slice(split.start, split.end).trim();
+    if (text.length > 20) {
+      parcels.push({ label: split.label, text });
     }
   }
 

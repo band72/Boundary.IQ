@@ -285,6 +285,14 @@ export default function PrintBlueprint({
   const [showLabels, setShowLabels] = useState(true);
   const [showRaw, setShowRaw] = useState(true);
   const [showAdjusted, setShowAdjusted] = useState(true);
+  const [showConceptualDetail, setShowConceptualDetail] = useState(() => {
+    return localStorage.getItem('boundaryiq_show_conceptual_detail') !== 'false';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('boundaryiq_show_conceptual_detail', showConceptualDetail);
+  }, [showConceptualDetail]);
+
   const isMultiPagePrint = true;
   
   // API loading state
@@ -467,9 +475,8 @@ export default function PrintBlueprint({
       canvas.height = H * 2;
       ctx.scale(2, 2);
 
-      // White blueprint background
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, W, H);
+      // Transparent background so CSS aged graph paper background shows through
+      ctx.clearRect(0, 0, W, H);
 
       // Map drawing points selection
       const rawPts = stations?.length 
@@ -559,6 +566,225 @@ export default function PrintBlueprint({
         }
         ctx.closePath();
         ctx.stroke();
+      }
+
+      // 3.5. Draw Conceptual Details (Angled labels, Roadway, Easement, Center label)
+      if (showConceptualDetail && adjPts.length > 1) {
+        const drawPts = adjPts;
+
+        // Calculate geometric center for text placements
+        const centerX = drawPts.reduce((sum, p) => sum + tx(p.easting), 0) / drawPts.length;
+        const centerY = drawPts.reduce((sum, p) => sum + ty(p.northing), 0) / drawPts.length;
+
+        // A. Angled Metes & Bounds Labels parallel to segments
+        drawPts.forEach((p1, i) => {
+          const p2 = drawPts[(i + 1) % drawPts.length];
+          const x1 = tx(p1.easting), y1 = ty(p1.northing);
+          const x2 = tx(p2.easting), y2 = ty(p2.northing);
+          const mx = (x1 + x2) / 2;
+          const my = (y1 + y2) / 2;
+
+          let theta = Math.atan2(y2 - y1, x2 - x1);
+          // Keep text readable (left-to-right, not upside down)
+          if (theta < -Math.PI / 2 || theta > Math.PI / 2) {
+            theta += Math.PI;
+          }
+
+          // Calculate perpendicular offset vector pointing outwards
+          const dx = x2 - x1, dy = y2 - y1;
+          const len = Math.hypot(dx, dy) || 1;
+          const px = -dy / len, py = dx / len;
+          let ox = px, oy = py;
+          const d1 = Math.hypot(mx + px * 5 - centerX, my + py * 5 - centerY);
+          const d2 = Math.hypot(mx - px * 5 - centerX, my - py * 5 - centerY);
+          if (d1 < d2) {
+            ox = -px; oy = -py;
+          }
+
+          // Offset text slightly outwards
+          const lx = mx + ox * 8;
+          const ly = my + oy * 8;
+
+          // Retrieve segment data
+          const c = courses[i];
+          let labelText = '';
+          if (c) {
+            if (c.type === 'Curve') {
+              labelText = `${c.chordBearing || ''} R=${c.radius ? parseFloat(c.radius).toFixed(1) : ''}' L=${c.arcLength ? parseFloat(c.arcLength).toFixed(1) : ''}'`;
+            } else {
+              labelText = `${c.bearing || ''} ${c.distance ? parseFloat(c.distance).toFixed(2) : ''}'`;
+            }
+          }
+
+          if (labelText) {
+            ctx.save();
+            ctx.translate(lx, ly);
+            ctx.rotate(theta);
+            ctx.font = 'bold 7.5px "Inter", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // Background box for legibility
+            const tw = ctx.measureText(labelText).width;
+            ctx.fillStyle = '#f8f5ed';
+            ctx.fillRect(-tw / 2 - 2, -4, tw + 4, 8);
+            ctx.fillStyle = '#000000';
+            ctx.fillText(labelText, 0, 0);
+            ctx.restore();
+          }
+        });
+
+        // B. Center Label
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.font = 'bold 9px "Inter", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const centerName = parcel ? `PART OF ${parcel.toUpperCase()}` : 'SUBJECT PARCEL';
+        const centerArea = area ? `${parseFloat(area).toFixed(4)} ACRES` : '';
+        ctx.fillText(centerName, centerX, centerY - 6);
+        if (centerArea) {
+          ctx.font = 'bold 8px "Inter", sans-serif';
+          ctx.fillText(centerArea, centerX, centerY + 6);
+        }
+        ctx.restore();
+
+        // C. Roadway along bottom-most boundary segment
+        let bottomIdx = 0;
+        let maxMidY = -Infinity;
+        drawPts.forEach((p1, i) => {
+          const p2 = drawPts[(i + 1) % drawPts.length];
+          const my = (ty(p1.northing) + ty(p2.northing)) / 2;
+          if (my > maxMidY) {
+            maxMidY = my;
+            bottomIdx = i;
+          }
+        });
+
+        const p1 = drawPts[bottomIdx];
+        const p2 = drawPts[(bottomIdx + 1) % drawPts.length];
+        const ax = tx(p1.easting), ay = ty(p1.northing);
+        const bx = tx(p2.easting), by = ty(p2.northing);
+
+        const dx = bx - ax, dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        let rnx = -dy / len, rny = dx / len;
+        if (rny < 0) {
+          rnx = -rnx; rny = -rny;
+        }
+
+        // Road edge lines (Curb property line & far road side)
+        const offsetCurb = 14;
+        const offsetFar = 42;
+        const offsetCenter = 28;
+
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1.25;
+
+        // Property curb line (solid)
+        ctx.beginPath();
+        ctx.moveTo(ax + rnx * offsetCurb - dx * 0.2, ay + rny * offsetCurb - dy * 0.2);
+        ctx.lineTo(bx + rnx * offsetCurb + dx * 0.2, by + rny * offsetCurb + dy * 0.2);
+        ctx.stroke();
+
+        // Far road edge (solid)
+        ctx.beginPath();
+        ctx.moveTo(ax + rnx * offsetFar - dx * 0.2, ay + rny * offsetFar - dy * 0.2);
+        ctx.lineTo(bx + rnx * offsetFar + dx * 0.2, by + rny * offsetFar + dy * 0.2);
+        ctx.stroke();
+
+        // Center line (dashed)
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 0.75;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(ax + rnx * offsetCenter - dx * 0.2, ay + rny * offsetCenter - dy * 0.2);
+        ctx.lineTo(bx + rnx * offsetCenter + dx * 0.2, by + rny * offsetCenter + dy * 0.2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Road Label
+        const rmx = (ax + bx) / 2 + rnx * offsetCenter;
+        const rmy = (ay + by) / 2 + rny * offsetCenter;
+        let rtheta = Math.atan2(by - ay, bx - ax);
+        if (rtheta < -Math.PI / 2 || rtheta > Math.PI / 2) {
+          rtheta += Math.PI;
+        }
+
+        // Try to extract street name from legal description text
+        const getStreetName = (text) => {
+          if (!text) return null;
+          const match = text.match(/([A-Za-z0-9\s]+?\s+(?:Boulevard|Blvd|Parkway|Pkwy|Avenue|Ave|Street|St|Road|Rd|Highway|Hwy|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir))/i);
+          if (match) {
+            const words = match[1].trim().split(/\s+/);
+            if (words.length > 3) return words.slice(-3).join(' ').toUpperCase();
+            return match[1].trim().toUpperCase();
+          }
+          return null;
+        };
+
+        const roadLabel = (getStreetName(legalDesc) || 'PUBLIC ROADWAY') + ' R.O.W.';
+        ctx.save();
+        ctx.translate(rmx, rmy);
+        ctx.rotate(rtheta);
+        ctx.fillStyle = '#334155';
+        ctx.font = 'italic bold 7.5px "Inter", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const rtw = ctx.measureText(roadLabel).width;
+        ctx.fillStyle = '#f8f5ed';
+        ctx.fillRect(-rtw / 2 - 3, -5, rtw + 6, 10);
+        ctx.fillStyle = '#334155';
+        ctx.fillText(roadLabel, 0, 0);
+        ctx.restore();
+
+        // D. Utility Easement along rear (opposite of bottom)
+        const rearIdx = (bottomIdx + Math.floor(drawPts.length / 2)) % drawPts.length;
+        const rp1 = drawPts[rearIdx];
+        const rp2 = drawPts[(rearIdx + 1) % drawPts.length];
+        const rcx = tx(rp1.easting), rcy = ty(rp1.northing);
+        const rdx_pt = tx(rp2.easting), rdy_pt = ty(rp2.northing);
+
+        const rdx = rdx_pt - rcx, rdy = rdy_pt - rcy;
+        const rlen = Math.hypot(rdx, rdy) || 1;
+        let einx = -rdy / rlen, einy = rdx / rlen;
+        const esmx = (rcx + rdx_pt) / 2;
+        const esmy = (rcy + rdy_pt) / 2;
+        const ed1 = Math.hypot(esmx + einx * 5 - centerX, esmy + einy * 5 - centerY);
+        const ed2 = Math.hypot(esmx - einx * 5 - centerX, esmy - einy * 5 - centerY);
+        if (ed2 < ed1) {
+          einx = -einx; einy = -einy;
+        }
+
+        // Draw easement line offset inwards by 12px
+        const eax = rcx + einx * 12, eay = rcy + einy * 12;
+        const ebx = rdx_pt + einx * 12, eby = rdy_pt + einy * 12;
+
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(eax, eay);
+        ctx.lineTo(ebx, eby);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Label easement
+        const emx = (eax + ebx) / 2;
+        const emy = (eay + eby) / 2;
+        let etheta = Math.atan2(eby - eay, ebx - eax);
+        if (etheta < -Math.PI / 2 || etheta > Math.PI / 2) {
+          etheta += Math.PI;
+        }
+
+        ctx.save();
+        ctx.translate(emx, emy);
+        ctx.rotate(etheta);
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'italic bold 6.5px "Inter", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText("10' UTILITY EASEMENT", 0, -2);
+        ctx.restore();
       }
 
       // 4. Draw Stations and Course Labels (L1, C1...)
@@ -715,7 +941,7 @@ export default function PrintBlueprint({
     // eslint-disable-next-line react-hooks/immutability
     draw(printCanvasElement);
 
-  }, [canvasElement, printCanvasElement, courses, stations, adjusted, units, showGrid, showLabels, showRaw, showAdjusted]);
+  }, [canvasElement, printCanvasElement, courses, stations, adjusted, units, showGrid, showLabels, showRaw, showAdjusted, showConceptualDetail, parcel, area, legalDesc]);
 
   // ── Page 5: Original (Uncorrected) Sketch Canvas ───────────────────────────
   useEffect(() => {
@@ -734,9 +960,8 @@ export default function PrintBlueprint({
     canvas.height = H * 2;
     ctx.scale(2, 2);
 
-    // White background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, W, H);
+    // Transparent background so CSS aged graph paper background shows through
+    ctx.clearRect(0, 0, W, H);
 
     // Compute bounds
     const ns = origPts.map(p => p.northing), es = origPts.map(p => p.easting);
@@ -972,6 +1197,10 @@ export default function PrintBlueprint({
               <input type="checkbox" checked={showAdjusted} onChange={e => setShowAdjusted(e.target.checked)} />
               Show Adjusted Boundary (Black)
             </label>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={showConceptualDetail} onChange={e => setShowConceptualDetail(e.target.checked)} />
+              Add Conceptual Detail
+            </label>
           </div>
 
           {/* Legal Description Block */}
@@ -1009,7 +1238,7 @@ export default function PrintBlueprint({
       {/* ── Blueprint Print Sheet View (11" x 8.5" Landscape Aspect) ──────────────── */}
       <div className="print-canvas-wrapper">
         {/* 1. Screen View & Print Single-Page (Always visible on screen, hidden during print if multi-page mode is active) */}
-        <div className="blueprint-sheet no-print">
+        <div className={`blueprint-sheet no-print ${!showGrid ? 'hide-grid' : ''}`}>
           {/* Main double-border frame */}
           <div className="blueprint-border-outer">
             <div className="blueprint-border-inner">
@@ -1127,7 +1356,7 @@ export default function PrintBlueprint({
           {courses.length > 0 ? (
             <>
               {/* SHEET 1: Main Map, Title Block, and Mapcheck at the Bottom */}
-              <div className="blueprint-sheet">
+              <div className={`blueprint-sheet ${!showGrid ? 'hide-grid' : ''}`}>
                 <div className="blueprint-border-outer">
                   <div className="blueprint-border-inner">
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1190,7 +1419,7 @@ export default function PrintBlueprint({
               </div>
 
               {/* SHEET 2: Legal Description */}
-              <div className="blueprint-sheet page-break">
+              <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''}`}>
                 <div className="blueprint-border-outer">
                   <div className="blueprint-border-inner">
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1238,7 +1467,7 @@ export default function PrintBlueprint({
               </div>
 
               {/* SHEET 3: Line & Curve Tables */}
-              <div className="blueprint-sheet page-break">
+              <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''}`}>
                 <div className="blueprint-border-outer">
                   <div className="blueprint-border-inner">
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1333,7 +1562,7 @@ export default function PrintBlueprint({
               </div>
 
               {/* SHEET 4: Original Legal Description */}
-                <div className="blueprint-sheet page-break">
+                <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''}`}>
                   <div className="blueprint-border-outer">
                     <div className="blueprint-border-inner">
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1374,7 +1603,7 @@ export default function PrintBlueprint({
                 </div>
 
                 {/* SHEET 5: Original Uncorrected Sketch */}
-                <div className="blueprint-sheet page-break">
+                <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''}`}>
                   <div className="blueprint-border-outer">
                     <div className="blueprint-border-inner">
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1409,7 +1638,7 @@ export default function PrintBlueprint({
             ) : conceptualAnalysis ? (
               <>
                 {/* CONCEPTUAL SHEET 1: Conceptual Sketch Map */}
-                <div className="blueprint-sheet">
+                <div className={`blueprint-sheet ${!showGrid ? 'hide-grid' : ''}`}>
                   <div className="blueprint-border-outer">
                     <div className="blueprint-border-inner">
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1447,7 +1676,7 @@ export default function PrintBlueprint({
                 </div>
 
                 {/* CONCEPTUAL SHEET 2: Legal Description */}
-                <div className="blueprint-sheet page-break">
+                <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''}`}>
                   <div className="blueprint-border-outer">
                     <div className="blueprint-border-inner">
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1495,7 +1724,7 @@ export default function PrintBlueprint({
                 </div>
 
                 {/* CONCEPTUAL SHEET 3: Conceptual Lot & Block Analysis */}
-                <div className="blueprint-sheet page-break">
+                <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''}`}>
                   <div className="blueprint-border-outer">
                     <div className="blueprint-border-inner">
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

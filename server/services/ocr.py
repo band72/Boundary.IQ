@@ -9,8 +9,8 @@ def main():
     image_path = sys.argv[1]
     
     try:
-        # Initialize English reader (gpu=True automatically uses CUDA if available, fallback to CPU)
-        reader = easyocr.Reader(['en'], gpu=True)
+        # Initialize English reader (gpu=False runs on CPU to prevent CUDA OOM when running gemma4:26b)
+        reader = easyocr.Reader(['en'], gpu=False)
         
         # Read text details=0 returns only the raw text strings
         results = reader.readtext(image_path, detail=0)
