@@ -23,7 +23,7 @@ async function main() {
   const errors = db.prepare(`
     SELECT DISTINCT RepairStageUsed, count(*) as count
     FROM DeedLogs
-    WHERE Status = 'ERROR'
+    WHERE Status = 'FAIL'
     GROUP BY RepairStageUsed
   `).all();
 
