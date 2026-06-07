@@ -116,6 +116,14 @@ export function saveBatchRun(batchId, totalFiles, passRate) {
 }
 
 export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
+  let finalRefPointName = referencePointName;
+  if (!finalRefPointName && extractionJson) {
+    try {
+      const parsed = JSON.parse(extractionJson);
+      finalRefPointName = parsed.ReferencePointName || parsed.referencePointName || null;
+    } catch {}
+  }
+
   db.prepare(`
     INSERT INTO DeedLogs (
       BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
@@ -125,11 +133,19 @@ export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearE
   `).run(
     batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, now(),
     extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
-    referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
+    finalRefPointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
   );
 }
 
 export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
+  let finalRefPointName = referencePointName;
+  if (!finalRefPointName && extractionJson) {
+    try {
+      const parsed = JSON.parse(extractionJson);
+      finalRefPointName = parsed.ReferencePointName || parsed.referencePointName || null;
+    } catch {}
+  }
+
   const row = db.prepare("SELECT Id, BatchId FROM DeedLogs WHERE FileName = ? ORDER BY Timestamp DESC LIMIT 1").get(fileName);
   const batchId = row ? row.BatchId : 'CORRECTED';
   
@@ -141,7 +157,7 @@ export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed,
       WHERE Id = ?
     `).run(
       status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson, now(),
-      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash, row.Id
+      finalRefPointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash, row.Id
     );
     return row.Id;
   } else {
@@ -154,7 +170,7 @@ export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed,
     `).run(
       batchId, fileName, parcelName || 'Manual Corrected', 0, 0, 0, status, repairStageUsed, now(),
       extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
-      referencePointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
+      finalRefPointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
     );
     return result.lastInsertRowid;
   }

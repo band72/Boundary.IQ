@@ -53,7 +53,33 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
     }
 
     // 2. OCR / Original text file
-    const rawOCR = result.extraction?.rawText || result.originalExtraction?.rawText || result.rawText || '';
+    let rawOCR = result.extraction?.originalLegalDesc ||
+                 result.originalExtraction?.originalLegalDesc ||
+                 result.extraction?.originalLegalDescription ||
+                 result.originalExtraction?.originalLegalDescription ||
+                 null;
+
+    if (!rawOCR) {
+      try {
+        const sourceFolder = path.dirname(outputFolder);
+        const txtSource = path.join(sourceFolder, '_extracted', `${baseName}.txt`);
+        if (fs.existsSync(txtSource)) {
+          const txtContent = fs.readFileSync(txtSource, 'utf-8');
+          if (txtContent && txtContent.trim().length >= 80) {
+            rawOCR = txtContent.trim();
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to read rawOCR from cache file:', err.message);
+      }
+    }
+
+    if (!rawOCR) {
+      rawOCR = result.extraction?.rawText ||
+               result.originalExtraction?.rawText ||
+               result.rawText || '';
+    }
+
     const ocrFile = shortFileNames ? 'OCR.txt' : `${baseName}_ocr.txt`;
     if (rawOCR) {
       fs.writeFileSync(path.join(targetFolder, ocrFile), rawOCR);
@@ -197,8 +223,31 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
         };
         const closure          = result.traverse?.closure          || null;
         const legalDesc        = writeResult?.legalDescription     || null;
-        const origLegalDesc    = result.originalExtraction?.legalDescription ||
-                                 result.legalDescription?.legalDescription   || legalDesc;
+        let origLegalDesc      = result.originalExtraction?.originalLegalDesc ||
+                                 result.originalExtraction?.originalLegalDescription ||
+                                 result.extraction?.originalLegalDesc ||
+                                 result.extraction?.originalLegalDescription ||
+                                 null;
+
+        if (!origLegalDesc) {
+          try {
+            const sourceFolder = path.dirname(outputFolder);
+            const txtSource = path.join(sourceFolder, '_extracted', `${baseName}.txt`);
+            if (fs.existsSync(txtSource)) {
+              const txtContent = fs.readFileSync(txtSource, 'utf-8');
+              if (txtContent && txtContent.trim().length >= 80) {
+                origLegalDesc = txtContent.trim();
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to read origLegalDesc from cache file:', err.message);
+          }
+        }
+
+        if (!origLegalDesc) {
+          origLegalDesc = result.originalExtraction?.legalDescription ||
+                          result.legalDescription?.legalDescription   || legalDesc;
+        }
         const origCourses      = result.originalExtraction?.courses          || null;
 
         const pages = sketch.renderSketchPages(

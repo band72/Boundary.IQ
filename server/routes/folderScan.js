@@ -422,6 +422,74 @@ function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, li
   );
 }
 
+// Consolidate reference point and commencement segments for all deeds in the project directory
+async function updateProjectReferences(folderPath, newResults) {
+  const filePath = path.join(folderPath, 'project_references.json');
+  let data = {
+    projectPath: folderPath,
+    lastUpdated: new Date().toISOString(),
+    references: []
+  };
+
+  if (fs.existsSync(filePath)) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      if (content.trim()) {
+        data = JSON.parse(content);
+        data.lastUpdated = new Date().toISOString();
+        if (!Array.isArray(data.references)) {
+          data.references = [];
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to read/parse project_references.json at ${filePath}:`, err.message);
+    }
+  }
+
+  for (const r of newResults) {
+    if (!r) continue;
+
+    const extractRefInfo = (fileName, extObj) => {
+      const refName = extObj?.ReferencePointName || extObj?.referencePointName || null;
+      const commSegs = extObj?.CommencementSegments || extObj?.commencementSegments || [];
+      if (refName || (commSegs && commSegs.length > 0)) {
+        // Remove existing entry for same fileName to avoid duplicates
+        data.references = data.references.filter(entry => entry.fileName !== fileName);
+        data.references.push({
+          fileName,
+          referencePointName: refName,
+          commencementSegments: commSegs
+        });
+      }
+    };
+
+    if (r.isMultiParcel && r.parcels) {
+      for (const pr of r.parcels) {
+        const ext = pr.extraction;
+        const refName = ext?.ReferencePointName || ext?.referencePointName || null;
+        const commSegs = ext?.CommencementSegments || ext?.commencementSegments || [];
+        if (refName || (commSegs && commSegs.length > 0)) {
+          data.references = data.references.filter(entry => entry.fileName !== pr.fileName);
+          data.references.push({
+            fileName: pr.fileName,
+            referencePointName: refName,
+            commencementSegments: commSegs
+          });
+        }
+      }
+    } else {
+      extractRefInfo(r.fileName, r.extraction);
+    }
+  }
+
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`Saved consolidated project references to ${filePath}`);
+  } catch (err) {
+    console.warn(`Failed to write project_references.json at ${filePath}:`, err.message);
+  }
+}
+
 // GET /api/folderscan/download-batch-zip
 router.get('/download-batch-zip', async (req, res) => {
   try {
@@ -855,7 +923,7 @@ router.post('/process-batch', async (req, res) => {
           }
         }
 
-        if (!geminiVision.hasBoundaryKeywords(rawDocText || '')) {
+        if (rawDocText && rawDocText.trim().length >= 80 && !geminiVision.hasBoundaryKeywords(rawDocText)) {
           console.log(`FolderScan batch: ${fileName} — SKIPPED (non-traversable: no boundary keywords in document text)`);
           const extraction = { courses: [], classification: 'LOT_BLOCK', rawText: rawDocText || '' };
           results[index] = {
@@ -873,6 +941,17 @@ router.post('/process-batch', async (req, res) => {
         const extraction = repairResult.finalExtraction;
         if (extraction && !extraction.rawText) {
           extraction.rawText = rawDocText || '';
+        }
+        const originalLegalDesc = extraction.originalLegalDesc || repairResult.originalExtraction?.originalLegalDesc || null;
+        if (originalLegalDesc) {
+          try {
+            const base = path.parse(fileName).name;
+            const extractedTxtPath = path.join(validPath, '_extracted', base + '.txt');
+            fs.writeFileSync(extractedTxtPath, originalLegalDesc, 'utf-8');
+            console.log(`Updated cache file ${extractedTxtPath} with isolated original deed text.`);
+          } catch (err) {
+            console.warn(`Failed to update extracted cache file:`, err.message);
+          }
         }
         const traverse = repairResult.finalTraverse;
         const status = repairResult.status;
@@ -1003,6 +1082,12 @@ router.post('/process-batch', async (req, res) => {
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 
+    try {
+      await updateProjectReferences(validPath, results);
+    } catch (refErr) {
+      console.warn('Failed to update project references:', refErr.message);
+    }
+
     if (keepAlive) clearInterval(keepAlive);
     const payload = { batchId, batchIndex, totalBatches, filesInBatch: batch.length, outputFolder, results: { results, totalProcessed: results.length, succeeded, failed: results.length - succeeded } };
     res.write(JSON.stringify(payload));
@@ -1030,6 +1115,19 @@ router.post('/process-file', async (req, res) => {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
     if (!fs.existsSync(validPath)) return res.status(404).json({ error: `Directory not found: ${validPath}` });
+
+    const sendResponse = async (status, result) => {
+      try {
+        if (result && validPath) {
+          await updateProjectReferences(validPath, [result]);
+        }
+      } catch (refErr) {
+        console.warn('Failed to update project references in process-file:', refErr.message);
+      }
+      if (keepAlive) clearInterval(keepAlive);
+      res.write(JSON.stringify({ status, result }));
+      res.end();
+    };
 
     const fileName = req.query.file;
     if (!fileName) return res.status(400).json({ error: 'file query parameter is required.' });
@@ -1147,9 +1245,7 @@ router.post('/process-file', async (req, res) => {
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
-      if (keepAlive) clearInterval(keepAlive);
-      res.write(JSON.stringify({ status: 'success', result }));
-      res.end();
+      await sendResponse('success', result);
       return;
     }
 
@@ -1188,9 +1284,7 @@ router.post('/process-file', async (req, res) => {
           parsePrecisionRatio(precRatio), solvedCase.status || 'PASS', 'Stage 5: SQLite Case Finder Solved',
           solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
 
-        if (keepAlive) clearInterval(keepAlive);
-        res.write(JSON.stringify({ status: 'success', result }));
-        res.end();
+        await sendResponse('success', result);
         return;
       }
 
@@ -1211,9 +1305,7 @@ router.post('/process-file', async (req, res) => {
         };
         saveDeedLogWrapper(req, batchId, fileName, skippedCase.parcelName || `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, fileHash);
 
-        if (keepAlive) clearInterval(keepAlive);
-        res.write(JSON.stringify({ status: 'success', result }));
-        res.end();
+        await sendResponse('success', result);
         return;
       }
     }
@@ -1436,9 +1528,7 @@ router.post('/process-file', async (req, res) => {
           } catch (ex) { console.warn('Auto-output failed:', ex.message); }
         }
 
-        if (keepAlive) clearInterval(keepAlive);
-        res.write(JSON.stringify({ status: 'success', result }));
-        res.end();
+        await sendResponse('success', result);
         return;
       }
     }
@@ -1483,15 +1573,13 @@ router.post('/process-file', async (req, res) => {
             } catch (ex) { console.warn('Auto-output failed:', ex.message); }
           }
 
-          if (keepAlive) clearInterval(keepAlive);
-          res.write(JSON.stringify({ status: 'success', result }));
-          res.end();
+          await sendResponse('success', result);
           return;
         }
       }
     }
 
-    if (!geminiVision.hasBoundaryKeywords(rawDocText || '')) {
+    if (rawDocText && rawDocText.trim().length >= 80 && !geminiVision.hasBoundaryKeywords(rawDocText)) {
       console.log(`FolderScan: ${fileName} — SKIPPED (non-traversable: no boundary keywords in document text)`);
       const extraction = { courses: [], classification: 'LOT_BLOCK', rawText: rawDocText || '' };
       const result = {
@@ -1512,9 +1600,7 @@ router.post('/process-file', async (req, res) => {
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
-      if (keepAlive) clearInterval(keepAlive);
-      res.write(JSON.stringify({ status: 'success', result }));
-      res.end();
+      await sendResponse('success', result);
       return;
     }
 
@@ -1523,6 +1609,17 @@ router.post('/process-file', async (req, res) => {
     const extraction = repairResult.finalExtraction;
     if (extraction && !extraction.rawText) {
       extraction.rawText = rawDocText || '';
+    }
+    const originalLegalDesc = extraction.originalLegalDesc || repairResult.originalExtraction?.originalLegalDesc || null;
+    if (originalLegalDesc) {
+      try {
+        const base = path.parse(fileName).name;
+        const extractedTxtPath = path.join(validPath, '_extracted', base + '.txt');
+        fs.writeFileSync(extractedTxtPath, originalLegalDesc, 'utf-8');
+        console.log(`Updated cache file ${extractedTxtPath} with isolated original deed text.`);
+      } catch (err) {
+        console.warn(`Failed to update extracted cache file:`, err.message);
+      }
     }
     const traverse = repairResult.finalTraverse;
     const status = repairResult.status;
@@ -1563,9 +1660,7 @@ router.post('/process-file', async (req, res) => {
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
-      if (keepAlive) clearInterval(keepAlive);
-      res.write(JSON.stringify({ status: 'skipped', result }));
-      res.end();
+      await sendResponse('skipped', result);
       return;
     }
 
@@ -1595,9 +1690,7 @@ router.post('/process-file', async (req, res) => {
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 
-    if (keepAlive) clearInterval(keepAlive);
-    res.write(JSON.stringify({ status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error', result }));
-    res.end();
+    await sendResponse((status === 'PASS' || status === 'MEANDER') ? 'success' : 'error', result);
   } catch (ex) {
     if (keepAlive) clearInterval(keepAlive);
     console.error(`FolderScan item failed: ${req.query.file}`, ex.message);

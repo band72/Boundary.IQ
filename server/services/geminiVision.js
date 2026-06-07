@@ -669,7 +669,7 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
 
   console.log(`${activeProvider} raw extraction:`, rawText.substring(0, 200) + '...');
 
-  let { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis } = parseStructuredResponse(rawText);
+  let { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis, referencePointName, commencementSegments, originalLegalDesc } = parseStructuredResponse(rawText);
 
   // Fallback: if LOT_BLOCK or courses is empty, and conceptualAnalysis is missing, run the targeted fallback LLM parser
   if ((classification === 'LOT_BLOCK' || courses.length === 0) && !conceptualAnalysis) {
@@ -703,7 +703,10 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
     preambleFound,
     isOpenEnded: !!isOpenEnded,
     mentalMapSummary: mentalMapSummary || null,
-    conceptualAnalysis: conceptualAnalysis || null
+    conceptualAnalysis: conceptualAnalysis || null,
+    referencePointName: referencePointName || null,
+    commencementSegments: commencementSegments || [],
+    originalLegalDesc: originalLegalDesc || null
   };
 }
 
@@ -735,11 +738,12 @@ Return ONLY the corrected JSON object (same schema as original extraction).`;
   const rawText = await extractRaw(buffer, mimeType, repairPrompt);
 
   console.log('Stage 3 Repair raw output:', rawText.substring(0, 200) + '...');
-  const { courses, classification, preambleFound, isOpenEnded, cleanJson } = parseStructuredResponse(rawText);
+  const { courses, classification, preambleFound, isOpenEnded, cleanJson, originalLegalDesc } = parseStructuredResponse(rawText);
   return {
     rawJson: cleanJson, courses,
     message: `Stage 3 AI Repair (${activeProvider}/${activeModel}): ${courses.length} courses. Classification: ${classification}.`,
     classification, preambleFound, isOpenEnded: !!isOpenEnded,
+    originalLegalDesc: originalLegalDesc || badExtraction.originalLegalDesc || null
   };
 }
 
@@ -869,7 +873,16 @@ export function parseFromTextFallback(text) {
     }
   }
 
-  return courses.length >= 2 ? { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson: text, mentalMapSummary: null } : null;
+  return courses.length >= 2 ? {
+    courses,
+    classification: 'METES_BOUNDS',
+    preambleFound: false,
+    isOpenEnded: false,
+    cleanJson: text,
+    mentalMapSummary: null,
+    referencePointName: null,
+    commencementSegments: []
+  } : null;
 }
 function cleanInvalidJsonValues(jsonStr) {
   const lines = jsonStr.split(/\r?\n/);
@@ -906,9 +919,14 @@ function cleanInvalidJsonValues(jsonStr) {
     // Check if it's a valid JSON constant or number
     const isConstant = ['true', 'false', 'null', 'undefined'].includes(val);
     const isNumber = /^-?\d+\.?\d*(?:[eE][-+]?\d+)?$/.test(val);
+    let finalVal = val;
+
+    if (isNumber) {
+      finalVal = val.replace(/^(-?)0+(?=\d)/, '$1');
+    }
 
     if (isConstant || isNumber) {
-      return `${indent}"${key}": ${val}${comma}`;
+      return `${indent}"${key}": ${finalVal}${comma}`;
     }
 
     // Escape any unescaped double quotes in the value, then wrap in double quotes
@@ -1134,10 +1152,15 @@ function getStructureFromRoot(root, cleanJson) {
       }
     }
 
+    const referencePointName = root.ReferencePointName || root.referencePointName || null;
+    const rawCommSegments = root.CommencementSegments || root.commencementSegments || [];
+    const commencementSegments = Array.isArray(rawCommSegments) ? parseSegmentArray(rawCommSegments) : [];
+
     const classification = root.Classification || root.classification || 'LOT_BLOCK';
     const preambleFound = root.PreambleFound === true || root.preambleFound === true;
     const mentalMapSummary = root.MentalMapSummary || root.mentalMapSummary || null;
     const conceptualAnalysis = root.ConceptualAnalysis || root.conceptualAnalysis || null;
+    const originalLegalDesc = root.OriginalLegalDescription || root.originalLegalDescription || root.originalDeedText || root.OriginalDeedText || null;
     let courses = segments ? parseSegmentArray(segments) : [];
 
     if (isPlaceholderHallucination(courses)) {
@@ -1145,7 +1168,7 @@ function getStructureFromRoot(root, cleanJson) {
       courses = [];
     }
 
-    return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis };
+    return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis, referencePointName, commencementSegments, originalLegalDesc };
   }
 
   // Legacy flat array
@@ -1159,7 +1182,7 @@ function getStructureFromRoot(root, cleanJson) {
         console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN AI EXTRACTION! Clearing courses.');
         courses = [];
       }
-      return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null, conceptualAnalysis: null };
+      return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null, conceptualAnalysis: null, originalLegalDesc: null };
     }
 
     let courses = parseSegmentArray(root);
@@ -1169,7 +1192,7 @@ function getStructureFromRoot(root, cleanJson) {
       courses = [];
     }
 
-    return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null, conceptualAnalysis: null };
+    return { courses, classification: 'METES_BOUNDS', preambleFound: false, isOpenEnded: false, cleanJson, mentalMapSummary: null, conceptualAnalysis: null, originalLegalDesc: null };
   }
 
   throw new Error('Response root is neither an object with Segments nor an array.');
@@ -1339,8 +1362,11 @@ RULE 7 — DECOY ELIMINATION:
   Before generating JSON, physically count boundary lines and state each quadrant direction
   to avoid transcribing decoy tables from adjacent lots.
 
-RULE 7b — COMMENCEMENT RUNS ELIMINATION:
-  IGNORE any "THENCE" clauses or course descriptions that occur BEFORE the actual "POINT OF BEGINNING" or "TO THE POINT OF BEGINNING" (these are commencement or reference runs leading TO the POB, not boundary lines). Only extract courses that describe the actual property boundary starting FROM the Point of Beginning.
+RULE 7b — COMMENCEMENT RUNS & REFERENCES:
+  IDENTIFY the Point of Reference (POR) (e.g., the section corner, subdivision corner, or benchmark mentioned in the text) and any commencement/reference runs leading from that Reference Point (POR) to the Point of Beginning (POB).
+  - Populate the "ReferencePointName" field with the name or description of the Point of Reference (e.g. "the Southeast corner of Section 12"). If none is mentioned, set it to null.
+  - Extract any commencement courses (bearings + distances) leading from the Reference Point (POR) to the Point of Beginning (POB) and populate them in the "CommencementSegments" array.
+  - Do NOT include these commencement courses in the main "Segments" array. The main "Segments" array MUST only contain the property boundary courses starting FROM the Point of Beginning (POB) to keep the closure calculation correct.
   TIP: If a boundary course refers to a bearing from a commencement run (e.g. "continue the aforementioned bearing" or "along said Westerly boundary line"), resolve and extract that bearing for the boundary course, even though the commencement run itself is ignored in the JSON Segments list.
 
 RULE 8 — STRICT JSON FORMATTING:
@@ -1397,6 +1423,7 @@ Return ONLY a valid JSON object in this EXACT format. No markdown fences, no exp
   "PreambleFound": false,
   "IsOpenEnded": false,
   "MentalMapSummary": "8 segments: East side runs NW, North side runs SW...",
+  "OriginalLegalDescription": "The exact original, uncorrected legal description text isolated from the document (excluding title commitment headers, page numbers, and unrelated boilerplate, but keeping the exact metes-and-bounds text word-for-word).",
   "Segments": [
     {
       "Type": "Line",
@@ -1426,6 +1453,15 @@ Return ONLY a valid JSON object in this EXACT format. No markdown fences, no exp
       "ArcLength": 43.02,
       "ChordBearing": "N51°15'30\\"E",
       "ChordDistance": 42.88,
+      "IsUnknown": false
+    }
+  ],
+  "ReferencePointName": "Southeast corner of Section 12",
+  "CommencementSegments": [
+    {
+      "Type": "Line",
+      "Bearing": "N00°02'10\\"W",
+      "Distance": 330.15,
       "IsUnknown": false
     }
   ],

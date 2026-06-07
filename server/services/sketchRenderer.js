@@ -221,6 +221,76 @@ function drawTitleBlock(ctx, x, y, w, h, meta, pageN, pageTotal) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SHARED: Helper functions to compute intermediate curve coordinates
+// ─────────────────────────────────────────────────────────────────────────────
+function getCurvePoints(p1, p2, course, steps = 20) {
+  const R = parseFloat(course.radius);
+  if (!R || isNaN(R)) return [p1, p2];
+
+  const dx = p2.easting - p1.easting;
+  const dy = p2.northing - p1.northing;
+  const chord = Math.hypot(dx, dy);
+  if (chord < 0.01) return [p1, p2];
+
+  const rSq = R * R;
+  const halfChordSq = (chord / 2) * (chord / 2);
+  if (rSq < halfChordSq) return [p1, p2];
+  const h = Math.sqrt(rSq - halfChordSq);
+
+  const mx = (p1.easting + p2.easting) / 2;
+  const my = (p1.northing + p2.northing) / 2;
+
+  const ux = -dy / chord;
+  const uy = dx / chord;
+
+  const isLeft = (course.curveDirection || '').toLowerCase() === 'left';
+  const cx = isLeft ? mx + h * ux : mx - h * ux;
+  const cy = isLeft ? my + h * uy : my - h * uy;
+
+  const a1 = Math.atan2(p1.northing - cy, p1.easting - cx);
+  const a2 = Math.atan2(p2.northing - cy, p2.easting - cx);
+
+  let diff = a2 - a1;
+  if (isLeft) {
+    if (diff < 0) diff += 2 * Math.PI;
+  } else {
+    if (diff > 0) diff -= 2 * Math.PI;
+  }
+
+  const pts = [];
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const angle = a1 + diff * t;
+    pts.push({
+      easting: cx + R * Math.cos(angle),
+      northing: cy + R * Math.sin(angle)
+    });
+  }
+  return pts;
+}
+
+function getDensePoints(pts, coursesList) {
+  if (!pts || pts.length === 0) return pts;
+  if (!coursesList || coursesList.length === 0) return pts;
+  const dense = [];
+  dense.push(pts[0]);
+  for (let i = 0; i < coursesList.length; i++) {
+    const p1 = pts[i];
+    const p2 = pts[i + 1] || pts[0];
+    const c = coursesList[i];
+    if (p1 && p2 && c && c.type?.toLowerCase() === 'curve') {
+      const curvePts = getCurvePoints(p1, p2, c, 20);
+      for (let j = 1; j < curvePts.length; j++) {
+        dense.push(curvePts[j]);
+      }
+    } else if (p2) {
+      dense.push(p2);
+    }
+  }
+  return dense;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SHARED: draw the boundary geometry onto a canvas region
 // region: { x, y, w, h } — pixel region available for the map drawing
 // ─────────────────────────────────────────────────────────────────────────────
@@ -369,28 +439,31 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
     }
   });
 
+  const drawPts = adjPts.length >= 2 ? adjPts : rawPts;
+  const denseRawPts = getDensePoints(rawPts, courses);
+  const denseDrawPts = getDensePoints(drawPts, courses);
+
   // Raw traverse (red dashed)
-  if (showRaw && rawPts.length >= 2) {
+  if (showRaw && denseRawPts.length >= 2) {
     ctx.beginPath();
     ctx.strokeStyle = C_RAW;
     ctx.lineWidth   = 1.25;
     ctx.setLineDash([4, 4]);
-    ctx.moveTo(tx(rawPts[0].easting), ty(rawPts[0].northing));
-    for (let i = 1; i < rawPts.length; i++) {
-      ctx.lineTo(tx(rawPts[i].easting), ty(rawPts[i].northing));
+    ctx.moveTo(tx(denseRawPts[0].easting), ty(denseRawPts[0].northing));
+    for (let i = 1; i < denseRawPts.length; i++) {
+      ctx.lineTo(tx(denseRawPts[i].easting), ty(denseRawPts[i].northing));
     }
     ctx.stroke();
     ctx.setLineDash([]);
   }
 
   // Adjusted boundary fill + stroke  (or uncorrected dashed)
-  const drawPts = adjPts.length >= 2 ? adjPts : rawPts;
-  if (drawPts.length >= 2) {
+  if (denseDrawPts.length >= 2) {
     // Fill
     ctx.beginPath();
-    ctx.moveTo(tx(drawPts[0].easting), ty(drawPts[0].northing));
-    for (let i = 1; i < drawPts.length; i++) {
-      ctx.lineTo(tx(drawPts[i].easting), ty(drawPts[i].northing));
+    ctx.moveTo(tx(denseDrawPts[0].easting), ty(denseDrawPts[0].northing));
+    for (let i = 1; i < denseDrawPts.length; i++) {
+      ctx.lineTo(tx(denseDrawPts[i].easting), ty(denseDrawPts[i].northing));
     }
     ctx.closePath();
     ctx.fillStyle = C_FILL;
@@ -401,9 +474,9 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
     ctx.strokeStyle = C_BLACK;
     ctx.lineWidth   = 2.0;
     if (uncorrected) ctx.setLineDash([8, 6]);
-    ctx.moveTo(tx(drawPts[0].easting), ty(drawPts[0].northing));
-    for (let i = 1; i < drawPts.length; i++) {
-      ctx.lineTo(tx(drawPts[i].easting), ty(drawPts[i].northing));
+    ctx.moveTo(tx(denseDrawPts[0].easting), ty(denseDrawPts[0].northing));
+    for (let i = 1; i < denseDrawPts.length; i++) {
+      ctx.lineTo(tx(denseDrawPts[i].easting), ty(denseDrawPts[i].northing));
     }
     ctx.closePath();
     ctx.stroke();
@@ -932,7 +1005,7 @@ function renderPage2(legalDescription, meta) {
   const bodyY = titleY + titleBarH + 4;
   const bodyH = H - bodyY - FOOTER_H - 8;
 
-  drawLegalDescBox(ctx, MARGIN, bodyY, W - MARGIN * 2, bodyH, legalDescription, 'RECORD DESCRIPTION');
+  drawLegalDescBox(ctx, MARGIN, bodyY, W - MARGIN * 2, bodyH, legalDescription, 'CORRECTED RECORD DESCRIPTION');
 
   // Footer
   const footerY = bodyY + bodyH + 6;

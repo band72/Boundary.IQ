@@ -102,11 +102,44 @@ export function compute(req) {
 }
 
 // ── Curve computation ─────────────────────────────────────────────────────────
+export function parseDmsToDecimal(dms) {
+  if (dms == null) return 0;
+  if (typeof dms === 'number') {
+    // Treat as packed DMS (e.g. 93.6200)
+    const d = Math.floor(Math.abs(dms));
+    const rem = (Math.abs(dms) - d) * 100;
+    const m = Math.floor(rem);
+    const s = (rem - m) * 100;
+    return (d + m / 60.0 + s / 3600.0) * (dms < 0 ? -1 : 1);
+  }
+
+  const clean = dms.toString().trim();
+  // Match degrees, minutes, seconds
+  const match = clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”“']{0,2}$/)
+    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/)
+    || clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/);
+
+  if (match) {
+    const deg = parseFloat(match[1]);
+    const min = match[2] ? parseFloat(match[2]) : 0;
+    const sec = match[3] ? parseFloat(match[3]) : 0;
+    const sign = deg < 0 ? -1 : 1;
+    return (Math.abs(deg) + min / 60.0 + sec / 3600.0) * sign;
+  }
+
+  // Fallback: try parsing as simple float
+  const val = parseFloat(clean);
+  if (!isNaN(val)) return val;
+  return 0;
+}
+
 function computeCurve(c, perim, uf, prevAzimuthDeg) {
+  const deltaDeg = parseDmsToDecimal(c.delta);
+
   // Arc length: prefer given, else compute from R × Δ
   let arcLen = c.arcLength;
   if (arcLen == null && c.radius && c.delta) {
-    const deltaRad = dmsToRad(c.delta);
+    const deltaRad = deltaDeg * Math.PI / 180.0;
     arcLen = c.radius * deltaRad;
   }
   if (arcLen == null) arcLen = 0;
@@ -118,24 +151,24 @@ function computeCurve(c, perim, uf, prevAzimuthDeg) {
     const dist = c.chordDistance * uf;
     const dn = dist * Math.cos(azimuthRad);
     const de = dist * Math.sin(azimuthRad);
-    const label = `Curve R=${(c.radius || 0).toFixed(2)} Δ=${(c.delta || 0).toFixed(4)}`;
+    const label = `Curve R=${(c.radius || 0).toFixed(2)} Δ=${deltaDeg.toFixed(4)}°`;
     return { dn, de, perimeter: perim, label };
   }
 
   // Fix #7: Synthesize chord bearing from incoming azimuth + delta/2 (deflection angle formula)
   if (c.radius != null && c.delta != null && prevAzimuthDeg != null) {
-    const halfDelta = c.delta / 2.0;
+    const halfDelta = deltaDeg / 2.0;
     const deflectionSign = (c.curveDirection || '').toLowerCase() === 'left' ? -1 : 1;
     const synthAzDeg = (prevAzimuthDeg + deflectionSign * halfDelta + 360) % 360;
     const synthAzRad = synthAzDeg * Math.PI / 180.0;
 
     // Chord distance from chord = 2R * sin(Δ/2)
-    const deltaRad = dmsToRad(c.delta);
+    const deltaRad = deltaDeg * Math.PI / 180.0;
     const chordDist = 2.0 * c.radius * Math.sin(deltaRad / 2.0) * uf;
 
     const dn = chordDist * Math.cos(synthAzRad);
     const de = chordDist * Math.sin(synthAzRad);
-    const label = `Curve R=${(c.radius).toFixed(2)} Δ=${(c.delta).toFixed(4)} [CHORD-SYNTH]`;
+    const label = `Curve R=${(c.radius).toFixed(2)} Δ=${deltaDeg.toFixed(4)}° [CHORD-SYNTH]`;
     console.log(`Curve chord synthesized: bearing=${bp.toDisplayString(synthAzDeg)} dist=${chordDist.toFixed(3)}'`);
     return { dn, de, perimeter: perim, label };
   }
@@ -145,11 +178,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg) {
 
 /** Convert packed DMS value to radians. */
 function dmsToRad(dms) {
-  const d = Math.floor(Math.abs(dms));
-  const rem = (Math.abs(dms) - d) * 100;
-  const m = Math.floor(rem);
-  const s = (rem - m) * 100;
-  const deg = d + m / 60.0 + s / 3600.0;
+  const deg = parseDmsToDecimal(dms);
   return deg * Math.PI / 180.0;
 }
 

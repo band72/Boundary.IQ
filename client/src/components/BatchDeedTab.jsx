@@ -2924,7 +2924,7 @@ export default function BatchDeedTab() {
               pob={{ northing: parseFloat(activePobN), easting: parseFloat(activePobE) }}
               initialLegalDescription={r.legalDescription?.legalDescription || r.extraction?.legalDesc || r.extraction?.legalDescription || ''}
               originalCourses={r.originalExtraction?.courses || null}
-              originalLegalDescription={''}
+              originalLegalDescription={r.originalExtraction?.originalLegalDesc || r.originalExtraction?.originalLegalDescription || r.extraction?.originalLegalDesc || r.extraction?.originalLegalDescription || ''}
               closure={r.traverse?.closure}
               conceptualAnalysis={r.conceptualAnalysis || r.extraction?.conceptualAnalysis || null}
               onClose={() => setShowPrint(false)}

@@ -53,6 +53,74 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
   return pts;
 }
 
+// Helper functions to compute intermediate curve coordinates
+function getCurvePoints(p1, p2, course, steps = 20) {
+  const R = parseFloat(course.radius || course.Radius);
+  if (!R || isNaN(R)) return [p1, p2];
+
+  const dx = p2.easting - p1.easting;
+  const dy = p2.northing - p1.northing;
+  const chord = Math.hypot(dx, dy);
+  if (chord < 0.01) return [p1, p2];
+
+  const rSq = R * R;
+  const halfChordSq = (chord / 2) * (chord / 2);
+  if (rSq < halfChordSq) return [p1, p2];
+  const h = Math.sqrt(rSq - halfChordSq);
+
+  const mx = (p1.easting + p2.easting) / 2;
+  const my = (p1.northing + p2.northing) / 2;
+
+  const ux = -dy / chord;
+  const uy = dx / chord;
+
+  const isLeft = (course.curveDirection || course.CurveDirection || '').toLowerCase() === 'left';
+  const cx = isLeft ? mx + h * ux : mx - h * ux;
+  const cy = isLeft ? my + h * uy : my - h * uy;
+
+  const a1 = Math.atan2(p1.northing - cy, p1.easting - cx);
+  const a2 = Math.atan2(p2.northing - cy, p2.easting - cx);
+
+  let diff = a2 - a1;
+  if (isLeft) {
+    if (diff < 0) diff += 2 * Math.PI;
+  } else {
+    if (diff > 0) diff -= 2 * Math.PI;
+  }
+
+  const pts = [];
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const angle = a1 + diff * t;
+    pts.push({
+      easting: cx + R * Math.cos(angle),
+      northing: cy + R * Math.sin(angle)
+    });
+  }
+  return pts;
+}
+
+function getDensePoints(pts, coursesList) {
+  if (!pts || pts.length === 0) return pts;
+  if (!coursesList || coursesList.length === 0) return pts;
+  const dense = [];
+  dense.push(pts[0]);
+  for (let i = 0; i < coursesList.length; i++) {
+    const p1 = pts[i];
+    const p2 = pts[i + 1] || pts[0];
+    const c = coursesList[i];
+    if (p1 && p2 && c && (c.type?.toLowerCase() === 'curve' || c.Type?.toLowerCase() === 'curve')) {
+      const curvePts = getCurvePoints(p1, p2, c, 20);
+      for (let j = 1; j < curvePts.length; j++) {
+        dense.push(curvePts[j]);
+      }
+    } else if (p2) {
+      dense.push(p2);
+    }
+  }
+  return dense;
+}
+
 export default function TraverseMap({ stations, adjusted, courses }) {
   const [canvasElement, setCanvasElement] = useState(null);
   
@@ -97,10 +165,12 @@ export default function TraverseMap({ stations, adjusted, courses }) {
       ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
     }
 
+    const densePts = getDensePoints(pts, courses);
+
     // Fill polygon interior
     ctx.beginPath();
-    ctx.moveTo(tx(pts[0].easting), ty(pts[0].northing));
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(tx(pts[i].easting), ty(pts[i].northing));
+    ctx.moveTo(tx(densePts[0].easting), ty(densePts[0].northing));
+    for (let i = 1; i < densePts.length; i++) ctx.lineTo(tx(densePts[i].easting), ty(densePts[i].northing));
     ctx.closePath();
     ctx.fillStyle = 'rgba(61,127,255,0.06)';
     ctx.fill();
@@ -109,8 +179,8 @@ export default function TraverseMap({ stations, adjusted, courses }) {
     ctx.beginPath();
     ctx.strokeStyle = '#3d7fff';
     ctx.lineWidth = 2.5;
-    ctx.moveTo(tx(pts[0].easting), ty(pts[0].northing));
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(tx(pts[i].easting), ty(pts[i].northing));
+    ctx.moveTo(tx(densePts[0].easting), ty(densePts[0].northing));
+    for (let i = 1; i < densePts.length; i++) ctx.lineTo(tx(densePts[i].easting), ty(densePts[i].northing));
     ctx.closePath();
     ctx.stroke();
 

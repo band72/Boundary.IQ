@@ -31,23 +31,42 @@ function buildExtractionPrompt(deedText) {
   return `You are a legal description parser. Extract boundary courses from the deed text below.
 
 RULES:
-1. Find every "THENCE" clause and extract its bearing and distance.
-2. For each course, output exactly: Type, Bearing, Distance.
-3. If a bearing is missing, blank, or unclear (like "N/West" or "??"), set Bearing to null and IsUnknown to true.
-4. If a distance is 0.00, missing, or unclear, set Distance to null and IsUnknown to true.
-5. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
-6. Bearings format: "N45°22'10\\"E" — keep the exact degree/minute/second format from the text.
-7. Distances are decimal feet (or meters if stated).
-8. IGNORE any "THENCE" clauses that occur BEFORE the phrase "POINT OF BEGINNING" or "TO THE POINT OF BEGINNING" (these are commencement or reference runs leading TO the POB, not boundary lines). Only extract courses that describe the actual property boundary starting FROM the Point of Beginning.
-9. Output ONLY a JSON object. No explanation, no markdown.
-10. Under no circumstances should you ever return the placeholder segments from the example output format below. If you cannot find any valid metes-and-bounds traverse courses in the deed text, return an empty segments list "Segments": [].
+1. Find every "THENCE" clause and extract its bearing and distance (or curve properties).
+2. For each course, output exactly: Type (either "Line" or "Curve"), and its respective properties.
+3. For Line courses, specify: Type, Bearing, Distance.
+4. For Curve courses, specify: Type, Radius, Delta (central angle), ArcLength, CurveDirection (e.g., "Left" or "Right"), ChordBearing, ChordDistance.
+5. If a bearing is missing, blank, or unclear (like "N/West" or "??"), set Bearing (or ChordBearing) to null and IsUnknown to true.
+6. If a distance (or chord distance) is 0.00, missing, or unclear, set Distance (or ChordDistance) to null and IsUnknown to true.
+7. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
+8. Bearings format: "N45°22'10\\"E" — keep the exact degree/minute/second format from the text.
+9. Distances are decimal feet (or meters if stated).
+10. IDENTIFY the Point of Reference (POR) (e.g. the section corner, subdivision corner, or benchmark mentioned) and any commencement/reference runs leading from that Reference Point (POR) to the Point of Beginning (POB).
+   - Populate the "ReferencePointName" field with the name/description of the Point of Reference (or null if not found).
+   - Extract the commencement courses (bearings + distances) leading from the Reference Point (POR) to the POB into the "CommencementSegments" array.
+   - Do NOT include these commencement courses in the main "Segments" array. The main "Segments" array MUST only contain the property boundary courses starting FROM the Point of Beginning (POB).
+11. Output ONLY a JSON object. No explanation, no markdown.
+12. Under no circumstances should you ever return the placeholder segments from the example output format below. If you cannot find any valid metes-and-bounds traverse courses in the deed text, return an empty segments list "Segments": [].
 
 OUTPUT FORMAT:
 {
   "POB": { "Northing": 5000.00, "Easting": 5000.00 },
+  "ReferencePointName": "Southeast corner of Section 12",
+  "CommencementSegments": [
+    { "Type": "Line", "Bearing": "N00°02'10\\"W", "Distance": 330.15, "IsUnknown": false }
+  ],
   "Units": "Feet",
   "Segments": [
     { "Type": "Line", "Bearing": "N45°22'10\\"E", "Distance": 150.25, "IsUnknown": false },
+    {
+      "Type": "Curve",
+      "Radius": 424.73,
+      "Delta": "93°62'00.00\"",
+      "ArcLength": 93.43,
+      "CurveDirection": "Left",
+      "ChordBearing": "S16°38'52\\"E",
+      "ChordDistance": 93.43,
+      "IsUnknown": false
+    },
     { "Type": "Line", "Bearing": null, "Distance": null, "IsUnknown": true }
   ]
 }
@@ -197,24 +216,73 @@ function parseExtractionJson(raw) {
   if (isNaN(pob.easting))  pob.easting  = 5000;
 
   const units = root.Units || root.units || 'Feet';
+  const referencePointName = root.ReferencePointName || root.referencePointName || null;
+  const rawCommSegments = root.CommencementSegments || root.commencementSegments || [];
+  const commencementSegments = Array.isArray(rawCommSegments) ? rawCommSegments.map(s => {
+    const type = (s.Type || s.type || 'Line');
+    const bearing = s.Bearing ?? s.bearing ?? null;
+    const distance = (s.Distance != null && !isNaN(parseFloat(s.Distance))) ? parseFloat(s.Distance) : null;
+    const chordBearing = s.ChordBearing ?? s.chordBearing ?? null;
+    const chordDistance = (s.ChordDistance != null && !isNaN(parseFloat(s.ChordDistance))) ? parseFloat(s.ChordDistance) : null;
+    const radius = (s.Radius != null && !isNaN(parseFloat(s.Radius))) ? parseFloat(s.Radius) : null;
+    const delta = s.Delta ?? s.delta ?? null;
+    const arcLength = (s.ArcLength != null && !isNaN(parseFloat(s.ArcLength))) ? parseFloat(s.ArcLength) : null;
+    const curveDirection = s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null;
+
+    let isUnknown = !!(s.IsUnknown ?? s.isUnknown ?? false);
+    if (type.toLowerCase() === 'line') {
+      isUnknown = isUnknown || !bearing || distance == null || distance === 0;
+    } else {
+      const hasChord = chordBearing && chordDistance != null && chordDistance !== 0;
+      const hasParams = radius != null && delta != null;
+      isUnknown = isUnknown || (!hasChord && !hasParams);
+    }
+
+    return {
+      type,
+      bearing,
+      distance,
+      isUnknown,
+      chordBearing,
+      chordDistance,
+      radius,
+      delta,
+      arcLength,
+      curveDirection,
+    };
+  }) : [];
 
   const courses = segments.map(s => {
     const type = (s.Type || s.type || 'Line');
-    const isUnknown = !!(s.IsUnknown ?? s.isUnknown ?? false);
     const bearing = s.Bearing ?? s.bearing ?? null;
-    const distance = s.Distance ?? s.distance ?? null;
+    const distance = (s.Distance != null && !isNaN(parseFloat(s.Distance))) ? parseFloat(s.Distance) : null;
+    const chordBearing = s.ChordBearing ?? s.chordBearing ?? null;
+    const chordDistance = (s.ChordDistance != null && !isNaN(parseFloat(s.ChordDistance))) ? parseFloat(s.ChordDistance) : null;
+    const radius = (s.Radius != null && !isNaN(parseFloat(s.Radius))) ? parseFloat(s.Radius) : null;
+    const delta = s.Delta ?? s.delta ?? null;
+    const arcLength = (s.ArcLength != null && !isNaN(parseFloat(s.ArcLength))) ? parseFloat(s.ArcLength) : null;
+    const curveDirection = s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null;
+
+    let isUnknown = !!(s.IsUnknown ?? s.isUnknown ?? false);
+    if (type.toLowerCase() === 'line') {
+      isUnknown = isUnknown || !bearing || distance == null || distance === 0;
+    } else {
+      const hasChord = chordBearing && chordDistance != null && chordDistance !== 0;
+      const hasParams = radius != null && delta != null;
+      isUnknown = isUnknown || (!hasChord && !hasParams);
+    }
+
     return {
       type,
-      bearing: bearing || null,
-      distance: (distance != null && !isNaN(parseFloat(distance))) ? parseFloat(distance) : null,
-      isUnknown: isUnknown || !bearing || distance == null || parseFloat(distance) === 0,
-      // Curves
-      chordBearing: s.ChordBearing ?? s.chordBearing ?? null,
-      chordDistance: s.ChordDistance ?? s.chordDistance ?? null,
-      radius: s.Radius ?? s.radius ?? null,
-      delta: s.Delta ?? s.delta ?? null,
-      arcLength: s.ArcLength ?? s.arcLength ?? null,
-      curveDirection: s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null,
+      bearing,
+      distance,
+      isUnknown,
+      chordBearing,
+      chordDistance,
+      radius,
+      delta,
+      arcLength,
+      curveDirection,
     };
   });
   let normalizedCourses = courses;
@@ -223,7 +291,7 @@ function parseExtractionJson(raw) {
     normalizedCourses = [];
   }
 
-  return { courses: normalizedCourses, pob, units };
+  return { courses: normalizedCourses, pob, units, referencePointName, commencementSegments };
 }
 
 // ── Deterministic COGO repair ─────────────────────────────────────────────────
@@ -404,10 +472,14 @@ function writeLegalDescription(originalCourses, repairedCourses, result, pob, un
       lines.push(`THENCE ${bearing}, a distance of ${dist} ${units}${tag ? ` ${tag}` : ''}, ${terminus};`);
     } else {
       const dir = c.curveDirection || '';
-      const r = c.radius != null ? `R=${c.radius.toFixed(2)}'` : '';
-      const d = c.delta != null ? `Δ=${c.delta.toFixed(4)}°` : '';
-      const l = c.arcLength != null ? `L=${c.arcLength.toFixed(2)}'` : '';
-      lines.push(`THENCE along a curve to the ${dir}, ${r}, ${d}, ${l}, ${terminus};`);
+      const rVal = typeof c.radius === 'number' ? `${c.radius.toFixed(2)}'` : (c.radius != null ? `${c.radius}` : '');
+      const r = rVal ? `R=${rVal}` : '';
+      const dVal = typeof c.delta === 'number' ? `${c.delta.toFixed(4)}°` : (c.delta != null ? `${c.delta}` : '');
+      const d = dVal ? `Δ=${dVal}` : '';
+      const lVal = typeof c.arcLength === 'number' ? `${c.arcLength.toFixed(2)}'` : (c.arcLength != null ? `${c.arcLength}` : '');
+      const l = lVal ? `L=${lVal}` : '';
+      const parts = [dir, r, d, l].filter(Boolean).join(', ');
+      lines.push(`THENCE along a curve to the ${parts}, ${terminus};`);
     }
   });
 
@@ -621,6 +693,8 @@ export async function solveDeedText(deedText, model, options = {}) {
     originalCourses,
     pob,
     units,
+    referencePointName: extraction.referencePointName || null,
+    commencementSegments: extraction.commencementSegments || [],
 
     // Repair
     repairedCourses,

@@ -251,6 +251,74 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
   return pts;
 }
 
+// Helper functions to compute intermediate curve coordinates
+function getCurvePoints(p1, p2, course, steps = 20) {
+  const R = parseFloat(course.radius || course.Radius);
+  if (!R || isNaN(R)) return [p1, p2];
+
+  const dx = p2.easting - p1.easting;
+  const dy = p2.northing - p1.northing;
+  const chord = Math.hypot(dx, dy);
+  if (chord < 0.01) return [p1, p2];
+
+  const rSq = R * R;
+  const halfChordSq = (chord / 2) * (chord / 2);
+  if (rSq < halfChordSq) return [p1, p2];
+  const h = Math.sqrt(rSq - halfChordSq);
+
+  const mx = (p1.easting + p2.easting) / 2;
+  const my = (p1.northing + p2.northing) / 2;
+
+  const ux = -dy / chord;
+  const uy = dx / chord;
+
+  const isLeft = (course.curveDirection || course.CurveDirection || '').toLowerCase() === 'left';
+  const cx = isLeft ? mx + h * ux : mx - h * ux;
+  const cy = isLeft ? my + h * uy : my - h * uy;
+
+  const a1 = Math.atan2(p1.northing - cy, p1.easting - cx);
+  const a2 = Math.atan2(p2.northing - cy, p2.easting - cx);
+
+  let diff = a2 - a1;
+  if (isLeft) {
+    if (diff < 0) diff += 2 * Math.PI;
+  } else {
+    if (diff > 0) diff -= 2 * Math.PI;
+  }
+
+  const pts = [];
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const angle = a1 + diff * t;
+    pts.push({
+      easting: cx + R * Math.cos(angle),
+      northing: cy + R * Math.sin(angle)
+    });
+  }
+  return pts;
+}
+
+function getDensePoints(pts, coursesList) {
+  if (!pts || pts.length === 0) return pts;
+  if (!coursesList || coursesList.length === 0) return pts;
+  const dense = [];
+  dense.push(pts[0]);
+  for (let i = 0; i < coursesList.length; i++) {
+    const p1 = pts[i];
+    const p2 = pts[i + 1] || pts[0];
+    const c = coursesList[i];
+    if (p1 && p2 && c && (c.type?.toLowerCase() === 'curve' || c.Type?.toLowerCase() === 'curve')) {
+      const curvePts = getCurvePoints(p1, p2, c, 20);
+      for (let j = 1; j < curvePts.length; j++) {
+        dense.push(curvePts[j]);
+      }
+    } else if (p2) {
+      dense.push(p2);
+    }
+  }
+  return dense;
+}
+
 export default function PrintBlueprint({
   courses = [],
   stations = [],
@@ -530,27 +598,30 @@ export default function PrintBlueprint({
         }
       }
 
+      const denseRawPts = getDensePoints(rawPts, courses);
+      const denseAdjPts = getDensePoints(adjPts, courses);
+
       // 2. Draw Raw (Unadjusted) Boundary (if requested and exists)
-      if (showRaw && rawPts.length > 1) {
+      if (showRaw && denseRawPts.length > 1) {
         ctx.beginPath();
         ctx.strokeStyle = '#e63946'; // Surveyor red for raw
         ctx.lineWidth = 1.25;
         ctx.setLineDash([4, 4]);
-        ctx.moveTo(tx(rawPts[0].easting), ty(rawPts[0].northing));
-        for (let i = 1; i < rawPts.length; i++) {
-          ctx.lineTo(tx(rawPts[i].easting), ty(rawPts[i].northing));
+        ctx.moveTo(tx(denseRawPts[0].easting), ty(denseRawPts[0].northing));
+        for (let i = 1; i < denseRawPts.length; i++) {
+          ctx.lineTo(tx(denseRawPts[i].easting), ty(denseRawPts[i].northing));
         }
         ctx.stroke();
         ctx.setLineDash([]);
       }
 
       // 3. Draw Adjusted Boundary (Solid Black)
-      if (showAdjusted && adjPts.length > 1) {
+      if (showAdjusted && denseAdjPts.length > 1) {
         // Draw closed shaded polygon first
         ctx.beginPath();
-        ctx.moveTo(tx(adjPts[0].easting), ty(adjPts[0].northing));
-        for (let i = 1; i < adjPts.length; i++) {
-          ctx.lineTo(tx(adjPts[i].easting), ty(adjPts[i].northing));
+        ctx.moveTo(tx(denseAdjPts[0].easting), ty(denseAdjPts[0].northing));
+        for (let i = 1; i < denseAdjPts.length; i++) {
+          ctx.lineTo(tx(denseAdjPts[i].easting), ty(denseAdjPts[i].northing));
         }
         ctx.closePath();
         ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
@@ -560,9 +631,9 @@ export default function PrintBlueprint({
         ctx.beginPath();
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 2.0;
-        ctx.moveTo(tx(adjPts[0].easting), ty(adjPts[0].northing));
-        for (let i = 1; i < adjPts.length; i++) {
-          ctx.lineTo(tx(adjPts[i].easting), ty(adjPts[i].northing));
+        ctx.moveTo(tx(denseAdjPts[0].easting), ty(denseAdjPts[0].northing));
+        for (let i = 1; i < denseAdjPts.length; i++) {
+          ctx.lineTo(tx(denseAdjPts[i].easting), ty(denseAdjPts[i].northing));
         }
         ctx.closePath();
         ctx.stroke();
@@ -993,14 +1064,16 @@ export default function PrintBlueprint({
       ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(W - 10, y); ctx.stroke();
     }
 
+    const denseOrigPts = getDensePoints(origPts, origCourses);
+
     // Draw Original Boundary in DASHED BLACK lines
     ctx.beginPath();
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2.0;
     ctx.setLineDash([8, 6]);
-    ctx.moveTo(tx(origPts[0].easting), ty(origPts[0].northing));
-    for (let i = 1; i < origPts.length; i++) {
-      ctx.lineTo(tx(origPts[i].easting), ty(origPts[i].northing));
+    ctx.moveTo(tx(denseOrigPts[0].easting), ty(denseOrigPts[0].northing));
+    for (let i = 1; i < denseOrigPts.length; i++) {
+      ctx.lineTo(tx(denseOrigPts[i].easting), ty(denseOrigPts[i].northing));
     }
     ctx.closePath();
     ctx.stroke();
@@ -1427,7 +1500,7 @@ export default function PrintBlueprint({
                       
                       {/* Legal description box expands to fill space above the footer */}
                       <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
-                        <div className="panel-header">RECORD DESCRIPTION</div>
+                        <div className="panel-header">CORRECTED RECORD DESCRIPTION</div>
                         <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
                           {legalDesc ? (
                             <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
