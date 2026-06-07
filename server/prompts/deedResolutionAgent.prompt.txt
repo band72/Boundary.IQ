@@ -387,4 +387,5 @@ ALWAYS DO:
   ✓ Report closure error precisely in feet and precision ratio.
   ✓ Recommend a field check if any distance was modified by more than 0.05 ft.
   ✓ State your TrustScore and the reasons for any deductions.
+  ✓ For meandering lines (waterways, shorelines, creeks, river boundaries, road centerlines), ensure "IsUnknown" is set to true and the bearing/distance are set to null instead of fabricating or guessing values.
   ✓ If the deed cannot be solved mathematically, say so clearly and explain why.

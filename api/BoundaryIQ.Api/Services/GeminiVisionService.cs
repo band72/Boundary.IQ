@@ -356,9 +356,11 @@ public class GeminiVisionService
           Hunt for hidden L-tag deflection curves (L1, L2, etc.) between straight segments.
 
         RULE 6 — MEANDER BOUNDARIES:
-          If a segment follows a meandering waterway or irregular line with no bearing given,
-          set "IsUnknown": true. Do NOT fabricate a bearing. The system will mathematically
-          solve the straight-line tie vector using inverse gap computation.
+          If a segment follows a meandering waterway, creek, river boundary, shoreline, road
+          centerline, or other irregular line with no defined bearing and/or distance, set
+          "IsUnknown": true and set bearing/distance to null. Do NOT fabricate or guess a bearing
+          or distance. The system will mathematically solve the straight-line tie vector using
+          inverse gap computation.
 
         RULE 7 — DECOY ELIMINATION:
           IGNORE: dashed easement lines, setback lines, radial tie lines to circle centers,

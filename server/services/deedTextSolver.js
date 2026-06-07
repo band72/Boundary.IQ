@@ -46,6 +46,7 @@ RULES:
    - Do NOT include these commencement courses in the main "Segments" array. The main "Segments" array MUST only contain the property boundary courses starting FROM the Point of Beginning (POB).
 11. Output ONLY a JSON object. No explanation, no markdown.
 12. Under no circumstances should you ever return the placeholder segments from the example output format below. If you cannot find any valid metes-and-bounds traverse courses in the deed text, return an empty segments list "Segments": [].
+13. MEANDER BOUNDARIES: If a segment follows a meandering waterway, creek, river boundary, shoreline, road centerline, or irregular line with no defined bearing and/or distance, set "Bearing" (or "ChordBearing") and/or "Distance" (or "ChordDistance") to null and set "IsUnknown" to true. Do NOT fabricate or estimate values. The system will solve this as an unknown/meander gap close leg.
 
 OUTPUT FORMAT:
 {
