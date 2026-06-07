@@ -1,7 +1,14 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import dotenv from 'dotenv';
 
-const DB_PATH = '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
+dotenv.config();
+
+const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+const defaultDbPath = path.join(configDir, 'BoundaryQC', 'BoundaryQCDiagnostics.db');
+const DB_PATH = process.env.DATABASE_PATH ? path.resolve(process.env.DATABASE_PATH) : defaultDbPath;
 
 async function main() {
   if (!fs.existsSync(DB_PATH)) {
