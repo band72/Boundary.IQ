@@ -60,6 +60,7 @@ export default function SettingsTab({
   // Dropdown selectors state
   const [selectedVendor, setSelectedVendor] = useState('gemini');
   const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash');
+  const [allowApiFallback, setAllowApiFallback] = useState(true);
 
   const saveKeysToBackend = async (gKey, oKey, silent = false) => {
     if (!silent) setSaveKeysLoading(true);
@@ -88,6 +89,9 @@ export default function SettingsTab({
     if (modelConfig) {
       setSelectedVendor(modelConfig.activeProvider || 'gemini');
       setSelectedModel(modelConfig.activeModel || 'gemini-3.5-flash');
+      if (modelConfig.allowApiFallback !== undefined) {
+        setAllowApiFallback(modelConfig.allowApiFallback);
+      }
     }
   }, [modelConfig]);
 
@@ -114,7 +118,7 @@ export default function SettingsTab({
     setSwitchingTo(`${provider}/${model}`);
     setModelLoading(true); setModelMsg('');
     try {
-      const body = { provider, model };
+      const body = { provider, model, allowApiFallback };
       if (provider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
       const res = await fetch(`${API}/settings/model`, {
         method: 'POST',
@@ -130,6 +134,34 @@ export default function SettingsTab({
       }
     } catch (e) { setModelMsg(`✗ ${e.message}`); }
     finally { setModelLoading(false); setSwitchingTo(null); }
+  };
+
+  const toggleAllowApiFallback = async (newValue) => {
+    setAllowApiFallback(newValue);
+    if (!modelConfig) return;
+    try {
+      const body = { 
+        provider: modelConfig.activeProvider, 
+        model: modelConfig.activeModel, 
+        allowApiFallback: newValue 
+      };
+      if (modelConfig.activeProvider === 'openai') {
+        body.openaiBaseUrl = openaiBaseUrl;
+      }
+      const res = await fetch(`${API}/settings/model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchModelConfig();
+      } else {
+        setModelMsg(`✗ Failed to update fallback: ${data.error}`);
+      }
+    } catch (e) {
+      setModelMsg(`✗ Fallback Connection Error: ${e.message}`);
+    }
   };
 
   const startOllama = async () => {
@@ -603,6 +635,52 @@ export default function SettingsTab({
                 >
                   {switchingTo ? '⏳ Switching…' : '✓ Switch AI Driver'}
                 </button>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.85rem 1.2rem',
+                marginTop: '0.75rem',
+                background: !allowApiFallback ? 'rgba(255,255,255,0.01)' : 'rgba(0, 212, 168, 0.03)',
+                border: `1px solid ${!allowApiFallback ? 'var(--border)' : 'rgba(0, 212, 168, 0.25)'}`,
+                borderRadius: 'var(--radius-md)',
+                transition: 'all 0.3s ease',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1.2rem' }}>🔄</span>
+                  <div>
+                    <div style={{ fontWeight: 600, color: !allowApiFallback ? 'var(--text-muted)' : '#e8eeff', fontSize: '0.85rem' }}>
+                      Smart API Fallback to Local Ollama
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                      Automatically fallback from Gemini to local Ollama on API quota failures or service interruptions
+                    </div>
+                  </div>
+                </div>
+
+                <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={allowApiFallback}
+                    onChange={e => toggleAllowApiFallback(e.target.checked)}
+                    style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                  />
+                  <div style={{
+                    width: '40px', height: '20px', borderRadius: '10px',
+                    background: allowApiFallback ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(255,255,255,0.1)',
+                    border: `1px solid ${allowApiFallback ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                    position: 'relative', transition: 'all 0.25s ease',
+                    boxShadow: allowApiFallback ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
+                  }}>
+                    <div style={{
+                      width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+                      position: 'absolute', top: '2px', left: allowApiFallback ? '22px' : '3px',
+                      transition: 'left 0.25s ease',
+                    }} />
+                  </div>
+                </label>
               </div>
             </div>
           )}

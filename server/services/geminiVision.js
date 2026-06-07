@@ -202,16 +202,31 @@ async function extractViaGemini(buffer, mimeType, prompt, model) {
   return rawText;
 }
 
-function postProcessOcrText(text) {
+export function postProcessOcrText(text) {
   if (!text) return '';
   let cleaned = text;
   
+  // Standardize double single-quotes to double quotes
+  cleaned = cleaned.replace(/'\s*'/g, '"');
+  cleaned = cleaned.replace(/''/g, '"');
+
+  // Replace asterisks used as degree symbols
+  cleaned = cleaned.replace(/(\d{1,3})\s*\*/g, '$1°');
+
+  // Correct hyphens in bearing notations with degrees-minutes-seconds (e.g., N 45-12-30 E -> N 45° 12\' 30" E)
+  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2})\s*([EWew])/g, '$1 $2° $3\' $4" $5');
+  cleaned = cleaned.replace(/([Nn]orth|[Ss]outh)\s*(\d{1,2})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2})\s*([Ee]ast|[Ww]est)/g, '$1 $2° $3\' $4" $5');
+
+  // Correct hyphens in bearing notations with degrees & minutes only (e.g., N 45-12 E -> N 45° 12\' E)
+  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})\s*-\s*(\d{1,2})\s*([EWew])/g, '$1 $2° $3\' $4');
+  cleaned = cleaned.replace(/([Nn]orth|[Ss]outh)\s*(\d{1,2})\s*-\s*(\d{1,2})\s*([Ee]ast|[Ww]est)/g, '$1 $2° $3\' $4');
+
   // Replace degree symbol transcribing errors (e.g. "S 010 09'" -> "S 01° 09'")
-  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})0\s+(\d{1,2})['']/g, '$1 $2° $3\'');
-  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})[oO-]\s*(\d{1,2})['']/g, '$1 $2° $3\'');
+  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})0\s+(\d{1,2})['"]/g, '$1 $2° $3\'');
+  cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})[oO-]\s*(\d{1,2})['"]/g, '$1 $2° $3\'');
   
   // e.g. "North 01- 09'" -> "North 01° 09'"
-  cleaned = cleaned.replace(/([Nn]orth|[Ss]outh|[Ee]ast|[Ww]est)\s*(\d{1,2})[oO0-]\s*(\d{1,2})['']/g, '$1 $2° $3\'');
+  cleaned = cleaned.replace(/([Nn]orth|[Ss]outh|[Ee]ast|[Ww]est)\s*(\d{1,2})[oO0-]\s*(\d{1,2})['"]/g, '$1 $2° $3\'');
   
   return cleaned;
 }
@@ -595,7 +610,19 @@ async function extractRaw(buffer, mimeType, prompt) {
   if (provider === 'openai') {
     return extractViaOpenAI(buffer, mimeType, activePrompt, model, activeOpenAiBaseUrl);
   }
-  return extractViaGemini(buffer, mimeType, activePrompt, model);
+  try {
+    return await extractViaGemini(buffer, mimeType, activePrompt, model);
+  } catch (err) {
+    const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
+    const isQuotaOrDenied = err.message.includes('429') || err.message.includes('403') || 
+                            err.message.includes('RESOURCE_EXHAUSTED') || err.message.includes('PERMISSION_DENIED');
+    if (allowFallback && isQuotaOrDenied) {
+      const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL || 'gemma4:26b';
+      console.warn(`⚠️ Gemini API extraction failed (${err.message.slice(0, 80)}...). Falling back to local Ollama model (${fallbackModel})...`);
+      return await extractViaOllama(buffer, mimeType, activePrompt, fallbackModel);
+    }
+    throw err;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -638,7 +665,21 @@ Return ONLY valid JSON. No conversational text or markdown fences.`;
     } else if (provider === 'openai') {
       rawText = await extractViaOpenAI(Buffer.alloc(0), 'text/plain', fallbackPrompt, model, activeOpenAiBaseUrl);
     } else {
-      rawText = await extractViaGemini(Buffer.alloc(0), 'text/plain', fallbackPrompt, model);
+      try {
+        rawText = await extractViaGemini(Buffer.alloc(0), 'text/plain', fallbackPrompt, model);
+      } catch (err) {
+        const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
+        const isQuotaOrDenied = err.message.includes('429') || err.message.includes('403') || 
+                                err.message.includes('RESOURCE_EXHAUSTED') || err.message.includes('PERMISSION_DENIED');
+        if (allowFallback && isQuotaOrDenied) {
+          const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL || 'gemma4:26b';
+          console.warn(`⚠️ Gemini conceptual fallback failed (${err.message.slice(0, 80)}...). Routing to local Ollama (${fallbackModel})...`);
+          const { rawText: ot } = await ollama.generate(Buffer.alloc(0), 'text/plain', fallbackModel, fallbackPrompt);
+          rawText = ot;
+        } else {
+          throw err;
+        }
+      }
     }
 
     // Clean think tags and parse JSON

@@ -4,6 +4,9 @@
 
 import 'dotenv/config';
 import { Agent, setGlobalDispatcher } from 'undici';
+import fs from 'fs';
+import path from 'path';
+import dotenv from 'dotenv';
 
 // Configure global undici dispatcher to support 30 minutes timeout for native fetch (e.g. Ollama calls)
 setGlobalDispatcher(new Agent({
@@ -52,6 +55,40 @@ if (apiKey) {
   console.log('✓ Gemini API key loaded.');
 } else {
   console.warn('⚠ GEMINI_API_KEY not found — Gemini extraction will fail. Use Ollama for local inference.');
+}
+
+// ── Watch .env file for changes (Hot Reload) ─────────────────────────────────
+const envPath = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(envPath)) {
+  let watchTimeout = null;
+  fs.watch(envPath, (eventType) => {
+    if (eventType === 'change') {
+      if (watchTimeout) clearTimeout(watchTimeout);
+      watchTimeout = setTimeout(() => {
+        console.log('⚡ .env file change detected. Reloading system configurations...');
+        const configOutput = dotenv.config({ override: true });
+        if (configOutput.error) {
+          console.error('✗ Failed to reload .env:', configOutput.error.message);
+          return;
+        }
+
+        const reloadedApiKey = getEnv('GEMINI_API_KEY') || getEnv('Gemini__ApiKey');
+        if (reloadedApiKey) {
+          gemini.init(reloadedApiKey);
+          console.log('✓ Gemini API key reloaded.');
+        }
+
+        const reloadedProvider = getEnv('ACTIVE_PROVIDER') || 'ollama';
+        const reloadedModel = getEnv('ACTIVE_MODEL');
+        try {
+          gemini.setProvider(reloadedProvider, reloadedModel);
+          console.log(`🔄 System configurations hot-switched to: ${reloadedProvider} / ${reloadedModel}`);
+        } catch (err) {
+          console.warn('⚠️ Hot-swap provider switch failed:', err.message);
+        }
+      }, 500);
+    }
+  });
 }
 
 // ── Initialize SQLite database ──────────────────────────────────────────────

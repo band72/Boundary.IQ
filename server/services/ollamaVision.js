@@ -31,13 +31,18 @@ let _ollamaActive = 0;
 const _ollamaQueue = [];
 const OLLAMA_MAX_CONCURRENT = 1;
 
-function ollamaAcquire() {
+function ollamaAcquire(isHighPriority = false) {
   return new Promise(resolve => {
     if (_ollamaActive < OLLAMA_MAX_CONCURRENT) {
       _ollamaActive++;
       resolve();
     } else {
-      _ollamaQueue.push(resolve);
+      if (isHighPriority) {
+        console.log('⚡ Ollama Queue: Enqueueing high-priority request at the front.');
+        _ollamaQueue.unshift(resolve);
+      } else {
+        _ollamaQueue.push(resolve);
+      }
     }
   });
 }
@@ -290,8 +295,9 @@ export async function generate(buffer, mimeType, model, prompt) {
   const hasImage = buffer && buffer.length > 0;
   const resolvedModel = await resolveModelAlias(model);
   const vision = isVisionModel(resolvedModel);
+  const isHighPriority = !hasImage;
 
-  await ollamaAcquire();
+  await ollamaAcquire(isHighPriority);
   try {
     if (hasImage && vision) {
       console.log(`Ollama routing → /api/chat  [vision model: ${resolvedModel}]`);

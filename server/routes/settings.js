@@ -50,6 +50,7 @@ router.get('/model', async (req, res) => {
     res.json({
       activeProvider: gemini.getActiveProvider(),
       activeModel: gemini.getActiveModel(),
+      allowApiFallback: process.env.ALLOW_API_FALLBACK !== 'false',
       ollama: {
         online: ollamaStatus.online,
         url: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
@@ -75,18 +76,23 @@ router.get('/model', async (req, res) => {
 // POST /api/settings/model — switch active provider & model
 router.post('/model', (req, res) => {
   try {
-    const { provider, model, openaiBaseUrl } = req.body;
+    const { provider, model, openaiBaseUrl, allowApiFallback } = req.body;
     if (!provider) return res.status(400).json({ error: 'provider is required.' });
 
     gemini.setProvider(provider, model, openaiBaseUrl || undefined);
 
+    if (allowApiFallback !== undefined) {
+      process.env.ALLOW_API_FALLBACK = String(allowApiFallback);
+    }
+
     // Save active provider/model settings to .env
-    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined);
+    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback);
 
     res.json({
       message: `Switched to ${provider}/${model || '(default)'}`,
       activeProvider: gemini.getActiveProvider(),
       activeModel: gemini.getActiveModel(),
+      allowApiFallback: process.env.ALLOW_API_FALLBACK !== 'false',
     });
   } catch (ex) {
     res.status(400).json({ error: ex.message });
@@ -161,7 +167,7 @@ router.post('/keys', (req, res) => {
 });
 
 // Helper to save system settings back to .env file for persistence
-function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel) {
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback) {
   const envPath = path.resolve(process.cwd(), '.env');
   
   let envContent = '';
@@ -186,6 +192,7 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel)
   if (newScanRoots !== undefined) vars['BOUNDARY_SCAN_ROOTS'] = newScanRoots;
   if (newProvider !== undefined) vars['ACTIVE_PROVIDER'] = newProvider;
   if (newModel !== undefined) vars['ACTIVE_MODEL'] = newModel;
+  if (newAllowFallback !== undefined) vars['ALLOW_API_FALLBACK'] = String(newAllowFallback);
 
   const newLines = [];
   newLines.push('# Boundary.IQ — Environment Variables');
