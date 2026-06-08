@@ -366,7 +366,8 @@ export default function PrintBlueprint({
   originalLegalDescription = '',   // Pre-repair original legal description
   closure = null,
   onClose,
-  conceptualAnalysis = null        // Shaded parcel relative size assumptions
+  conceptualAnalysis = null,       // Shaded parcel relative size assumptions
+  isOpenEnded = false
 }) {
   const [canvasElement, setCanvasElement] = useState(null);
   const [printCanvasElement, setPrintCanvasElement] = useState(null);
@@ -696,14 +697,16 @@ export default function PrintBlueprint({
       // 3. Draw Adjusted Boundary (Solid Black)
       if (showAdjusted && denseAdjPts.length > 1) {
         // Draw closed shaded polygon first
-        ctx.beginPath();
-        ctx.moveTo(tx(denseAdjPts[0].easting), ty(denseAdjPts[0].northing));
-        for (let i = 1; i < denseAdjPts.length; i++) {
-          ctx.lineTo(tx(denseAdjPts[i].easting), ty(denseAdjPts[i].northing));
+        if (!isOpenEnded) {
+          ctx.beginPath();
+          ctx.moveTo(tx(denseAdjPts[0].easting), ty(denseAdjPts[0].northing));
+          for (let i = 1; i < denseAdjPts.length; i++) {
+            ctx.lineTo(tx(denseAdjPts[i].easting), ty(denseAdjPts[i].northing));
+          }
+          ctx.closePath();
+          ctx.fillStyle = themeFill;
+          ctx.fill();
         }
-        ctx.closePath();
-        ctx.fillStyle = themeFill;
-        ctx.fill();
 
         // Draw boundary line stroke
         ctx.save();
@@ -718,13 +721,15 @@ export default function PrintBlueprint({
         for (let i = 1; i < denseAdjPts.length; i++) {
           ctx.lineTo(tx(denseAdjPts[i].easting), ty(denseAdjPts[i].northing));
         }
-        ctx.closePath();
+        if (!isOpenEnded) {
+          ctx.closePath();
+        }
         ctx.stroke();
         ctx.restore();
       }
 
       // 3.5. Draw Conceptual Details (Angled labels, Roadway, Easement, Center label)
-      if (showConceptualDetail && adjPts.length > 1) {
+      if (showConceptualDetail && adjPts.length > 1 && !isOpenEnded) {
         const drawPts = adjPts;
 
         // Calculate geometric center for text placements
@@ -1359,7 +1364,9 @@ export default function PrintBlueprint({
     for (let i = 1; i < denseOrigPts.length; i++) {
       ctx.lineTo(tx(denseOrigPts[i].easting), ty(denseOrigPts[i].northing));
     }
-    ctx.closePath();
+    if (!isOpenEnded) {
+      ctx.closePath();
+    }
     ctx.stroke();
     ctx.setLineDash([]);
 

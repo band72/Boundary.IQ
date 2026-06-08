@@ -259,6 +259,7 @@ export default function PlatTab() {
           pob={{ northing: parseFloat(pobN), easting: parseFloat(pobE) }}
           initialLegalDescription={''}
           closure={trav?.closure}
+          isOpenEnded={ext?.isOpenEnded || false}
           onClose={() => setShowPrint(false)}
         />
       )}

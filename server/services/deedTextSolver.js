@@ -37,16 +37,18 @@ RULES:
 4. For Curve courses, specify: Type, Radius, Delta (central angle), ArcLength, CurveDirection (e.g., "Left" or "Right"), ChordBearing, ChordDistance.
 5. If a bearing is missing, blank, or unclear (like "N/West" or "??"), set Bearing (or ChordBearing) to null and IsUnknown to true.
 6. If a distance (or chord distance) is 0.00, missing, or unclear, set Distance (or ChordDistance) to null and IsUnknown to true.
-7. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
-8. Bearings format: "N45°22'10\\"E" — keep the exact degree/minute/second format from the text.
-9. Distances are decimal feet (or meters if stated).
-10. IDENTIFY the Point of Reference (POR) (e.g. the section corner, subdivision corner, or benchmark mentioned) and any commencement/reference runs leading from that Reference Point (POR) to the Point of Beginning (POB).
+7. If a course describes a deflection angle (e.g. "AT A DEFLECTION ANGLE TO THE LEFT/RIGHT OF X DEGREES, Y FEET"), represent it as: "Type": "Line", "Bearing": null, "Distance": Y, "DeflectionAngle": X, "DeflectionDirection": "Left" or "Right", "IsUnknown": (Y === 0 || Y === null)
+8. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
+9. Bearings format: "N45°22'10\\"E" — keep the exact degree/minute/second format from the text.
+10. Distances are decimal feet (or meters if stated).
+11. IDENTIFY the Point of Reference (POR) (e.g. the section corner, subdivision corner, or benchmark mentioned) and any commencement/reference runs leading from that Reference Point (POR) to the Point of Beginning (POB).
    - Populate the "ReferencePointName" field with the name/description of the Point of Reference (or null if not found).
    - Extract the commencement courses (bearings + distances) leading from the Reference Point (POR) to the POB into the "CommencementSegments" array.
    - Do NOT include these commencement courses in the main "Segments" array. The main "Segments" array MUST only contain the property boundary courses starting FROM the Point of Beginning (POB).
-11. Output ONLY a JSON object. No explanation, no markdown.
-12. Under no circumstances should you ever return the placeholder segments from the example output format below. If you cannot find any valid metes-and-bounds traverse courses in the deed text, return an empty segments list "Segments": [].
-13. MEANDER BOUNDARIES: If a segment follows a meandering waterway, creek, river boundary, shoreline, road centerline, or irregular line with no defined bearing and/or distance, set "Bearing" (or "ChordBearing") and/or "Distance" (or "ChordDistance") to null and set "IsUnknown" to true. Do NOT fabricate or estimate values. The system will solve this as an unknown/meander gap close leg.
+12. MEANDER BOUNDARIES: If a segment follows a meandering waterway, creek, river boundary, shoreline, road centerline, or irregular line with no defined bearing and/or distance, set "Bearing" (or "ChordBearing") and/or "Distance" (or "ChordDistance") to null and set "IsUnknown" to true. Do NOT fabricate or estimate values. The system will solve this as an unknown/meander gap close leg.
+13. OPEN-ENDED TRAVERSE: Identify if the traverse is open-ended (e.g. it is an easement description, a road centerline, meanders, or terminates without returning to the Point of Beginning / POB). Set "IsOpenEnded": true or false accordingly.
+14. Output ONLY a JSON object. No explanation, no markdown.
+15. Under no circumstances should you ever return the placeholder segments from the example output format below. If you cannot find any valid metes-and-bounds traverse courses in the deed text, return an empty segments list "Segments": [].
 
 OUTPUT FORMAT:
 {
@@ -56,6 +58,7 @@ OUTPUT FORMAT:
     { "Type": "Line", "Bearing": "N00°02'10\\"W", "Distance": 330.15, "IsUnknown": false }
   ],
   "Units": "Feet",
+  "IsOpenEnded": false,
   "Segments": [
     { "Type": "Line", "Bearing": "N45°22'10\\"E", "Distance": 150.25, "IsUnknown": false },
     {
@@ -218,81 +221,65 @@ function parseExtractionJson(raw) {
 
   const units = root.Units || root.units || 'Feet';
   const referencePointName = root.ReferencePointName || root.referencePointName || null;
+  const mapSegment = (s) => {
+    const type = (s.Type || s.type || 'Line');
+    const bearing = s.Bearing ?? s.bearing ?? null;
+    const distance = (s.Distance != null && !isNaN(parseFloat(s.Distance))) ? parseFloat(s.Distance) : null;
+    const chordBearing = s.ChordBearing ?? s.chordBearing ?? null;
+    const chordDistance = (s.ChordDistance != null && !isNaN(parseFloat(s.ChordDistance))) ? parseFloat(s.ChordDistance) : null;
+    const radius = (s.Radius != null && !isNaN(parseFloat(s.Radius))) ? parseFloat(s.Radius) : null;
+    const delta = s.Delta ?? s.delta ?? null;
+    const arcLength = (s.ArcLength != null && !isNaN(parseFloat(s.ArcLength))) ? parseFloat(s.ArcLength) : null;
+    const curveDirection = s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null;
+
+    const deflectionAngle = s.DeflectionAngle != null && !isNaN(parseFloat(s.DeflectionAngle)) ? parseFloat(s.DeflectionAngle) : (s.deflectionAngle != null && !isNaN(parseFloat(s.deflectionAngle)) ? parseFloat(s.deflectionAngle) : null);
+    const deflectionDirection = s.DeflectionDirection ?? s.deflectionDirection ?? null;
+    const description = s.Description ?? s.description ?? null;
+    const label = s.Label ?? s.label ?? null;
+
+    let isUnknown = !!(s.IsUnknown ?? s.isUnknown ?? false);
+    const hasDeflection = deflectionAngle != null && deflectionDirection != null;
+    if (type.toLowerCase() === 'line') {
+      isUnknown = isUnknown || (!bearing && !hasDeflection) || distance == null || distance === 0;
+    } else {
+      const hasChord = chordBearing && chordDistance != null && chordDistance !== 0;
+      const hasParams = radius != null && delta != null;
+      isUnknown = isUnknown || (!hasChord && !hasParams);
+    }
+
+    const resObj = {
+      type,
+      bearing,
+      distance,
+      isUnknown,
+      chordBearing,
+      chordDistance,
+      radius,
+      delta,
+      arcLength,
+      curveDirection,
+      description,
+      label
+    };
+    if (hasDeflection) {
+      resObj.deflectionAngle = deflectionAngle;
+      resObj.deflectionDirection = deflectionDirection;
+    }
+    return resObj;
+  };
+
   const rawCommSegments = root.CommencementSegments || root.commencementSegments || [];
-  const commencementSegments = Array.isArray(rawCommSegments) ? rawCommSegments.map(s => {
-    const type = (s.Type || s.type || 'Line');
-    const bearing = s.Bearing ?? s.bearing ?? null;
-    const distance = (s.Distance != null && !isNaN(parseFloat(s.Distance))) ? parseFloat(s.Distance) : null;
-    const chordBearing = s.ChordBearing ?? s.chordBearing ?? null;
-    const chordDistance = (s.ChordDistance != null && !isNaN(parseFloat(s.ChordDistance))) ? parseFloat(s.ChordDistance) : null;
-    const radius = (s.Radius != null && !isNaN(parseFloat(s.Radius))) ? parseFloat(s.Radius) : null;
-    const delta = s.Delta ?? s.delta ?? null;
-    const arcLength = (s.ArcLength != null && !isNaN(parseFloat(s.ArcLength))) ? parseFloat(s.ArcLength) : null;
-    const curveDirection = s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null;
-
-    let isUnknown = !!(s.IsUnknown ?? s.isUnknown ?? false);
-    if (type.toLowerCase() === 'line') {
-      isUnknown = isUnknown || !bearing || distance == null || distance === 0;
-    } else {
-      const hasChord = chordBearing && chordDistance != null && chordDistance !== 0;
-      const hasParams = radius != null && delta != null;
-      isUnknown = isUnknown || (!hasChord && !hasParams);
-    }
-
-    return {
-      type,
-      bearing,
-      distance,
-      isUnknown,
-      chordBearing,
-      chordDistance,
-      radius,
-      delta,
-      arcLength,
-      curveDirection,
-    };
-  }) : [];
-
-  const courses = segments.map(s => {
-    const type = (s.Type || s.type || 'Line');
-    const bearing = s.Bearing ?? s.bearing ?? null;
-    const distance = (s.Distance != null && !isNaN(parseFloat(s.Distance))) ? parseFloat(s.Distance) : null;
-    const chordBearing = s.ChordBearing ?? s.chordBearing ?? null;
-    const chordDistance = (s.ChordDistance != null && !isNaN(parseFloat(s.ChordDistance))) ? parseFloat(s.ChordDistance) : null;
-    const radius = (s.Radius != null && !isNaN(parseFloat(s.Radius))) ? parseFloat(s.Radius) : null;
-    const delta = s.Delta ?? s.delta ?? null;
-    const arcLength = (s.ArcLength != null && !isNaN(parseFloat(s.ArcLength))) ? parseFloat(s.ArcLength) : null;
-    const curveDirection = s.Direction ?? s.CurveDirection ?? s.curveDirection ?? null;
-
-    let isUnknown = !!(s.IsUnknown ?? s.isUnknown ?? false);
-    if (type.toLowerCase() === 'line') {
-      isUnknown = isUnknown || !bearing || distance == null || distance === 0;
-    } else {
-      const hasChord = chordBearing && chordDistance != null && chordDistance !== 0;
-      const hasParams = radius != null && delta != null;
-      isUnknown = isUnknown || (!hasChord && !hasParams);
-    }
-
-    return {
-      type,
-      bearing,
-      distance,
-      isUnknown,
-      chordBearing,
-      chordDistance,
-      radius,
-      delta,
-      arcLength,
-      curveDirection,
-    };
-  });
+  const commencementSegments = Array.isArray(rawCommSegments) ? rawCommSegments.map(mapSegment) : [];
+  const courses = Array.isArray(segments) ? segments.map(mapSegment) : [];
   let normalizedCourses = courses;
   if (isPlaceholderHallucination(courses)) {
     console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN TEXT EXTRACTION! Clearing courses.');
     normalizedCourses = [];
   }
 
-  return { courses: normalizedCourses, pob, units, referencePointName, commencementSegments };
+  const isOpenEnded = root.IsOpenEnded === true || root.isOpenEnded === true || root.isOpenEnded === 'true';
+
+  return { courses: normalizedCourses, pob, units, referencePointName, commencementSegments, isOpenEnded };
 }
 
 // ── Deterministic COGO repair ─────────────────────────────────────────────────
@@ -335,7 +322,7 @@ function flipNS(bearing) {
 }
 
 
-function repairCourses(rawCourses, pob, units) {
+function repairCourses(rawCourses, pob, units, isOpenEnded = false) {
   const courses = traverseSvc.resolveDeflectionAngles(rawCourses);
   const steps = [];
 
@@ -365,8 +352,8 @@ function repairCourses(rawCourses, pob, units) {
 
   // ── Step 2: Pure gap solver (no backtrack) ───────────────────────────────
   const withGapSolved = traverseSvc.autoFixUnknownRuns(courses, pob);
-  const { result: r0 } = tryCompute(withGapSolved, pob, units);
-  const r0Bowtie = r0 && (r0.areaAcres == null || r0.areaAcres < 0.0001);
+  const { result: r0 } = tryCompute(withGapSolved, pob, units, isOpenEnded);
+  const r0Bowtie = r0 && (r0.areaAcres == null || r0.areaAcres < 0.0001) && !isOpenEnded;
   if (r0 && isPassing(r0) && !r0Bowtie) {
     const solvedIndices = courses.reduce((acc, c, i) => {
       if (c.isUnknown || !c.bearing || c.distance == null || c.distance === 0) acc.push(i);
@@ -403,8 +390,8 @@ function repairCourses(rawCourses, pob, units) {
         j === i ? { ...x, bearing: flipped } : { ...x }
       );
       const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-      const { result: r1 } = tryCompute(testSolved, pob, units);
-      const r1Bowtie = r1 && (r1.areaAcres == null || r1.areaAcres < 0.0001);
+      const { result: r1 } = tryCompute(testSolved, pob, units, isOpenEnded);
+      const r1Bowtie = r1 && (r1.areaAcres == null || r1.areaAcres < 0.0001) && !isOpenEnded;
       if (r1 && isPassing(r1) && !r1Bowtie && isSensible(testSolved)) {
         steps.push({ hypothesis: `SINGLE_${label}`, courseIndex: i, originalBearing: c.bearing, correctedBearing: flipped });
         return { courses: testSolved, result: r1, steps };
@@ -422,8 +409,8 @@ function repairCourses(rawCourses, pob, units) {
         return { ...x };
       });
       const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-      const { result: r2 } = tryCompute(testSolved, pob, units);
-      const r2Bowtie = r2 && (r2.areaAcres == null || r2.areaAcres < 0.0001);
+      const { result: r2 } = tryCompute(testSolved, pob, units, isOpenEnded);
+      const r2Bowtie = r2 && (r2.areaAcres == null || r2.areaAcres < 0.0001) && !isOpenEnded;
       if (r2 && isPassing(r2) && !r2Bowtie && isSensible(testSolved)) {
         steps.push({ hypothesis: 'DOUBLE_QUADRANT_FLIP', courseIndices: [i, j] });
         return { courses: testSolved, result: r2, steps };
@@ -432,13 +419,13 @@ function repairCourses(rawCourses, pob, units) {
   }
 
   // ── Step 5: Return best-effort even if not closed ─────────────────────────
-  const { result: rFinal } = tryCompute(withGapSolved, pob, units);
+  const { result: rFinal } = tryCompute(withGapSolved, pob, units, isOpenEnded);
   steps.push({ hypothesis: 'UNCLOSED', note: 'No repair hypothesis achieved passing closure.' });
   return { courses: withGapSolved, result: rFinal, steps };
 }
 
 // ── Legal description writer ──────────────────────────────────────────────────
-function writeLegalDescription(originalCourses, repairedCourses, result, pob, units, steps) {
+function writeLegalDescription(originalCourses, repairedCourses, result, pob, units, steps, isOpenEnded = false) {
   const stepMap = {};
   for (const s of steps) {
     if (s.courseIndex != null) stepMap[s.courseIndex] = s;
@@ -453,7 +440,7 @@ function writeLegalDescription(originalCourses, repairedCourses, result, pob, un
   repairedCourses.forEach((c, i) => {
     const orig = originalCourses[i];
     const isLast = i === repairedCourses.length - 1;
-    const terminus = isLast ? 'to the Point of Beginning' : 'to a corner';
+    const terminus = isLast ? (isOpenEnded ? 'to the terminating point' : 'to the Point of Beginning') : 'to a corner';
     const isUnknownOrig = !orig || orig.isUnknown || !orig.bearing || !orig.distance || orig.distance === 0;
     const wasCorrected = !isUnknownOrig && orig && (
       orig.bearing !== c.bearing || orig.distance !== c.distance
@@ -687,9 +674,12 @@ export async function solveDeedText(deedText, model, options = {}) {
   const originalCourses = extraction.courses.map(c => ({ ...c }));
   console.log(`[DeedTextSolver] Phase 2: Extracted ${extraction.courses.length} courses.`);
 
+  const actualOpenEnded = options.isOpenEnded ?? extraction.isOpenEnded ?? false;
+
   // ── Phase 3: COGO repair — all math, zero LLM involvement ────────────────
   console.log(`[DeedTextSolver] Phase 3: Running deterministic COGO repair...`);
-  const { courses: repairedCourses, result, steps } = repairCourses(extraction.courses, pob, units);
+  const processedCourses = preprocessZeroLengthCourses(extraction.courses);
+  const { courses: repairedCourses, result, steps } = repairCourses(processedCourses, pob, units, actualOpenEnded);
 
   const passed = result && isPassing(result);
   const elapsedMs = Date.now() - startTime;
@@ -698,7 +688,7 @@ export async function solveDeedText(deedText, model, options = {}) {
 
   // ── Phase 4: Build output ─────────────────────────────────────────────────
   const correctionTable = buildCorrectionTable(originalCourses, repairedCourses, steps);
-  const legalDescription = writeLegalDescription(originalCourses, repairedCourses, result, pob, units, steps);
+  const legalDescription = writeLegalDescription(originalCourses, repairedCourses, result, pob, units, steps, actualOpenEnded);
 
   const hypotheses = steps.map(s => s.hypothesis).filter(Boolean);
   const primaryHypothesis = hypotheses[0] || 'NONE';
@@ -710,7 +700,7 @@ export async function solveDeedText(deedText, model, options = {}) {
   const correctedBearings = correctionTable.filter(c => c.status === 'CORRECTED').length;
   if (inventedBearings > 1) trustScore -= 15;
   if (correctedBearings > 2) trustScore -= 20;
-  if (result?.areaAcres != null && result.areaAcres < 0.01) trustScore -= 25;
+  if (result?.areaAcres != null && result.areaAcres < 0.01 && !actualOpenEnded) trustScore -= 25;
   trustScore = Math.max(0, Math.min(100, trustScore));
   const trustLevel = trustScore >= 80 ? 'HIGH' : trustScore >= 55 ? 'MEDIUM' : 'LOW';
 
@@ -725,6 +715,7 @@ export async function solveDeedText(deedText, model, options = {}) {
     units,
     referencePointName: extraction.referencePointName || null,
     commencementSegments: extraction.commencementSegments || [],
+    isOpenEnded: actualOpenEnded,
 
     // Repair
     repairedCourses,
@@ -752,6 +743,39 @@ export async function solveDeedText(deedText, model, options = {}) {
 }
 
 /**
+ * Preprocess courses to substitute 10.0 feet for zero-length segments.
+ */
+export function preprocessZeroLengthCourses(courses) {
+  if (!courses) return [];
+  return courses.map(c => {
+    const copy = { ...c };
+    const desc = ((copy.description || '') + ' ' + (copy.label || '')).toUpperCase();
+    const matchesText = /\b0\.00\s*(?:FEET|FT|METERS|M\b|DEGREES)/.test(desc);
+    const hasDeflection = copy.deflectionAngle != null;
+    
+    if (copy.type?.toLowerCase() === 'curve') {
+      if (copy.chordDistance === 0 || copy.chordDistance === 0.00 || (copy.chordDistance == null && (matchesText || hasDeflection))) {
+        copy.chordDistance = 10.0;
+        copy.assumedZeroLength = true;
+        copy.isUnknown = false;
+      }
+      if (copy.arcLength === 0 || copy.arcLength === 0.00 || (copy.arcLength == null && (matchesText || hasDeflection))) {
+        copy.arcLength = 10.0;
+        copy.assumedZeroLength = true;
+        copy.isUnknown = false;
+      }
+    } else {
+      if (copy.distance === 0 || copy.distance === 0.00 || (copy.distance == null && (matchesText || hasDeflection))) {
+        copy.distance = 10.0;
+        copy.assumedZeroLength = true;
+        copy.isUnknown = false;
+      }
+    }
+    return copy;
+  });
+}
+
+/**
  * Solve from pre-parsed courses — no LLM required.
  * Runs the full deterministic COGO repair pipeline directly.
  */
@@ -759,40 +783,17 @@ export function solveFromCourses(courses, options = {}) {
   const startTime = Date.now();
   const pob = { northing: options.pobNorthing ?? 5000, easting: options.pobEasting ?? 5000 };
   const units = options.units || 'Feet';
+  const isOpenEnded = options.isOpenEnded ?? false;
 
-  let hasZeroLength = false;
-  const processedCourses = courses.map(c => {
-    const copy = { ...c };
-    const desc = ((copy.description || '') + ' ' + (copy.label || '')).toUpperCase();
-    const matchesText = /\b0\.00\s*(?:FEET|FT|METERS|M\b|DEGREES)/.test(desc);
-    
-    if (copy.type?.toLowerCase() === 'curve') {
-      if (copy.chordDistance === 0 || copy.chordDistance === 0.00 || (copy.chordDistance == null && matchesText)) {
-        copy.chordDistance = 10.0;
-        copy.assumedZeroLength = true;
-        hasZeroLength = true;
-      }
-      if (copy.arcLength === 0 || copy.arcLength === 0.00 || (copy.arcLength == null && matchesText)) {
-        copy.arcLength = 10.0;
-        copy.assumedZeroLength = true;
-        hasZeroLength = true;
-      }
-    } else {
-      if (copy.distance === 0 || copy.distance === 0.00 || (copy.distance == null && matchesText)) {
-        copy.distance = 10.0;
-        copy.assumedZeroLength = true;
-        hasZeroLength = true;
-      }
-    }
-    return copy;
-  });
+  const processedCourses = preprocessZeroLengthCourses(courses);
+  const hasZeroLength = processedCourses.some(c => c.assumedZeroLength);
 
   const originalCourses = courses.map(c => ({ ...c }));
-  const { courses: repairedCourses, result, steps } = repairCourses(processedCourses, pob, units);
+  const { courses: repairedCourses, result, steps } = repairCourses(processedCourses, pob, units, isOpenEnded);
 
   const passed = result && isPassing(result);
   const correctionTable = buildCorrectionTable(originalCourses, repairedCourses, steps);
-  const legalDescription = writeLegalDescription(originalCourses, repairedCourses, result, pob, units, steps);
+  const legalDescription = writeLegalDescription(originalCourses, repairedCourses, result, pob, units, steps, isOpenEnded);
 
   let trustScore = 100;
   if (!passed) trustScore -= 40;
@@ -800,7 +801,7 @@ export function solveFromCourses(courses, options = {}) {
   const correctedBearings = correctionTable.filter(c => c.status === 'CORRECTED').length;
   if (inventedBearings > 1) trustScore -= 15;
   if (correctedBearings > 2) trustScore -= 20;
-  if (result?.areaAcres != null && result.areaAcres < 0.01) trustScore -= 25;
+  if (result?.areaAcres != null && result.areaAcres < 0.01 && !isOpenEnded) trustScore -= 25;
   trustScore = Math.max(0, Math.min(100, trustScore));
   const trustLevel = trustScore >= 80 ? 'HIGH' : trustScore >= 55 ? 'MEDIUM' : 'LOW';
 
@@ -808,7 +809,7 @@ export function solveFromCourses(courses, options = {}) {
     status: passed ? 'PASS' : 'FAIL',
     model: 'deterministic-cogo',
     elapsedMs: Date.now() - startTime,
-    originalCourses, pob, units,
+    originalCourses, pob, units, isOpenEnded,
     repairedCourses, correctionTable, steps,
     hasZeroLengthLines: hasZeroLength,
     primaryHypothesis: steps[0]?.hypothesis || 'NONE',

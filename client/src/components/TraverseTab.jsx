@@ -574,6 +574,7 @@ export default function TraverseTab() {
           pob={{ northing: parseFloat(pob.northing), easting: parseFloat(pob.easting) }}
           initialLegalDescription={''}
           closure={result.closure}
+          isOpenEnded={isOpenEnded}
           onClose={() => setShowPrint(false)}
         />
       )}

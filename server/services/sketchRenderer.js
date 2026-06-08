@@ -361,6 +361,8 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
   const { x: rx, y: ry, w: rw, h: rh } = region;
   const { showRaw = true, showAdj = true, showGrid = true, showLabels = true, uncorrected = false, showConceptualDetail = false, isBlueprint = false } = opts;
 
+  const isOpenEnded = opts.isOpenEnded || meta.isOpenEnded || false;
+
   const activePts = adjPts.length >= 2 ? adjPts : rawPts;
 
   // Check if this is a PLSS aliquot deed (uses Section/Township/Range subdivision)
@@ -538,14 +540,16 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
   // Adjusted boundary fill + stroke  (or uncorrected dashed)
   if (denseDrawPts.length >= 2) {
     // Fill
-    ctx.beginPath();
-    ctx.moveTo(tx(denseDrawPts[0].easting), ty(denseDrawPts[0].northing));
-    for (let i = 1; i < denseDrawPts.length; i++) {
-      ctx.lineTo(tx(denseDrawPts[i].easting), ty(denseDrawPts[i].northing));
+    if (!isOpenEnded) {
+      ctx.beginPath();
+      ctx.moveTo(tx(denseDrawPts[0].easting), ty(denseDrawPts[0].northing));
+      for (let i = 1; i < denseDrawPts.length; i++) {
+        ctx.lineTo(tx(denseDrawPts[i].easting), ty(denseDrawPts[i].northing));
+      }
+      ctx.closePath();
+      ctx.fillStyle = themeFill;
+      ctx.fill();
     }
-    ctx.closePath();
-    ctx.fillStyle = themeFill;
-    ctx.fill();
 
     // Stroke
     ctx.save();
@@ -561,14 +565,16 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
     for (let i = 1; i < denseDrawPts.length; i++) {
       ctx.lineTo(tx(denseDrawPts[i].easting), ty(denseDrawPts[i].northing));
     }
-    ctx.closePath();
+    if (!isOpenEnded) {
+      ctx.closePath();
+    }
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
   }
 
   // 3.5. Draw Conceptual Details (Angled labels, Roadway, Easement, Center label, Creek, Setbacks, Residence, Trees)
-  if (showConceptualDetail && adjPts.length > 1) {
+  if (showConceptualDetail && adjPts.length > 1 && !isOpenEnded) {
     const centerX = drawPts.reduce((sum, p) => sum + tx(p.easting), 0) / drawPts.length;
     const centerY = drawPts.reduce((sum, p) => sum + ty(p.northing), 0) / drawPts.length;
 
@@ -1267,7 +1273,7 @@ function renderPage1(stations, adjusted, courses, meta, closure, showConceptualD
 
   if (rawPts.length >= 2) {
     drawBoundaryGeometry(ctx, rawPts, adjPts, courses,
-      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH }, { showConceptualDetail, isBlueprint }, meta);
+      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH }, { showConceptualDetail, isBlueprint, isOpenEnded: meta.isOpenEnded || false }, meta);
   } else {
     ctx.fillStyle = isBlueprint ? '#94a3b8' : '#888888'; ctx.font = 'italic 16px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1529,7 +1535,7 @@ function renderPage5(originalCourses, meta, isBlueprint = false) {
     if (origPts.length >= 2) {
       drawBoundaryGeometry(ctx, origPts, [], originalCourses,
         { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH },
-        { showRaw: false, showAdj: true, showGrid: true, showLabels: false, uncorrected: true, isBlueprint }, meta);
+        { showRaw: false, showAdj: true, showGrid: true, showLabels: false, uncorrected: true, isBlueprint, isOpenEnded: meta.isOpenEnded || false }, meta);
     }
   } else {
     ctx.fillStyle = isBlueprint ? '#94a3b8' : '#888888'; ctx.font = 'italic 14px sans-serif';

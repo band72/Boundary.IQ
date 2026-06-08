@@ -2927,6 +2927,7 @@ export default function BatchDeedTab() {
               originalLegalDescription={r.originalExtraction?.originalLegalDesc || r.originalExtraction?.originalLegalDescription || r.extraction?.originalLegalDesc || r.extraction?.originalLegalDescription || ''}
               closure={r.traverse?.closure}
               conceptualAnalysis={r.conceptualAnalysis || r.extraction?.conceptualAnalysis || null}
+              isOpenEnded={r.extraction?.isOpenEnded || false}
               onClose={() => setShowPrint(false)}
             />
           );
