@@ -598,8 +598,8 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
       }
 
       // Offset text slightly outwards
-      const lx = mx + ox * 8;
-      const ly = my + oy * 8;
+      const lx = mx + ox * 10;
+      const ly = my + oy * 10;
 
       // Retrieve segment data
       const c = courses[i];
@@ -983,6 +983,9 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
 
   // Course midpoint labels (L1, C1…)
   if (showLabels && courses?.length > 0) {
+    const centerX = labelPts.reduce((sum, p) => sum + tx(p.easting), 0) / labelPts.length;
+    const centerY = labelPts.reduce((sum, p) => sum + ty(p.northing), 0) / labelPts.length;
+
     ctx.fillStyle    = themeText;
     ctx.font         = 'bold 9px sans-serif';
     ctx.textAlign    = 'center';
@@ -991,29 +994,53 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
       const p1 = labelPts[i];
       const p2 = labelPts[i + 1] || labelPts[0];
       if (!p1 || !p2) return;
-      const mx = (tx(p1.easting) + tx(p2.easting)) / 2;
-      const my = (ty(p1.northing) + ty(p2.northing)) / 2;
-      const cdx = tx(p2.easting) - tx(p1.easting);
-      const cdy = ty(p2.northing) - ty(p1.northing);
-      const clen = Math.hypot(cdx, cdy) || 1;
-      const cpx = -cdy / clen;
-      const cpy =  cdx / clen;
+      const x1 = tx(p1.easting), y1 = ty(p1.northing);
+      const x2 = tx(p2.easting), y2 = ty(p2.northing);
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+
+      let theta = Math.atan2(y2 - y1, x2 - x1);
+      if (theta < -Math.PI / 2 || theta > Math.PI / 2) {
+        theta += Math.PI;
+      }
+
+      // Calculate outward normal vector
+      const dx = x2 - x1, dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const px = -dy / len, py = dx / len;
+      let ox = px, oy = py;
+      const d1 = Math.hypot(mx + px * 5 - centerX, my + py * 5 - centerY);
+      const d2 = Math.hypot(mx - px * 5 - centerX, my - py * 5 - centerY);
+      if (d1 < d2) {
+        ox = -px; oy = -py;
+      }
+
       let labelId = '';
       if ((c.type || '').toLowerCase() === 'curve') {
         const m = curvesList.find(x => x.idx === i); labelId = m ? m.id : '';
       } else {
         const m = linesList.find(x  => x.idx === i); labelId = m ? m.id : '';
       }
+
       if (labelId) {
-        const lx = mx + cpx * 12;
-        const ly = my + cpy * 12;
+        // Offset inwards if showConceptualDetail is true (so it doesn't overlap with bearing/distance on the outside)
+        // Otherwise offset outwards
+        const sideMultiplier = showConceptualDetail ? -1 : 1;
+        const lx = mx + ox * 10 * sideMultiplier;
+        const ly = my + oy * 10 * sideMultiplier;
+
         ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(theta);
+
+        // Background box for legibility
         ctx.fillStyle = themeLabelBox;
         const tw = ctx.measureText(labelId).width;
-        ctx.fillRect(lx - tw / 2 - 2, ly - 6, tw + 4, 12);
-        ctx.restore();
+        ctx.fillRect(-tw / 2 - 2, -5, tw + 4, 10);
+
         ctx.fillStyle = themeText;
-        ctx.fillText(labelId, lx, ly);
+        ctx.fillText(labelId, 0, 0);
+        ctx.restore();
       }
     });
   }

@@ -757,8 +757,8 @@ export default function PrintBlueprint({
           }
 
           // Offset text slightly outwards
-          const lx = mx + ox * 8;
-          const ly = my + oy * 8;
+          const lx = mx + ox * 10;
+          const ly = my + oy * 10;
 
           // Retrieve segment data
           const c = courses[i];
@@ -1142,6 +1142,9 @@ export default function PrintBlueprint({
 
       // 5. Draw Segment Labels next to lines (L1, L2, C1...)
       if (showLabels && courses.length > 0) {
+        const centerX = labeledPts.reduce((sum, p) => sum + tx(p.easting), 0) / labeledPts.length;
+        const centerY = labeledPts.reduce((sum, p) => sum + ty(p.northing), 0) / labeledPts.length;
+
         ctx.fillStyle = themeText;
         ctx.font = 'bold 9px "Inter", sans-serif';
         ctx.textAlign = 'center';
@@ -1152,31 +1155,50 @@ export default function PrintBlueprint({
           const p2 = labeledPts[i + 1] || labeledPts[0];
           if (!p1 || !p2) return;
 
-          const mx = (tx(p1.easting) + tx(p2.easting)) / 2;
-          const my = (ty(p1.northing) + ty(p2.northing)) / 2;
+          const x1 = tx(p1.easting), y1 = ty(p1.northing);
+          const x2 = tx(p2.easting), y2 = ty(p2.northing);
+          const mx = (x1 + x2) / 2;
+          const my = (y1 + y2) / 2;
 
-          const cdx = tx(p2.easting) - tx(p1.easting);
-          const cdy = ty(p2.northing) - ty(p1.northing);
-          const clen = Math.hypot(cdx, cdy) || 1;
-          const cpx = -cdy / clen;
-          const cpy = cdx / clen;
+          let theta = Math.atan2(y2 - y1, x2 - x1);
+          if (theta < -Math.PI / 2 || theta > Math.PI / 2) {
+            theta += Math.PI;
+          }
+
+          // Calculate outward normal vector
+          const dx = x2 - x1, dy = y2 - y1;
+          const len = Math.hypot(dx, dy) || 1;
+          const px = -dy / len, py = dx / len;
+          let ox = px, oy = py;
+          const d1 = Math.hypot(mx + px * 5 - centerX, my + py * 5 - centerY);
+          const d2 = Math.hypot(mx - px * 5 - centerX, my - py * 5 - centerY);
+          if (d1 < d2) {
+            ox = -px; oy = -py;
+          }
 
           const matchedId = c.type === 'Curve'
             ? (curvesList.find(item => item.idx === i)?.id ?? '')
             : (linesList.find(item => item.idx === i)?.id ?? '');
 
           if (matchedId) {
-            const lx = mx + cpx * 12;
-            const ly = my + cpy * 12;
+            // Offset inwards if showConceptualDetail is true (so it doesn't overlap with bearing/distance on the outside)
+            // Otherwise offset outwards
+            const sideMultiplier = showConceptualDetail ? -1 : 1;
+            const lx = mx + ox * 10 * sideMultiplier;
+            const ly = my + oy * 10 * sideMultiplier;
 
             ctx.save();
+            ctx.translate(lx, ly);
+            ctx.rotate(theta);
+
+            // Background box for legibility
             ctx.fillStyle = themeLabelBox;
             const txtWidth = ctx.measureText(matchedId).width;
-            ctx.fillRect(lx - txtWidth / 2 - 2, ly - 6, txtWidth + 4, 12);
-            ctx.restore();
+            ctx.fillRect(-txtWidth / 2 - 2, -5, txtWidth + 4, 10);
 
             ctx.fillStyle = themeText;
-            ctx.fillText(matchedId, lx, ly);
+            ctx.fillText(matchedId, 0, 0);
+            ctx.restore();
           }
         });
       }
