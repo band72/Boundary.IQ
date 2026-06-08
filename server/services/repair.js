@@ -768,32 +768,10 @@ function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
 
 /**
  * Robust Self-Intersection (Bowtie) Detector
- * Evaluates stations coordinates to see if they self-intersect.
+ * Delegates to traverseSvc.
  */
 export function detectSelfIntersection(stations) {
-
-  if (!stations || stations.length < 4) return false;
-  
-  const ccw = (A, B, C) => (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
-  const intersect = (A, B, C, D) => ccw(A, C, D) !== ccw(B, C, D) && ccw(A, B, C) !== ccw(A, B, D);
-  
-  const n = stations.length;
-  for (let i = 0; i < n - 1; i++) {
-    for (let j = i + 2; j < n - 1; j++) {
-      if (i === 0 && j === n - 2) continue; // skip sharing vertex at start/end
-      const A = { x: stations[i].easting, y: stations[i].northing };
-      const B = { x: stations[i+1].easting, y: stations[i+1].northing };
-      const C = { x: stations[j].easting, y: stations[j].northing };
-      const D = { x: stations[j+1].easting, y: stations[j+1].northing };
-      
-      if (A.x == null || B.x == null || C.x == null || D.x == null) continue;
-      
-      if (intersect(A, B, C, D)) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return traverseSvc.detectSelfIntersection(stations);
 }
 
 /**

@@ -51,6 +51,7 @@ router.get('/model', async (req, res) => {
       activeProvider: gemini.getActiveProvider(),
       activeModel: gemini.getActiveModel(),
       allowApiFallback: process.env.ALLOW_API_FALLBACK !== 'false',
+      enforceNoSelfIntersection: process.env.ENFORCE_NO_SELF_INTERSECTION === 'true',
       ollama: {
         online: ollamaStatus.online,
         url: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
@@ -76,7 +77,7 @@ router.get('/model', async (req, res) => {
 // POST /api/settings/model — switch active provider & model
 router.post('/model', (req, res) => {
   try {
-    const { provider, model, openaiBaseUrl, allowApiFallback } = req.body;
+    const { provider, model, openaiBaseUrl, allowApiFallback, enforceNoSelfIntersection } = req.body;
     if (!provider) return res.status(400).json({ error: 'provider is required.' });
 
     gemini.setProvider(provider, model, openaiBaseUrl || undefined);
@@ -85,14 +86,19 @@ router.post('/model', (req, res) => {
       process.env.ALLOW_API_FALLBACK = String(allowApiFallback);
     }
 
+    if (enforceNoSelfIntersection !== undefined) {
+      process.env.ENFORCE_NO_SELF_INTERSECTION = String(enforceNoSelfIntersection);
+    }
+
     // Save active provider/model settings to .env
-    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback);
+    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback, enforceNoSelfIntersection);
 
     res.json({
       message: `Switched to ${provider}/${model || '(default)'}`,
       activeProvider: gemini.getActiveProvider(),
       activeModel: gemini.getActiveModel(),
       allowApiFallback: process.env.ALLOW_API_FALLBACK !== 'false',
+      enforceNoSelfIntersection: process.env.ENFORCE_NO_SELF_INTERSECTION === 'true',
     });
   } catch (ex) {
     res.status(400).json({ error: ex.message });
@@ -167,7 +173,7 @@ router.post('/keys', (req, res) => {
 });
 
 // Helper to save system settings back to .env file for persistence
-function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback) {
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection) {
   const envPath = path.resolve(process.cwd(), '.env');
   
   let envContent = '';
@@ -193,6 +199,7 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
   if (newProvider !== undefined) vars['ACTIVE_PROVIDER'] = newProvider;
   if (newModel !== undefined) vars['ACTIVE_MODEL'] = newModel;
   if (newAllowFallback !== undefined) vars['ALLOW_API_FALLBACK'] = String(newAllowFallback);
+  if (newEnforceIntersection !== undefined) vars['ENFORCE_NO_SELF_INTERSECTION'] = String(newEnforceIntersection);
 
   const newLines = [];
   newLines.push('# Boundary.IQ — Environment Variables');

@@ -61,6 +61,7 @@ export default function SettingsTab({
   const [selectedVendor, setSelectedVendor] = useState('gemini');
   const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash');
   const [allowApiFallback, setAllowApiFallback] = useState(true);
+  const [enforceNoSelfIntersection, setEnforceNoSelfIntersection] = useState(false);
 
   const saveKeysToBackend = async (gKey, oKey, silent = false) => {
     if (!silent) setSaveKeysLoading(true);
@@ -92,6 +93,9 @@ export default function SettingsTab({
       if (modelConfig.allowApiFallback !== undefined) {
         setAllowApiFallback(modelConfig.allowApiFallback);
       }
+      if (modelConfig.enforceNoSelfIntersection !== undefined) {
+        setEnforceNoSelfIntersection(modelConfig.enforceNoSelfIntersection);
+      }
     }
   }, [modelConfig]);
 
@@ -118,7 +122,7 @@ export default function SettingsTab({
     setSwitchingTo(`${provider}/${model}`);
     setModelLoading(true); setModelMsg('');
     try {
-      const body = { provider, model, allowApiFallback };
+      const body = { provider, model, allowApiFallback, enforceNoSelfIntersection };
       if (provider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
       const res = await fetch(`${API}/settings/model`, {
         method: 'POST',
@@ -143,7 +147,8 @@ export default function SettingsTab({
       const body = { 
         provider: modelConfig.activeProvider, 
         model: modelConfig.activeModel, 
-        allowApiFallback: newValue 
+        allowApiFallback: newValue,
+        enforceNoSelfIntersection
       };
       if (modelConfig.activeProvider === 'openai') {
         body.openaiBaseUrl = openaiBaseUrl;
@@ -161,6 +166,35 @@ export default function SettingsTab({
       }
     } catch (e) {
       setModelMsg(`✗ Fallback Connection Error: ${e.message}`);
+    }
+  };
+
+  const toggleEnforceNoSelfIntersection = async (newValue) => {
+    setEnforceNoSelfIntersection(newValue);
+    if (!modelConfig) return;
+    try {
+      const body = { 
+        provider: modelConfig.activeProvider, 
+        model: modelConfig.activeModel, 
+        allowApiFallback,
+        enforceNoSelfIntersection: newValue 
+      };
+      if (modelConfig.activeProvider === 'openai') {
+        body.openaiBaseUrl = openaiBaseUrl;
+      }
+      const res = await fetch(`${API}/settings/model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchModelConfig();
+      } else {
+        setModelMsg(`✗ Failed to update failsafe: ${data.error}`);
+      }
+    } catch (e) {
+      setModelMsg(`✗ Failsafe Connection Error: ${e.message}`);
     }
   };
 
@@ -677,6 +711,52 @@ export default function SettingsTab({
                     <div style={{
                       width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
                       position: 'absolute', top: '2px', left: allowApiFallback ? '22px' : '3px',
+                      transition: 'left 0.25s ease',
+                    }} />
+                  </div>
+                </label>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.85rem 1.2rem',
+                marginTop: '0.75rem',
+                background: !enforceNoSelfIntersection ? 'rgba(255,255,255,0.01)' : 'rgba(0, 212, 168, 0.03)',
+                border: `1px solid ${!enforceNoSelfIntersection ? 'var(--border)' : 'rgba(0, 212, 168, 0.25)'}`,
+                borderRadius: 'var(--radius-md)',
+                transition: 'all 0.3s ease',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1.2rem' }}>🛡️</span>
+                  <div>
+                    <div style={{ fontWeight: 600, color: !enforceNoSelfIntersection ? 'var(--text-muted)' : '#e8eeff', fontSize: '0.85rem' }}>
+                      Enforce Bowtie Failsafe
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                      Enforce a geometric failsafe to ensure that the boundary does not contain any self-crossing lines or polylines
+                    </div>
+                  </div>
+                </div>
+
+                <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={enforceNoSelfIntersection}
+                    onChange={e => toggleEnforceNoSelfIntersection(e.target.checked)}
+                    style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                  />
+                  <div style={{
+                    width: '40px', height: '20px', borderRadius: '10px',
+                    background: enforceNoSelfIntersection ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(255,255,255,0.1)',
+                    border: `1px solid ${enforceNoSelfIntersection ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                    position: 'relative', transition: 'all 0.25s ease',
+                    boxShadow: enforceNoSelfIntersection ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
+                  }}>
+                    <div style={{
+                      width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+                      position: 'absolute', top: '2px', left: enforceNoSelfIntersection ? '22px' : '3px',
                       transition: 'left 0.25s ease',
                     }} />
                   </div>
