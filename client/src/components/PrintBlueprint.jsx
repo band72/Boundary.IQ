@@ -1315,6 +1315,8 @@ export default function PrintBlueprint({
     const origPts = computePointsFromCourses(origCourses, pob);
     if (origPts.length < 2) return;
 
+    const canvas = originalCanvasElement;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const W = 720, H = 480;
     // eslint-disable-next-line react-hooks/immutability
