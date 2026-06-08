@@ -468,6 +468,7 @@ export default function PrintBlueprint({
         arcLength: c.arcLength || '—',
         chordBearing: c.chordBearing || '—',
         chordDistance: c.chordDistance || '—',
+        assumedZeroLength: c.assumedZeroLength || false
       });
     } else {
       linesList.push({
@@ -475,6 +476,7 @@ export default function PrintBlueprint({
         idx,
         bearing: c.bearing || '—',
         distance: c.distance || '—',
+        assumedZeroLength: c.assumedZeroLength || false
       });
     }
   });
@@ -1655,7 +1657,9 @@ export default function PrintBlueprint({
                                 <tr key={line.id}>
                                   <td className="bold">{line.id}</td>
                                   <td>{line.bearing}</td>
-                                  <td>{line.distance}'</td>
+                                  <td style={line.assumedZeroLength ? { color: '#ef4444', fontWeight: 'bold' } : {}}>
+                                    {line.distance !== '—' ? `${line.distance}${line.assumedZeroLength ? '*' : ''}'` : '—'}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1681,9 +1685,13 @@ export default function PrintBlueprint({
                                 <tr key={curve.id}>
                                   <td className="bold">{curve.id}</td>
                                   <td>{curve.radius}'</td>
-                                  <td>{curve.arcLength}'</td>
+                                  <td style={curve.assumedZeroLength ? { color: '#ef4444', fontWeight: 'bold' } : {}}>
+                                    {curve.arcLength !== '—' ? `${curve.arcLength}${curve.assumedZeroLength ? '*' : ''}'` : '—'}
+                                  </td>
                                   <td style={{ fontSize: '0.62rem' }}>{curve.chordBearing}</td>
-                                  <td>{curve.chordDistance}'</td>
+                                  <td style={curve.assumedZeroLength ? { color: '#ef4444', fontWeight: 'bold' } : {}}>
+                                    {curve.chordDistance !== '—' ? `${curve.chordDistance}${curve.assumedZeroLength ? '*' : ''}'` : '—'}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1857,7 +1865,9 @@ export default function PrintBlueprint({
                                     <tr key={line.id}>
                                       <td className="bold" style={{ fontSize: '0.78rem' }}>{line.id}</td>
                                       <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.bearing}</td>
-                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem' }}>{line.distance}'</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.78rem', color: line.assumedZeroLength ? '#ef4444' : 'inherit', fontWeight: line.assumedZeroLength ? 'bold' : 'normal' }}>
+                                        {line.distance !== '—' ? `${line.distance}${line.assumedZeroLength ? '*' : ''}'` : '—'}
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -1888,9 +1898,13 @@ export default function PrintBlueprint({
                                     <tr key={curve.id}>
                                       <td className="bold" style={{ fontSize: '0.72rem' }}>{curve.id}</td>
                                       <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.radius}'</td>
-                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.arcLength}'</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem', color: curve.assumedZeroLength ? '#ef4444' : 'inherit', fontWeight: curve.assumedZeroLength ? 'bold' : 'normal' }}>
+                                        {curve.arcLength !== '—' ? `${curve.arcLength}${curve.assumedZeroLength ? '*' : ''}'` : '—'}
+                                      </td>
                                       <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.68rem' }}>{curve.chordBearing}</td>
-                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem' }}>{curve.chordDistance}'</td>
+                                      <td style={{ fontFamily: 'JetBrains Mono', fontSize: '0.72rem', color: curve.assumedZeroLength ? '#ef4444' : 'inherit', fontWeight: curve.assumedZeroLength ? 'bold' : 'normal' }}>
+                                        {curve.chordDistance !== '—' ? `${curve.chordDistance}${curve.assumedZeroLength ? '*' : ''}'` : '—'}
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -1911,6 +1925,9 @@ export default function PrintBlueprint({
                           <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
                             <div>1. Line and curve identifiers match corresponding labels shown on sheet 1.</div>
                             <div>2. Distances and radii are shown in standard survey {units.toLowerCase()}.</div>
+                            {courses.some(c => c.assumedZeroLength) && (
+                              <div style={{ color: '#ef4444', fontWeight: 'bold' }}>* Assumed segment length (0-length course replaced with 10.0 {units.toLowerCase()} for sketch consistency).</div>
+                            )}
                             <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                               <span>SHEET IDENTIFIER: COGO TABLES</span>
                               <span>PAGE 3 OF 5</span>

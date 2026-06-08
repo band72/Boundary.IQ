@@ -1352,9 +1352,9 @@ function renderPage3(courses, meta, isBlueprint = false) {
   const curvesList = [];
   courses?.forEach((c, idx) => {
     if ((c.type || '').toLowerCase() === 'curve') {
-      curvesList.push({ id: `C${curvesList.length + 1}`, idx, radius: c.radius, arcLength: c.arcLength, chordBearing: c.chordBearing, chordDistance: c.chordDistance, delta: c.delta });
+      curvesList.push({ id: `C${curvesList.length + 1}`, idx, radius: c.radius, arcLength: c.arcLength, chordBearing: c.chordBearing, chordDistance: c.chordDistance, delta: c.delta, assumedZeroLength: c.assumedZeroLength });
     } else {
-      linesList.push({ id: `L${linesList.length + 1}`, idx, bearing: c.bearing, distance: c.distance });
+      linesList.push({ id: `L${linesList.length + 1}`, idx, bearing: c.bearing, distance: c.distance, assumedZeroLength: c.assumedZeroLength });
     }
   });
 
@@ -1399,7 +1399,15 @@ function renderPage3(courses, meta, isBlueprint = false) {
     ctx.fillStyle = keyCol; ctx.fillText(l.id, ltColX[0], ltRow);
     ctx.fillStyle = textCol;
     ctx.fillText(l.bearing || '—', ltColX[1], ltRow);
-    ctx.fillText(l.distance != null ? `${parseFloat(l.distance).toFixed(2)}'` : '—', ltColX[2], ltRow);
+    if (l.assumedZeroLength) {
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 8px monospace';
+    }
+    ctx.fillText(l.distance != null ? `${parseFloat(l.distance).toFixed(2)}'*` : '—', ltColX[2], ltRow);
+    if (l.assumedZeroLength) {
+      ctx.fillStyle = textCol;
+      ctx.font = '8px monospace';
+    }
     ltRow += ltRowH;
   });
   if (linesList.length > ltMaxRows) {
@@ -1444,9 +1452,25 @@ function renderPage3(courses, meta, isBlueprint = false) {
     ctx.fillStyle = keyCol;  ctx.fillText(c.id, ctColX[0], ctRow);
     ctx.fillStyle = textCol;
     ctx.fillText(c.radius    != null ? `${parseFloat(c.radius).toFixed(2)}'`     : '—', ctColX[1], ctRow);
-    ctx.fillText(c.arcLength != null ? `${parseFloat(c.arcLength).toFixed(2)}'`  : '—', ctColX[2], ctRow);
+    if (c.assumedZeroLength) {
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 8px monospace';
+    }
+    ctx.fillText(c.arcLength != null ? `${parseFloat(c.arcLength).toFixed(2)}'*`  : '—', ctColX[2], ctRow);
+    if (c.assumedZeroLength) {
+      ctx.fillStyle = textCol;
+      ctx.font = '8px monospace';
+    }
     ctx.fillText(c.chordBearing  || '—', ctColX[3], ctRow);
-    ctx.fillText(c.chordDistance != null ? `${parseFloat(c.chordDistance).toFixed(2)}'` : '—', ctColX[4], ctRow);
+    if (c.assumedZeroLength) {
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 8px monospace';
+    }
+    ctx.fillText(c.chordDistance != null ? `${parseFloat(c.chordDistance).toFixed(2)}'*` : '—', ctColX[4], ctRow);
+    if (c.assumedZeroLength) {
+      ctx.fillStyle = textCol;
+      ctx.font = '8px monospace';
+    }
     ctRow += ctRowH;
   });
   if (curvesList.length > ctMaxRows) {
@@ -1463,11 +1487,15 @@ function renderPage3(courses, meta, isBlueprint = false) {
   const footerY = bodyY + bodyH + 6;
   const footerH = H - footerY - MARGIN - 2;
   const notesW  = W - MARGIN * 2 - TB_W - 8;
+  const notes = [
+    `1. Line and curve identifiers match corresponding labels shown on Page 1.`,
+    `2. Distances and radii are shown in standard survey feet.`,
+  ];
+  if (courses?.some(c => c.assumedZeroLength)) {
+    notes.push(`3. * Assumed segment length (0-length course replaced with 10.0 feet for sketch consistency).`);
+  }
   drawSheetNotes(ctx, MARGIN, footerY, notesW, footerH,
-    'DATA TABLE METADATA', [
-      `1. Line and curve identifiers match corresponding labels shown on Page 1.`,
-      `2. Distances and radii are shown in standard survey feet.`,
-    ], 3, 5, isBlueprint);
+    'DATA TABLE METADATA', notes, 3, 5, isBlueprint);
   drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 3, 5, isBlueprint);
 
   return canvas.toBuffer('image/png');

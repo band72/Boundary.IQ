@@ -87,8 +87,8 @@ async function callOllama(model, prompt) {
     prompt,
     stream: false,
     options: isReasoning 
-      ? { temperature: 0.0, num_predict: 4096, num_ctx: 8192 }
-      : { temperature: 0.0, num_predict: 2048, num_ctx: 4096 }
+      ? { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
+      : { temperature: 0.0, num_predict: 4096, num_ctx: 8192 }
   };
   if (!isReasoning) {
     payload.format = 'json';
@@ -658,6 +658,13 @@ export async function solveDeedText(deedText, model, options = {}) {
   try {
     extraction = parseExtractionJson(rawResponse);
   } catch (ex) {
+    console.error('--- RAW LLM RESPONSE ---');
+    console.error(rawResponse);
+    console.error('--- CLEANED TEXT ---');
+    try {
+      console.error(parseExtractionJson.toString().includes('cleanInvalidJsonValues') ? cleanInvalidJsonValues(rawResponse.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()) : 'N/A');
+    } catch {}
+    console.error('--------------------');
     throw new Error(`Failed to parse LLM JSON output: ${ex.message}. Raw: ${rawResponse.substring(0, 300)}`);
   }
 
@@ -750,7 +757,7 @@ export function preprocessZeroLengthCourses(courses) {
   return courses.map(c => {
     const copy = { ...c };
     const desc = ((copy.description || '') + ' ' + (copy.label || '')).toUpperCase();
-    const matchesText = /\b0\.00\s*(?:FEET|FT|METERS|M\b|DEGREES)/.test(desc);
+    const matchesText = /\b0(?:\.0+)?\s*(?:FEET|FT|METERS|M\b|DEGREES)/.test(desc);
     const hasDeflection = copy.deflectionAngle != null;
     
     if (copy.type?.toLowerCase() === 'curve') {

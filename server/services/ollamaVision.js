@@ -186,8 +186,8 @@ async function generateTextOnly(prompt, model) {
     prompt,
     stream: false,
     options: isReasoning 
-      ? { temperature: 0.1, num_predict: 4096, num_ctx: 8192 }
-      : { temperature: 0.1, num_predict: 2048, num_ctx: 4096 }
+      ? { temperature: 0.1, num_predict: 8192, num_ctx: 16384 }
+      : { temperature: 0.1, num_predict: 4096, num_ctx: 8192 }
   };
   if (!isReasoning && !isVisionModel(model)) {
     payload.format = 'json';
