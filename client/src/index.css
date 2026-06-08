@@ -997,6 +997,55 @@ select option { background: var(--bg-elevated); }
   overflow: hidden;
 }
 
+.blueprint-sheet.theme-blueprint {
+  background: #0c1a2d !important;
+  background-image: linear-gradient(rgba(56, 189, 248, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.08) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+  color: #ffffff !important;
+}
+
+.blueprint-sheet.theme-blueprint .blueprint-border-outer,
+.blueprint-sheet.theme-blueprint .blueprint-border-inner,
+.blueprint-sheet.theme-blueprint .blueprint-desc-panel,
+.blueprint-sheet.theme-blueprint .blueprint-title-block,
+.blueprint-sheet.theme-blueprint .tb-row.border-bottom,
+.blueprint-sheet.theme-blueprint .tb-cell.border-left,
+.blueprint-sheet.theme-blueprint .table-block,
+.blueprint-sheet.theme-blueprint .survey-table,
+.blueprint-sheet.theme-blueprint .survey-table td,
+.blueprint-sheet.theme-blueprint .survey-table th,
+.blueprint-sheet.theme-blueprint .blueprint-map-column {
+  border-color: #38bdf8 !important;
+}
+
+.blueprint-sheet.theme-blueprint .panel-header,
+.blueprint-sheet.theme-blueprint .survey-table th {
+  background: #111e36 !important;
+  color: #38bdf8 !important;
+  border-bottom: 1px solid #38bdf8 !important;
+}
+
+.blueprint-sheet.theme-blueprint .blueprint-section-title,
+.blueprint-sheet.theme-blueprint .tb-val,
+.blueprint-sheet.theme-blueprint .tb-label,
+.blueprint-sheet.theme-blueprint .panel-body,
+.blueprint-sheet.theme-blueprint .survey-table td {
+  color: #f1f5f9 !important;
+}
+
+.blueprint-sheet.theme-blueprint .tb-label {
+  color: #94a3b8 !important;
+}
+
+.blueprint-sheet.theme-blueprint .survey-table tbody tr:nth-child(even) td {
+  background: rgba(30, 41, 59, 0.5) !important;
+}
+
+.blueprint-sheet.theme-blueprint .no-description {
+  color: #64748b !important;
+}
+
+
 .blueprint-sheet.hide-grid {
   background-image: none !important;
 }

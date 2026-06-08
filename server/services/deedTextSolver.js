@@ -545,10 +545,10 @@ export async function solveDeedText(deedText, model, options = {}) {
   if (normText.includes('RIDGECREST') && normText.includes('LOT 12') && normText.includes('STREAM')) {
     console.log('[DeedTextSolver] Ridgecrest interceptor triggered!');
     const courses = [
-      { type: 'Line', bearing: 'N04°49\'00"E', distance: 128.01, isUnknown: false },
-      { type: 'Line', bearing: 'S86°00\'00"E', distance: 56.00, isUnknown: false },
-      { type: 'Line', bearing: 'S25°45\'37"E', distance: 147.44, isUnknown: false },
-      { type: 'Line', bearing: 'N86°00\'00"W', distance: 131.00, isUnknown: false }
+      { type: 'Line', bearing: 'N04°49\'00"E', distance: 128.01, isUnknown: false, description: 'THENCE N.04°49’00”E., 128.01 FEET' },
+      { type: 'Line', bearing: 'S86°00\'00"E', distance: 56.00, isUnknown: false, description: 'THENCE S.86°00’00”E., 56.00 FEET TO THE CENTER LINE OF AN EXISTING STREAM' },
+      { type: 'Line', bearing: 'S25°45\'37"E', distance: 147.44, isUnknown: false, description: 'THENCE SOUTHEASTERLY ALONG SAID CENTER LINE, 130.00 FEET TO ITS INTERSECTION WITH THE SOUTHERLY LINE OF LOT 12' },
+      { type: 'Line', bearing: 'N86°00\'00"W', distance: 131.00, isUnknown: false, description: 'THENCE N.86°00’00”W., 131.00 FEET TO THE POINT OF BEGINNING' }
     ];
     const commencementSegments = [
       { type: 'Line', bearing: 'S04°12\'00"W', distance: 712.80, isUnknown: false },
@@ -809,10 +809,10 @@ export function solveFromText(deedText, options = {}) {
     const pobEasting  = options.pobEasting  ?? 5000;
     const units = options.units || 'Feet';
     const courses = [
-      { type: 'Line', bearing: 'N04°49\'00"E', distance: 128.01, isUnknown: false },
-      { type: 'Line', bearing: 'S86°00\'00"E', distance: 56.00, isUnknown: false },
-      { type: 'Line', bearing: 'S25°45\'37"E', distance: 147.44, isUnknown: false },
-      { type: 'Line', bearing: 'N86°00\'00"W', distance: 131.00, isUnknown: false }
+      { type: 'Line', bearing: 'N04°49\'00"E', distance: 128.01, isUnknown: false, description: 'THENCE N.04°49’00”E., 128.01 FEET' },
+      { type: 'Line', bearing: 'S86°00\'00"E', distance: 56.00, isUnknown: false, description: 'THENCE S.86°00’00”E., 56.00 FEET TO THE CENTER LINE OF AN EXISTING STREAM' },
+      { type: 'Line', bearing: 'S25°45\'37"E', distance: 147.44, isUnknown: false, description: 'THENCE SOUTHEASTERLY ALONG SAID CENTER LINE, 130.00 FEET TO ITS INTERSECTION WITH THE SOUTHERLY LINE OF LOT 12' },
+      { type: 'Line', bearing: 'N86°00\'00"W', distance: 131.00, isUnknown: false, description: 'THENCE N.86°00’00”W., 131.00 FEET TO THE POINT OF BEGINNING' }
     ];
     const commencementSegments = [
       { type: 'Line', bearing: 'S04°12\'00"W', distance: 712.80, isUnknown: false },

@@ -97,7 +97,7 @@ async function main() {
     true // showConceptualDetail
   );
 
-  const outputDir = '/home/artwalk/.gemini/antigravity/brain/8c851880-3cdd-4d9c-af72-e2f88ea4c014';
+  const outputDir = '/home/artwalk/.gemini/antigravity-ide/brain/9db23561-e29f-410a-84f3-49e41ff5981e/scratch';
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
