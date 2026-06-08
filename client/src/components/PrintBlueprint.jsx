@@ -1766,22 +1766,21 @@ export default function PrintBlueprint({
                 </div>
               </div>
 
-              {/* SHEET 2: Legal Description */}
+              {/* SHEET 2: Original Legal Description */}
               <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''} ${blueprintTheme ? 'theme-blueprint' : ''}`}>
                 <div className="blueprint-border-outer">
                   <div className="blueprint-border-inner">
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div className="blueprint-section-title">METES & BOUNDS LEGAL DESCRIPTION</div>
+                      <div className="blueprint-section-title">ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION)</div>
                       
-                      {/* Legal description box expands to fill space above the footer */}
                       <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
-                        <div className="panel-header">CORRECTED RECORD DESCRIPTION</div>
+                        <div className="panel-header">ORIGINAL RECORD DESCRIPTION</div>
                         <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
-                          {legalDesc ? (
-                            <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
+                          {(originalLegalDescription || legalDesc) ? (
+                            <p style={{ textIndent: '2rem' }}>{originalLegalDescription || legalDesc}</p>
                           ) : (
                             <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
-                              [No legal description provided. Click "Auto-Write" in the sidebar editor to generate a professional metes & bounds legal description dynamically.]
+                              [No original legal description available.]
                             </p>
                           )}
                         </div>
@@ -1792,12 +1791,12 @@ export default function PrintBlueprint({
                         
                         {/* Left side: Notes and Page Info */}
                         <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
-                          <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES & CERTIFICATION</div>
+                          <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES</div>
                           <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
-                            <div>1. This legal description represents a mathematical compilation of recorded deed and plat data.</div>
-                            <div>2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.</div>
+                            <div>1. This page contains the original deed legal description as extracted prior to AI-assisted repair.</div>
+                            <div>2. Refer to Page 4 for the corrected metes & bounds legal description after traverse closure repair.</div>
                             <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                              <span>SHEET IDENTIFIER: METES & BOUNDS DESC</span>
+                              <span>SHEET IDENTIFIER: ORIGINAL LEGAL DESC</span>
                               <span>PAGE 2 OF 5</span>
                             </div>
                           </div>
@@ -1909,46 +1908,46 @@ export default function PrintBlueprint({
                 </div>
               </div>
 
-              {/* SHEET 4: Original Legal Description */}
-                <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''} ${blueprintTheme ? 'theme-blueprint' : ''}`}>
-                  <div className="blueprint-border-outer">
-                    <div className="blueprint-border-inner">
-                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        <div className="blueprint-section-title">ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION)</div>
-                        
-                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
-                          <div className="panel-header">ORIGINAL RECORD DESCRIPTION</div>
-                          <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
-                            {(originalLegalDescription || legalDesc) ? (
-                              <p style={{ textIndent: '2rem' }}>{originalLegalDescription || legalDesc}</p>
-                            ) : (
-                              <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
-                                [No original legal description available.]
-                              </p>
-                            )}
-                          </div>
+              {/* SHEET 4: Corrected Legal Description */}
+              <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''} ${blueprintTheme ? 'theme-blueprint' : ''}`}>
+                <div className="blueprint-border-outer">
+                  <div className="blueprint-border-inner">
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div className="blueprint-section-title">METES & BOUNDS LEGAL DESCRIPTION</div>
+                      
+                      <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                        <div className="panel-header">CORRECTED RECORD DESCRIPTION</div>
+                        <div className="panel-body font-serif" style={{ fontSize: '0.88rem', lineHeight: '1.7', padding: '24px', overflowY: 'auto' }}>
+                          {legalDesc ? (
+                            <p style={{ textIndent: '2rem' }}>{legalDesc}</p>
+                          ) : (
+                            <p className="no-description" style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '2rem' }}>
+                              [No legal description provided. Click "Auto-Write" in the sidebar editor to generate a professional metes & bounds legal description dynamically.]
+                            </p>
+                          )}
                         </div>
+                      </div>
 
-                        <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
-                          <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
-                            <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES</div>
-                            <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
-                              <div>1. This page contains the original deed legal description as extracted prior to AI-assisted repair.</div>
-                              <div>2. Refer to Page 2 for the corrected metes & bounds legal description after traverse closure repair.</div>
-                              <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                                <span>SHEET IDENTIFIER: ORIGINAL LEGAL DESC</span>
-                                <span>PAGE 4 OF 5</span>
-                              </div>
+                      <div style={{ display: 'flex', gap: '12px', height: '150px', flexShrink: 0, marginTop: '12px' }}>
+                        <div style={{ flex: 1, border: '1.5px solid #000000', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: '8px' }}>
+                          <div className="panel-header" style={{ margin: '-8px -8px 8px -8px' }}>SHEET NOTES & CERTIFICATION</div>
+                          <div style={{ fontSize: '0.65rem', color: '#333333', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'center' }}>
+                            <div>1. This legal description represents a mathematical compilation of recorded deed and plat data.</div>
+                            <div>2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.</div>
+                            <div style={{ borderTop: '0.5px solid #ccc', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                              <span>SHEET IDENTIFIER: METES & BOUNDS DESC</span>
+                              <span>PAGE 4 OF 5</span>
                             </div>
                           </div>
-                          <div style={{ width: '420px', flexShrink: 0 }}>
-                            {renderTitleBlock()}
-                          </div>
+                        </div>
+                        <div style={{ width: '420px', flexShrink: 0 }}>
+                          {renderTitleBlock()}
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
 
                 {/* SHEET 5: Original Uncorrected Sketch */}
                 <div className={`blueprint-sheet page-break ${!showGrid ? 'hide-grid' : ''} ${blueprintTheme ? 'theme-blueprint' : ''}`}>

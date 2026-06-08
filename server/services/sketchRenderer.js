@@ -1277,7 +1277,7 @@ function renderPage1(stations, adjusted, courses, meta, closure, showConceptualD
   return canvas.toBuffer('image/png');
 }
 
-function renderPage2(legalDescription, meta, isBlueprint = false) {
+function renderPage2(originalLegalDesc, meta, isBlueprint = false) {
   const { canvas, ctx } = newCanvas();
   drawPageFrame(ctx, isBlueprint);
 
@@ -1287,7 +1287,7 @@ function renderPage2(legalDescription, meta, isBlueprint = false) {
   ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
   ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('METES & BOUNDS LEGAL DESCRIPTION — PAGE 2 OF 5', MARGIN + 8, titleY + titleBarH / 2);
+  ctx.fillText('ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION) — PAGE 2 OF 5', MARGIN + 8, titleY + titleBarH / 2);
   if (isBlueprint) {
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 0.5;
@@ -1297,16 +1297,16 @@ function renderPage2(legalDescription, meta, isBlueprint = false) {
   const bodyY = titleY + titleBarH + 4;
   const bodyH = H - bodyY - FOOTER_H - 8;
 
-  drawLegalDescBox(ctx, MARGIN, bodyY, W - MARGIN * 2, bodyH, legalDescription, 'CORRECTED RECORD DESCRIPTION', isBlueprint);
+  drawLegalDescBox(ctx, MARGIN, bodyY, W - MARGIN * 2, bodyH, originalLegalDesc, 'ORIGINAL RECORD DESCRIPTION', isBlueprint);
 
   // Footer
   const footerY = bodyY + bodyH + 6;
   const footerH = H - footerY - MARGIN - 2;
   const notesW  = W - MARGIN * 2 - TB_W - 8;
   drawSheetNotes(ctx, MARGIN, footerY, notesW, footerH,
-    'SHEET NOTES & CERTIFICATION', [
-      '1. This legal description represents a mathematical compilation of recorded deed and plat data.',
-      '2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.',
+    'SHEET NOTES', [
+      '1. This page contains the original deed legal description as extracted prior to AI-assisted repair.',
+      '2. Refer to Page 4 for the corrected metes & bounds legal description after traverse closure repair.',
     ], 2, 5, isBlueprint);
   drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 2, 5, isBlueprint);
 
@@ -1456,7 +1456,7 @@ function renderPage3(courses, meta, isBlueprint = false) {
   return canvas.toBuffer('image/png');
 }
 
-function renderPage4(originalLegalDesc, meta, isBlueprint = false) {
+function renderPage4(legalDescription, meta, isBlueprint = false) {
   const { canvas, ctx } = newCanvas();
   drawPageFrame(ctx, isBlueprint);
 
@@ -1466,7 +1466,7 @@ function renderPage4(originalLegalDesc, meta, isBlueprint = false) {
   ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
   ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION) — PAGE 4 OF 5', MARGIN + 8, titleY + titleBarH / 2);
+  ctx.fillText('METES & BOUNDS LEGAL DESCRIPTION — PAGE 4 OF 5', MARGIN + 8, titleY + titleBarH / 2);
   if (isBlueprint) {
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 0.5;
@@ -1476,15 +1476,15 @@ function renderPage4(originalLegalDesc, meta, isBlueprint = false) {
   const bodyY = titleY + titleBarH + 4;
   const bodyH = H - bodyY - FOOTER_H - 8;
 
-  drawLegalDescBox(ctx, MARGIN, bodyY, W - MARGIN * 2, bodyH, originalLegalDesc, 'ORIGINAL RECORD DESCRIPTION', isBlueprint);
+  drawLegalDescBox(ctx, MARGIN, bodyY, W - MARGIN * 2, bodyH, legalDescription, 'CORRECTED RECORD DESCRIPTION', isBlueprint);
 
   const footerY = bodyY + bodyH + 6;
   const footerH = H - footerY - MARGIN - 2;
   const notesW  = W - MARGIN * 2 - TB_W - 8;
   drawSheetNotes(ctx, MARGIN, footerY, notesW, footerH,
-    'SHEET NOTES', [
-      '1. This page contains the original deed legal description as extracted prior to AI-assisted repair.',
-      '2. Refer to Page 2 for the corrected metes & bounds legal description after traverse closure repair.',
+    'SHEET NOTES & CERTIFICATION', [
+      '1. This legal description represents a mathematical compilation of recorded deed and plat data.',
+      '2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.',
     ], 4, 5, isBlueprint);
   drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 4, 5, isBlueprint);
 
@@ -1596,9 +1596,9 @@ export function renderSketchPages(stations, adjusted, courses, meta = {},
   }
   return {
     page1: renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail, isBlueprint),
-    page2: renderPage2(legalDescription || null, meta, isBlueprint),
+    page2: renderPage2(originalLegalDesc || legalDescription || null, meta, isBlueprint),
     page3: renderPage3(courses, meta, isBlueprint),
-    page4: renderPage4(originalLegalDesc || legalDescription || null, meta, isBlueprint),
+    page4: renderPage4(legalDescription || null, meta, isBlueprint),
     page5: renderPage5(originalCourses || courses, meta, isBlueprint),
   };
 }
