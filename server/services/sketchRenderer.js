@@ -1060,6 +1060,17 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
 
   ctx.restore(); // remove clip
 
+  const hasZeroLengthLines = (courses && courses.some(c => c.assumedZeroLength || c.distance === 0 || c.chordDistance === 0)) ||
+                             (meta && meta.hasZeroLengthLines === true);
+  if (hasZeroLengthLines) {
+    ctx.save();
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠️ WARNING: 0-LENGTH LINES DETECTED & ASSUMED 10.0 FT FOR CONCEPTUAL SKETCH (VERIFY DEED)', rx + rw / 2, ry + 15);
+    ctx.restore();
+  }
+
   // ── North arrow (top-right of the region) ────────────────────────────────
   const ax = rx + rw - 40;
   const ay = ry + 42;

@@ -501,11 +501,14 @@ function buildCorrectionTable(originalCourses, repairedCourses, steps) {
   }
   return repairedCourses.map((c, i) => {
     const orig = originalCourses[i];
-    const status = stepMap[i]
+    let status = stepMap[i]
       ? (stepMap[i].hypothesis === 'INVERSE_GAP_SOLVER' ? 'SOLVED-BY-INVERSE'
         : stepMap[i].hypothesis?.includes('FLIP') ? 'CORRECTED'
         : 'UNRESOLVED')
       : 'ORIGINAL';
+    if (c.assumedZeroLength) {
+      status = 'ASSUMED-10FT';
+    }
     return {
       courseNumber: i + 1,
       bearing: c.bearing || null,
@@ -757,8 +760,35 @@ export function solveFromCourses(courses, options = {}) {
   const pob = { northing: options.pobNorthing ?? 5000, easting: options.pobEasting ?? 5000 };
   const units = options.units || 'Feet';
 
+  let hasZeroLength = false;
+  const processedCourses = courses.map(c => {
+    const copy = { ...c };
+    const desc = ((copy.description || '') + ' ' + (copy.label || '')).toUpperCase();
+    const matchesText = /\b0\.00\s*(?:FEET|FT|METERS|M\b|DEGREES)/.test(desc);
+    
+    if (copy.type?.toLowerCase() === 'curve') {
+      if (copy.chordDistance === 0 || copy.chordDistance === 0.00 || (copy.chordDistance == null && matchesText)) {
+        copy.chordDistance = 10.0;
+        copy.assumedZeroLength = true;
+        hasZeroLength = true;
+      }
+      if (copy.arcLength === 0 || copy.arcLength === 0.00 || (copy.arcLength == null && matchesText)) {
+        copy.arcLength = 10.0;
+        copy.assumedZeroLength = true;
+        hasZeroLength = true;
+      }
+    } else {
+      if (copy.distance === 0 || copy.distance === 0.00 || (copy.distance == null && matchesText)) {
+        copy.distance = 10.0;
+        copy.assumedZeroLength = true;
+        hasZeroLength = true;
+      }
+    }
+    return copy;
+  });
+
   const originalCourses = courses.map(c => ({ ...c }));
-  const { courses: repairedCourses, result, steps } = repairCourses(courses, pob, units);
+  const { courses: repairedCourses, result, steps } = repairCourses(processedCourses, pob, units);
 
   const passed = result && isPassing(result);
   const correctionTable = buildCorrectionTable(originalCourses, repairedCourses, steps);
@@ -780,6 +810,7 @@ export function solveFromCourses(courses, options = {}) {
     elapsedMs: Date.now() - startTime,
     originalCourses, pob, units,
     repairedCourses, correctionTable, steps,
+    hasZeroLengthLines: hasZeroLength,
     primaryHypothesis: steps[0]?.hypothesis || 'NONE',
     traverse: result ? {
       stations: result.stations,
@@ -871,12 +902,12 @@ export function solveFromText(deedText, options = {}) {
       const dist       = parseFloat(distMatch[2].replace(/,/g, ''));
       const normalized = normalizeBearing(rawBearing);
       const unknownB   = isUnknownBearing(rawBearing, normalized);
-      const unknownD   = isNaN(dist) || dist === 0;
+      const unknownD   = isNaN(dist);
 
       courses.push({
         type: 'Line',
         bearing:   unknownB ? null : normalized,
-        distance:  unknownD ? null : dist,
+        distance:  dist,
         isUnknown: unknownB || unknownD,
       });
     }

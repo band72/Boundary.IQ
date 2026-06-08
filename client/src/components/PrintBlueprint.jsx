@@ -1280,6 +1280,20 @@ export default function PrintBlueprint({
       ctx.font = 'italic 8px "Inter", sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(`Scale: 1 in = ${Math.round(96 / scale)} ${units.toLowerCase()}`, bx, by + bh + 12);
+
+      // 0-length line warning in red
+      const hasZeroLengthLines = courses.some(c => c.assumedZeroLength || c.distance === 0 || c.chordDistance === 0) ||
+                                 (originalCourses && originalCourses.some(c => c.distance === 0 || c.chordDistance === 0)) ||
+                                 (initialLegalDescription && /0\.00\s*(?:FEET|FT)/i.test(initialLegalDescription));
+      if (hasZeroLengthLines) {
+        ctx.save();
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚠️ WARNING: 0-LENGTH LINES DETECTED & ASSUMED 10.0 FT FOR CONCEPTUAL SKETCH (VERIFY DEED)', W / 2, 28);
+        ctx.restore();
+      }
+
       ctx.restore();
     };
 
