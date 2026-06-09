@@ -1,7 +1,7 @@
 import { fetch } from 'undici';
 
 const API = 'http://localhost:5050/api';
-const folderPath = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
+const folderPath = process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
 
 async function run() {
   console.log(`Starting headless batch scan for: ${folderPath}`);

@@ -2,7 +2,7 @@ import 'dotenv/config';
 import fs from 'fs/promises';
 import { fetch } from 'undici';
 
-const filePath = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/Regency-Commitment - Issued 3.27.25.pdf';
+const filePath = process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/Regency-Commitment - Issued 3.27.25.pdf';
 const apiKey = process.env.GEMINI_API_KEY;
 const model = 'gemini-3.5-flash';
 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -52,7 +52,7 @@ Do not include unrelated title commitment boilerplate text. Only output the tran
     console.log(transcribed ? transcribed.substring(0, 1500) + '...' : json);
     
     if (transcribed) {
-      await fs.writeFile('/home/artwalk/boundary.iq/server/transcribed_commitment.txt', transcribed, 'utf-8');
+      await fs.writeFile(process.argv[3] || './transcribed_commitment.txt', transcribed, 'utf-8');
       console.log('Wrote transcription to transcribed_commitment.txt');
     }
   } catch (err) {

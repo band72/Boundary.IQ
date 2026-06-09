@@ -12,7 +12,9 @@ import { isWordDocument, convertToPdf } from '../services/docConversion.js';
 import * as geminiVision from '../services/geminiVision.js';
 import crypto from 'crypto';
 import * as lockService from '../services/lockService.js';
+import { requireAuth } from '../middleware/auth.js';
 const router = Router();
+router.use(requireAuth);
 
 const upload = multer({ limits: { fileSize: 51 * 1024 * 1024 } }); // 51MB per file
 
@@ -159,10 +161,13 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
             imageBytes = await convertToPdf(imageBytes, fileName);
             mime = 'application/pdf';
           } catch (err) {
-            console.warn(`LibreOffice conversion failed for ${fileName}, checking for pre-extracted text fallback in training folders...`, err.message);
+                      console.warn(`LibreOffice conversion failed for ${fileName}, checking for pre-extracted text fallback...`, err.message);
             const base = path.parse(fileName).name;
-            const trainingBase = path.join(os.homedir(), 'Downloads', 'training-20260530T124201Z-3-001', 'training', 'Legal Descriptions', '_extracted', base + '.txt');
-            if (fs.existsSync(trainingBase)) {
+            const wordDocTrainingDir = process.env.WORD_DOC_TRAINING_DIR || '';
+            const trainingBase = wordDocTrainingDir
+              ? path.join(wordDocTrainingDir, '_extracted', base + '.txt')
+              : '';
+            if (trainingBase && fs.existsSync(trainingBase)) {
               console.log(`Found pre-extracted text fallback at ${trainingBase}`);
               imageBytes = fs.readFileSync(trainingBase);
               mime = 'text/plain';

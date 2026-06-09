@@ -4,7 +4,7 @@ import * as gemini from './services/geminiVision.js';
 
 async function run() {
   try {
-    const filePath = '/home/friend/Downloads/Legal Descriptions/#33278.doc';
+    const filePath = process.argv[2] || '/home/friend/Downloads/Legal Descriptions/#33278.doc';
     console.log('Reading file...');
     const bytes = await fs.readFile(filePath);
     console.log('Converting to PDF...');

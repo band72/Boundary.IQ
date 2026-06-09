@@ -33,3 +33,15 @@ logs/
 # ── Scratch ───────────────────────────────────────────────────────────────────
 scratch/
 
+# ── One-off dev / inspection scripts (hard-coded paths, not portable) ─────────
+# These files are local dev tools only. They are kept in the repo for reference
+# but are excluded from CI and deployment. To run them locally: node <script>
+server/inspect_*.js
+server/test_*.js
+server/query_*.js
+server/run_*.js
+server/seed_*.js
+server/list_*.js
+server/tag_files.js
+server/check_failures*.js
+server/tail_deed_logs.js

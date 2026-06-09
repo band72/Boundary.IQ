@@ -1,7 +1,9 @@
 // ─── DXF Route ──────────────────────────────────────────────────────────────
 import { Router } from 'express';
 import { generateDxf, generateCombinedDxf } from '../services/dxfExport.js';
+import { requireAuth } from '../middleware/auth.js';
 const router = Router();
+router.use(requireAuth);
 
 router.post('/generate', (req, res) => {
   try {

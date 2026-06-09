@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import * as output from './services/output.js';
 
-const DB_PATH = '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
+const DB_PATH = process.env.DATABASE_PATH || '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
 const db = new Database(DB_PATH);
 
 const row = db.prepare(`
@@ -31,7 +31,7 @@ const resultObj = {
 };
 
 // Create a temp folder in scratch for the output
-const testFolder = '/home/artwalk/.gemini/antigravity-ide/brain/03ace395-7d9d-43bc-a328-273543ada6f5/scratch/test_output';
+const testFolder = process.argv[2] || '/home/artwalk/.gemini/antigravity-ide/brain/03ace395-7d9d-43bc-a328-273543ada6f5/scratch/test_output';
 if (!fs.existsSync(testFolder)) {
   fs.mkdirSync(testFolder, { recursive: true });
 }

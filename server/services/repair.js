@@ -1,5 +1,11 @@
 // ─── Repair Service ─────────────────────────────────────────────────────────
-// Port of RepairService.cs — 4-stage automated repair pipeline.
+// Automated multi-stage deed repair pipeline:
+//   Stage 5  — Hierarchical Multi-Agent Resolution (runs first as primary solver)
+//   Stage 0  — Direct Gemini Extraction (fallback if agent fails)
+//   Stage 1  — Bowtie / Quadrant Inversion Auto-Fix
+//   Stage 1.5— Surveyor Shape Constraint & Scrivener Corrector
+//   Stage 3.5— Compass Rule (Bowditch) Adjustment
+//   Stage 2+ — Re-extraction & heuristic fallback chain
 // Pass Threshold: LinearError < 0.30 ft OR PrecisionRatio >= 1:10,000
 
 import * as gemini from './geminiVision.js';

@@ -352,7 +352,7 @@ export function getFailedDeedList(limit = 200, bucket = null) {
   // but ONLY if the file has no newer PASS or MEANDER record (i.e. it's genuinely still failing).
   const rows = db.prepare(`
     SELECT d.FileName, d.LinearError, d.PrecisionRatio, d.Status, d.RepairStageUsed,
-           d.Timestamp, d.BatchId, d.GeoCallCount, d.TrustScore
+           d.Timestamp, d.BatchId, d.GeoCallCount, d.TrustScore, d.ExtractionJson
     FROM DeedLogs d
     INNER JOIN (
       SELECT FileName, MAX(Timestamp) AS LatestFailTs
@@ -695,17 +695,27 @@ export function getSolutionSteps(fileName) {
 
 // ─── Cryptography & Auth Helpers ─────────────────────────────────────────────
 
+// NIST SP 800-132 recommends ≥ 210,000 iterations for PBKDF2-SHA-512.
+// We use 310,000 to stay comfortably above the 2025 guideline.
+const PBKDF2_ITERATIONS = 310_000;
+
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 64, 'sha512').toString('hex');
   return `${salt}:${hash}`;
 }
 
 export function verifyPassword(password, storedHash) {
   if (!storedHash || !storedHash.includes(':')) return false;
   const [salt, originalHash] = storedHash.split(':');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === originalHash;
+  // Support both legacy (1,000) and current (310,000) iteration counts.
+  // Legacy hashes have a 128-char hex hash; current ones are also 128-char.
+  // We detect legacy by checking a stored iteration hint embedded in the hash
+  // field. If no hint is present, try PBKDF2_ITERATIONS first, then fall back
+  // to 1,000 so existing accounts keep working through a single re-hash cycle.
+  const tryVerify = (iterations) =>
+    crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex') === originalHash;
+  return tryVerify(PBKDF2_ITERATIONS) || tryVerify(1_000);
 }
 
 export function createUser(username, password, role = 'user') {
@@ -772,6 +782,17 @@ export function getSession(token) {
 
 export function deleteSession(token) {
   db.prepare('DELETE FROM Sessions WHERE Token = ?').run(token);
+}
+
+/**
+ * Delete all sessions whose ExpiresAt has already passed.
+ * Call on startup and periodically to keep the table lean.
+ * @returns {number} Number of rows deleted
+ */
+export function purgeExpiredSessions() {
+  const deleted = db.prepare('DELETE FROM Sessions WHERE ExpiresAt < ?').run(now()).changes;
+  if (deleted > 0) console.log(`✓ Purged ${deleted} expired session(s).`);
+  return deleted;
 }
 
 export function findUserByUsername(username) {

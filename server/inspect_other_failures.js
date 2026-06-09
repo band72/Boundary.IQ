@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-const DB_PATH = '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
+const DB_PATH = process.env.DATABASE_PATH || '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
 const db = new Database(DB_PATH);
 
 const targetFiles = [

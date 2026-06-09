@@ -97,7 +97,7 @@ async function main() {
     true // showConceptualDetail
   );
 
-  const outputDir = '/home/artwalk/.gemini/antigravity-ide/brain/9db23561-e29f-410a-84f3-49e41ff5981e/scratch';
+  const outputDir = process.argv[2] || '/home/artwalk/.gemini/antigravity-ide/brain/9db23561-e29f-410a-84f3-49e41ff5981e/scratch';
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }

@@ -12,7 +12,7 @@ async function run() {
   geminiVision.setProvider('ollama', 'llama3.2:3b');
   console.log('Using active provider:', geminiVision.getActiveProvider(), '/', geminiVision.getActiveModel());
 
-  const baseDir = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions';
+  const baseDir = process.argv[2] || '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions';
   const files = [
     '#33278.doc',
     '10155L-2.doc',

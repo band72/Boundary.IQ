@@ -1,8 +1,20 @@
 import { Router } from 'express';
 import { createUser, verifyUser, createSession, getSession, deleteSession, findUserByUsername } from '../services/diagnosticsDb.js';
 import crypto from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 
 const router = Router();
+
+// Lazily-constructed OAuth2Client — re-used across requests
+let _googleClient = null;
+function getGoogleClient() {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) return null;
+  if (!_googleClient) {
+    _googleClient = new OAuth2Client(clientId);
+  }
+  return _googleClient;
+}
 
 // POST /api/auth/register
 router.post('/register', (req, res) => {
@@ -106,7 +118,7 @@ router.get('/me', (req, res) => {
 });
 
 // POST /api/auth/google-login
-router.post('/google-login', (req, res) => {
+router.post('/google-login', async (req, res) => {
   try {
     const { credential } = req.body;
 
@@ -114,29 +126,44 @@ router.post('/google-login', (req, res) => {
       return res.status(400).json({ error: 'Google credential token is required' });
     }
 
-    const parts = credential.split('.');
-    if (parts.length !== 3) {
-      return res.status(400).json({ error: 'Invalid Google credential token shape' });
+    // Require GOOGLE_CLIENT_ID to be configured — fail safe rather than silently accepting forged tokens
+    const googleClient = getGoogleClient();
+    if (!googleClient) {
+      console.error('Google login attempted but GOOGLE_CLIENT_ID is not configured in .env');
+      return res.status(503).json({ error: 'Google authentication is not configured on this server. Set GOOGLE_CLIENT_ID in your .env file.' });
     }
 
-    const payloadJson = Buffer.from(parts[1], 'base64').toString('utf-8');
-    const payload = JSON.parse(payloadJson);
+    // Cryptographically verify the token against Google's public keys
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch (verifyErr) {
+      console.warn('Google token verification failed:', verifyErr.message);
+      return res.status(401).json({ error: 'Invalid or expired Google token. Please sign in again.' });
+    }
 
-    const email = payload.email;
+    const email = payload?.email;
     if (!email) {
-      return res.status(400).json({ error: 'Email not found in Google credential token' });
+      return res.status(400).json({ error: 'Email not found in verified Google token' });
     }
 
-    // Try finding the user
+    // Only allow email-verified Google accounts
+    if (!payload.email_verified) {
+      return res.status(403).json({ error: 'Google account email is not verified' });
+    }
+
+    // Find or create the user
     let user = findUserByUsername(email);
-    
     if (!user) {
-      // Create a new user automatically with a randomized password hash (so they can only sign in via Google)
+      // New user — random password so they can only sign in via Google
       const randomPassword = crypto.randomBytes(32).toString('hex');
       user = createUser(email, randomPassword, 'user');
     }
 
-    // Create session
     const token = createSession(user.id);
 
     return res.json({
@@ -151,3 +178,4 @@ router.post('/google-login', (req, res) => {
 });
 
 export default router;
+

@@ -40,6 +40,9 @@ export default function SettingsTab({
   // Server system configurations state
   const [systemDbPath, setSystemDbPath] = useState('');
   const [systemScanRoots, setSystemScanRoots] = useState('');
+  const [systemOcrCacheDir, setSystemOcrCacheDir]             = useState('');
+  const [systemDownloadsDir, setSystemDownloadsDir]           = useState('');
+  const [systemWordDocTrainingDir, setSystemWordDocTrainingDir] = useState('');
   const [systemLoading, setSystemLoading] = useState(false);
   const [systemMsg, setSystemMsg] = useState('');
 
@@ -251,6 +254,9 @@ export default function SettingsTab({
         const data = await res.json();
         setSystemDbPath(data.dbPath || '');
         setSystemScanRoots(data.rawScanRoots || '');
+        setSystemOcrCacheDir(data.ocrCacheDir || '');
+        setSystemDownloadsDir(data.downloadsDir || '');
+        setSystemWordDocTrainingDir(data.wordDocTrainingDir || '');
       }
     } catch (e) {
       console.error('Failed to fetch system settings:', e);
@@ -266,11 +272,17 @@ export default function SettingsTab({
       const res = await fetch(`${API}/settings/system`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath: systemDbPath, scanRoots: systemScanRoots }),
+        body: JSON.stringify({
+          dbPath: systemDbPath,
+          scanRoots: systemScanRoots,
+          ocrCacheDir: systemOcrCacheDir,
+          downloadsDir: systemDownloadsDir,
+          wordDocTrainingDir: systemWordDocTrainingDir,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
-        setSystemMsg('✓ Server database and scan settings updated successfully in memory and persisted.');
+        setSystemMsg('✓ Server settings updated and persisted to .env.');
         fetchSystemSettings();
         fetchStats();
       } else {
@@ -1584,6 +1596,93 @@ export default function SettingsTab({
               />
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                 Authorized search paths for the local host file scanner, separated by semicolons (e.g. <code style={{ fontSize: '0.65rem' }}>/home/user/project1;/var/docs</code>). Directory paths outside these scopes cannot be traversed for security.
+              </span>
+            </div>
+
+            {/* ── Paths & Directories divider ─────────────────────────────── */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.75rem',
+            }}>
+              <div style={{ height: '1px', flex: 1, background: 'var(--border)' }} />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '0.06em', textTransform: 'uppercase' }}>📂 Paths &amp; Directories</span>
+              <div style={{ height: '1px', flex: 1, background: 'var(--border)' }} />
+            </div>
+
+            {/* OCR Cache Directory */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🔍 OCR Cache Directory
+              </label>
+              <input
+                id="settings-ocr-cache-dir"
+                type="text"
+                value={systemOcrCacheDir}
+                onChange={e => setSystemOcrCacheDir(e.target.value)}
+                placeholder="Default: ~/.config/BoundaryQC/OcrCache"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.55rem 0.85rem',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.8rem',
+                }}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Directory where the server caches EasyOCR results for scanned PDFs. Leave blank to use the default (<code style={{ fontSize: '0.65rem' }}>~/.config/BoundaryQC/OcrCache</code>). Changes take effect immediately — no restart needed.
+              </span>
+            </div>
+
+            {/* Downloads Search Directory */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                📥 Downloads Search Directory
+              </label>
+              <input
+                id="settings-downloads-dir"
+                type="text"
+                value={systemDownloadsDir}
+                onChange={e => setSystemDownloadsDir(e.target.value)}
+                placeholder="Default: ~/Downloads"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.55rem 0.85rem',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.8rem',
+                }}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Directory searched when resolving Word documents that are referenced by name but not found in the scan root. Leave blank to use <code style={{ fontSize: '0.65rem' }}>~/Downloads</code>.
+              </span>
+            </div>
+
+            {/* Word Doc Training / Fallback Directory */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                📄 Word Doc Fallback Directory <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.7rem' }}>(optional)</span>
+              </label>
+              <input
+                id="settings-word-doc-training-dir"
+                type="text"
+                value={systemWordDocTrainingDir}
+                onChange={e => setSystemWordDocTrainingDir(e.target.value)}
+                placeholder="Leave blank to disable (e.g. /home/user/training/Legal Descriptions)"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.55rem 0.85rem',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.8rem',
+                }}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                If LibreOffice fails to convert a <code style={{ fontSize: '0.65rem' }}>.docx</code> file, the server looks for a pre-extracted <code style={{ fontSize: '0.65rem' }}>_extracted/&lt;filename&gt;.txt</code> here. Leave blank to make LibreOffice failure a hard error.
               </span>
             </div>
           </div>

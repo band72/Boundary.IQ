@@ -58,52 +58,60 @@ async function main() {
   }
   
   const insertStmt = db.prepare(`
-    INSERT OR REPLACE INTO DeedLogs (
+    INSERT OR IGNORE INTO DeedLogs (
       BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
       ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   
-  walkDir(trainingDir, (filePath) => {
-    if (filePath.endsWith('_report.json')) {
-      totalFound++;
-      try {
-        const rawContent = fs.readFileSync(filePath, 'utf-8');
-        const json = JSON.parse(rawContent);
-        
-        if (json.status === 'success' && json.extraction && json.traverse) {
-          const fileName = json.sourceFile;
-          const parcelName = json.extraction.classification || 'QUALIFIED_PLSS';
-          const courses = json.extraction.courses || [];
-          const geoCallCount = courses.length;
-          const linearError = json.traverse.closure?.linearError ?? 0;
-          const precRatioStr = json.traverse.closure?.precisionRatio ?? '1:100000';
-          const precisionRatio = parsePrecisionRatio(precRatioStr);
-          
-          const status = 'PASS';
-          const repairStageUsed = json.traverse.compassRuleApplied ? 'Stage 3.5: Compass Rule Adjusted' : 'Stage 1: Direct Traverse';
-          
-          const extractionJson = JSON.stringify(json.extraction);
-          const traverseJson = JSON.stringify(json.traverse);
-          const agentTurnsJson = JSON.stringify(json.agentTurns || []);
-          const trustScore = json.trustScore || 1.0;
-          const solutionStepsJson = JSON.stringify(json.solutionSteps || null);
-          
-          insertStmt.run(
-            batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, timestamp,
-            extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson
-          );
-          
-          totalSeeded++;
-        }
-      } catch (err) {
-        errorCount++;
-        if (errorCount <= 5) {
-          console.error(`Error parsing ${filePath}:`, err.message);
+  // Wrap all inserts in a single transaction for atomicity and a ~10-50× speed boost
+  // (better-sqlite3 transactions do a single disk sync instead of one per row).
+  const seedAll = db.transaction(() => {
+    walkDir(trainingDir, (filePath) => {
+      if (filePath.endsWith('_report.json')) {
+        totalFound++;
+        try {
+          const rawContent = fs.readFileSync(filePath, 'utf-8');
+          const json = JSON.parse(rawContent);
+
+          if (json.status === 'success' && json.extraction && json.traverse) {
+            const fileName = json.sourceFile;
+            const parcelName = json.extraction.classification || 'QUALIFIED_PLSS';
+            const courses = json.extraction.courses || [];
+            const geoCallCount = courses.length;
+            const linearError = json.traverse.closure?.linearError ?? 0;
+            const precRatioStr = json.traverse.closure?.precisionRatio ?? '1:100000';
+            const precisionRatio = parsePrecisionRatio(precRatioStr);
+
+            const status = 'PASS';
+            const repairStageUsed = json.traverse.compassRuleApplied ? 'Stage 3.5: Compass Rule Adjusted' : 'Stage 1: Direct Traverse';
+
+            const extractionJson = JSON.stringify(json.extraction);
+            const traverseJson = JSON.stringify(json.traverse);
+            const agentTurnsJson = JSON.stringify(json.agentTurns || []);
+            const trustScore = json.trustScore || 1.0;
+            const solutionStepsJson = JSON.stringify(json.solutionSteps || null);
+
+            insertStmt.run(
+              batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, timestamp,
+              extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson
+            );
+
+            totalSeeded++;
+          }
+        } catch (err) {
+          errorCount++;
+          if (errorCount <= 5) {
+            console.error(`Error parsing ${filePath}:`, err.message);
+          } else if (errorCount === 6) {
+            console.error(`  ... (further parse errors suppressed)`);
+          }
         }
       }
-    }
+    });
   });
+
+  seedAll();
   
   console.log(`\n=========================================`);
   console.log(`SEEDING COMPLETED SUMMARY`);

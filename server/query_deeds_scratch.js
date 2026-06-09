@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 
-const dbPath = '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
+const dbPath = process.env.DATABASE_PATH || '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
 const db = new Database(dbPath);
 
 const row = db.prepare("SELECT * FROM DeedLogs WHERE FileName LIKE '%1-2-19%' ORDER BY Timestamp DESC LIMIT 1").get();

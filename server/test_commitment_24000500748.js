@@ -12,7 +12,7 @@ async function testCommitment() {
   geminiVision.setProvider('ollama', 'gemma3:4b');
   console.log('Using provider:', geminiVision.getActiveProvider(), '/', geminiVision.getActiveModel());
   
-  const filePath = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/revised 24000500748 Commitment.pdf';
+  const filePath = process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/revised 24000500748 Commitment.pdf';
   const fileName = path.basename(filePath);
   
   console.log(`Loading title commitment PDF: ${fileName}`);

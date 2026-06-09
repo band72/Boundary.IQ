@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
 import TraverseTab from './components/TraverseTab';
 import PlatTab from './components/PlatTab';
 import WriterTab from './components/WriterTab';
@@ -10,6 +10,55 @@ import LoginScreen from './components/LoginScreen';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { API } from './config';
+
+// ─── Tab Error Boundary ────────────────────────────────────────────────────────────
+class TabErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[TabErrorBoundary] Uncaught render error:', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100%', gap: '1.25rem',
+          padding: '2rem', textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '2.5rem' }}>⚠️</div>
+          <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.05rem' }}>
+            This tab encountered an unexpected error.
+          </div>
+          <div style={{
+            fontFamily: 'monospace', fontSize: '0.78rem',
+            color: 'var(--text-muted)', maxWidth: 520,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem',
+            textAlign: 'left', wordBreak: 'break-word',
+          }}>
+            {this.state.error?.message || String(this.state.error)}
+          </div>
+          <button
+            className="btn-primary"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            🔄 Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const TABS = [
   { id: 'traverse',   icon: '📐', label: 'Traverse Compute' },
@@ -225,23 +274,25 @@ export default function App() {
           </nav>
 
           {/* Workspace */}
-          <main className="workspace">
-            {tab === 'traverse'  && <TraverseTab />}
-            {tab === 'plat'      && <PlatTab />}
-            {tab === 'writer'    && <WriterTab />}
-            {tab === 'batch'     && <BatchDeedTab />}
-            {tab === 'dashboard' && <DashboardTab />}
-            {tab === 'settings'  && (
-              <SettingsTab
-                hideTraverse={hideTraverse}
-                setHideTraverse={setHideTraverse}
-                hidePlat={hidePlat}
-                setHidePlat={setHidePlat}
-                hideWriter={hideWriter}
-                setHideWriter={setHideWriter}
-              />
-            )}
-          </main>
+          <TabErrorBoundary>
+            <main className="workspace">
+              {tab === 'traverse'  && <TraverseTab />}
+              {tab === 'plat'      && <PlatTab />}
+              {tab === 'writer'    && <WriterTab />}
+              {tab === 'batch'     && <BatchDeedTab />}
+              {tab === 'dashboard' && <DashboardTab />}
+              {tab === 'settings'  && (
+                <SettingsTab
+                  hideTraverse={hideTraverse}
+                  setHideTraverse={setHideTraverse}
+                  hidePlat={hidePlat}
+                  setHidePlat={setHidePlat}
+                  hideWriter={hideWriter}
+                  setHideWriter={setHideWriter}
+                />
+              )}
+            </main>
+          </TabErrorBoundary>
         </div>
       </div>
 

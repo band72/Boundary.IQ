@@ -2,8 +2,8 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
-const TARGET_DIR = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
-const DB_PATH = '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
+const TARGET_DIR = process.env.BOUNDARY_DOWNLOADS_DIR || process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
+const DB_PATH = process.env.DATABASE_PATH || '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
 
 async function main() {
   if (!fs.existsSync(TARGET_DIR)) {
@@ -33,14 +33,21 @@ async function main() {
   const resultsTable = [];
 
   for (const fileName of files) {
+    // Escape SQLite LIKE wildcard metacharacters so file names with % or _ don't
+    // accidentally match unrelated rows.
+    const stemEscaped = path.parse(fileName).name
+      .replace(/\\/g, '\\\\')
+      .replace(/%/g, '\\%')
+      .replace(/_/g, '\\_');
+
     // Query latest entry for this file
     const row = db.prepare(`
       SELECT FileName, ParcelName, Status, PrecisionRatio, LinearError, RepairStageUsed, Timestamp 
       FROM DeedLogs 
-      WHERE FileName = ? OR FileName LIKE ? 
+      WHERE FileName = ? OR FileName LIKE ? ESCAPE '\\'
       ORDER BY Timestamp DESC 
       LIMIT 1
-    `).get(fileName, `%${path.parse(fileName).name}%`);
+    `).get(fileName, `%${stemEscaped}%`);
 
     if (row) {
       if (row.Status === 'PASS' || row.Status === 'MEANDER') passed++;
@@ -68,6 +75,11 @@ async function main() {
   console.log(`Skipped:            \x1b[33m${skipped}\x1b[0m`);
   console.log(`Errored:            \x1b[35m${errored}\x1b[0m`);
   console.log(`No Db Record:       ${noRecord}`);
+
+  if (resultsTable.length > 0) {
+    console.log('\n=== Per-File Detail ===');
+    console.table(resultsTable);
+  }
 }
 
-main();
+main().catch(err => { console.error(err); process.exit(1); });

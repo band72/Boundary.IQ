@@ -45,7 +45,7 @@ async function main() {
   geminiVision.setProvider('ollama', 'gemma3:4b');
   
   // Clean text and extract Schedule A parcel blocks
-  const filePath = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/TrainPDF/Regency-Title/Regency-Commitment - Issued 3.27.25.pdf';
+  const filePath = process.argv[2] || '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/TrainPDF/Regency-Title/Regency-Commitment - Issued 3.27.25.pdf';
   const pdfBytes = await fs.readFile(filePath);
   const parsedPdf = await pdfParse(pdfBytes);
   let text = parsedPdf.text;

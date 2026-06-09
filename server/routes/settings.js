@@ -5,7 +5,7 @@ import { spawn } from 'child_process';
 import * as gemini from '../services/geminiVision.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
 import * as dbSvc from '../services/diagnosticsDb.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -154,8 +154,8 @@ router.post('/ollama/start', async (req, res) => {
   }
 });
 
-// POST /api/settings/keys — update API keys in memory
-router.post('/keys', (req, res) => {
+// POST /api/settings/keys — update API keys in memory (admin only)
+router.post('/keys', requireRole(['admin']), (req, res) => {
   try {
     const { geminiApiKey, openAiApiKey } = req.body;
     if (geminiApiKey) {
@@ -172,10 +172,11 @@ router.post('/keys', (req, res) => {
   }
 });
 
-// Helper to save system settings back to .env file for persistence
-function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection) {
+// Helper to save system settings back to .env file for persistence (atomic write)
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir) {
   const envPath = path.resolve(process.cwd(), '.env');
-  
+  const envTmpPath = envPath + '.tmp';
+
   let envContent = '';
   if (fs.existsSync(envPath)) {
     envContent = fs.readFileSync(envPath, 'utf8');
@@ -200,6 +201,9 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
   if (newModel !== undefined) vars['ACTIVE_MODEL'] = newModel;
   if (newAllowFallback !== undefined) vars['ALLOW_API_FALLBACK'] = String(newAllowFallback);
   if (newEnforceIntersection !== undefined) vars['ENFORCE_NO_SELF_INTERSECTION'] = String(newEnforceIntersection);
+  if (newOcrCacheDir !== undefined) vars['OCR_CACHE_DIR'] = newOcrCacheDir;
+  if (newDownloadsDir !== undefined) vars['BOUNDARY_DOWNLOADS_DIR'] = newDownloadsDir;
+  if (newWordDocTrainingDir !== undefined) vars['WORD_DOC_TRAINING_DIR'] = newWordDocTrainingDir;
 
   const newLines = [];
   newLines.push('# Boundary.IQ — Environment Variables');
@@ -207,53 +211,67 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
     newLines.push(`${key}=${val}`);
   }
 
-  fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
+  // Atomic write: write to .env.tmp first, then rename over .env
+  // This ensures a crash mid-write never leaves a truncated .env file.
+  fs.writeFileSync(envTmpPath, newLines.join('\n') + '\n', 'utf8');
+  fs.renameSync(envTmpPath, envPath);
   console.log(`✓ System settings persisted to .env file at: ${envPath}`);
 }
 
-// GET /api/settings/system — retrieve SQLite path & scan roots
+// GET /api/settings/system — retrieve SQLite path, scan roots, and path overrides
 router.get('/system', (req, res) => {
   try {
     const dbPath = dbSvc.getDbPath();
     const rawScanRoots = process.env.BOUNDARY_SCAN_ROOTS || '';
-    const allowedRoots = rawScanRoots 
+    const allowedRoots = rawScanRoots
       ? rawScanRoots.split(';').filter(Boolean).map(r => path.resolve(r.trim()))
       : [os.homedir()];
 
     res.json({
       dbPath,
       rawScanRoots,
-      allowedRoots
+      allowedRoots,
+      ocrCacheDir:        process.env.OCR_CACHE_DIR             || '',
+      downloadsDir:       process.env.BOUNDARY_DOWNLOADS_DIR    || '',
+      wordDocTrainingDir: process.env.WORD_DOC_TRAINING_DIR     || '',
     });
   } catch (ex) {
     res.status(500).json({ error: ex.message });
   }
 });
 
-// POST /api/settings/system — update SQLite path & scan roots
-router.post('/system', (req, res) => {
+// POST /api/settings/system — update all path settings (admin only)
+router.post('/system', requireRole(['admin']), (req, res) => {
   try {
-    const { dbPath, scanRoots } = req.body;
-    
+    const { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir } = req.body;
+
     // 1. Switch Database Path if changed
     if (dbPath && dbPath !== dbSvc.getDbPath()) {
       dbSvc.switchDbPath(dbPath);
       process.env.DATABASE_PATH = dbPath;
     }
 
-    // 2. Switch Allowed Roots if changed
+    // 2. Switch Allowed Scan Roots if changed
     if (scanRoots !== undefined) {
       process.env.BOUNDARY_SCAN_ROOTS = scanRoots;
     }
 
-    // 3. Persist to .env file for server restarts
-    saveSystemSettingsToEnv(dbPath, scanRoots);
+    // 3. Path overrides — apply to process.env immediately (no restart needed)
+    if (ocrCacheDir !== undefined)        process.env.OCR_CACHE_DIR             = ocrCacheDir;
+    if (downloadsDir !== undefined)       process.env.BOUNDARY_DOWNLOADS_DIR    = downloadsDir;
+    if (wordDocTrainingDir !== undefined) process.env.WORD_DOC_TRAINING_DIR     = wordDocTrainingDir;
+
+    // 4. Persist to .env file for server restarts
+    saveSystemSettingsToEnv(dbPath, scanRoots, undefined, undefined, undefined, undefined, ocrCacheDir, downloadsDir, wordDocTrainingDir);
 
     res.json({
       success: true,
-      message: 'System database and scan settings updated successfully in memory and persisted to server configurations.',
+      message: 'System settings updated and persisted to .env.',
       dbPath: dbSvc.getDbPath(),
-      scanRoots: process.env.BOUNDARY_SCAN_ROOTS || ''
+      scanRoots:          process.env.BOUNDARY_SCAN_ROOTS   || '',
+      ocrCacheDir:        process.env.OCR_CACHE_DIR          || '',
+      downloadsDir:       process.env.BOUNDARY_DOWNLOADS_DIR || '',
+      wordDocTrainingDir: process.env.WORD_DOC_TRAINING_DIR  || '',
     });
   } catch (ex) {
     res.status(500).json({ error: `Failed to update system settings: ${ex.message}` });

@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+// Usage: node test_survey_split.js [ocrCacheJsonPath]
 
 // Mock hasBoundaryKeywords just for the test or define it
 function hasBoundaryKeywords(text) {
@@ -130,7 +131,7 @@ function extractNamedParcels(docText) {
 
 async function main() {
   console.log("=== Testing survey and legal description(1) ===");
-  const file1Json = JSON.parse(await fs.readFile('/home/artwalk/.config/BoundaryQC/OcrCache/f4fe7c1140cf1c63dcb9ebe05a175975d1fe3dc5cc7b444d9260f824fce532fb.json', 'utf8'));
+  const file1Json = JSON.parse(await fs.readFile((process.env.OCR_CACHE_DIR ? process.env.OCR_CACHE_DIR + '/'/home/artwalk/.config/BoundaryQC/OcrCache/f4fe7c1140cf1c63dcb9ebe05a175975d1fe3dc5cc7b444d9260f824fce532fb.json''.split('/').pop() : '/home/artwalk/.config/BoundaryQC/OcrCache/f4fe7c1140cf1c63dcb9ebe05a175975d1fe3dc5cc7b444d9260f824fce532fb.json'), 'utf8'));
   const parcels1 = extractNamedParcels(file1Json.combinedOcrText);
   console.log("Parcels found:", parcels1 ? parcels1.map(p => ({ label: p.label, length: p.text.length })) : null);
   if (parcels1) {
@@ -141,7 +142,7 @@ async function main() {
   }
 
   console.log("\n=== Testing Title (Gator-Nole-Sandbagger-Stewart) ===");
-  const file2Json = JSON.parse(await fs.readFile('/home/artwalk/.config/BoundaryQC/OcrCache/05d476ed7d50d23449480bbe7860b2227f66ef5efad79e53037d2aaf3de42abf.json', 'utf8'));
+  const file2Json = JSON.parse(await fs.readFile((process.env.OCR_CACHE_DIR ? process.env.OCR_CACHE_DIR + '/'/home/artwalk/.config/BoundaryQC/OcrCache/05d476ed7d50d23449480bbe7860b2227f66ef5efad79e53037d2aaf3de42abf.json''.split('/').pop() : '/home/artwalk/.config/BoundaryQC/OcrCache/05d476ed7d50d23449480bbe7860b2227f66ef5efad79e53037d2aaf3de42abf.json'), 'utf8'));
   const parcels2 = extractNamedParcels(file2Json.combinedOcrText);
   console.log("Parcels found:", parcels2 ? parcels2.map(p => ({ label: p.label, length: p.text.length })) : null);
   if (parcels2) {

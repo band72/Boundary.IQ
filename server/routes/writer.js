@@ -1,7 +1,9 @@
 // ─── Writer Route ───────────────────────────────────────────────────────────
 import { Router } from 'express';
 import * as legalWriter from '../services/legalWriter.js';
+import { requireAuth } from '../middleware/auth.js';
 const router = Router();
+router.use(requireAuth);
 
 router.post('/generate', (req, res) => {
   try {

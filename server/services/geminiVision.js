@@ -14,11 +14,17 @@ const execFileAsync = promisify(execFile);
 const pdfOcrCache = new Map();
 
 // Persistent Disk OCR Cache for Scanned PDFs
-const CONFIG_DIR = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-const OCR_CACHE_DIR = path.join(CONFIG_DIR, 'BoundaryQC', 'OcrCache');
-if (!fsSync.existsSync(OCR_CACHE_DIR)) {
+// Path is configurable at runtime via OCR_CACHE_DIR env var (Settings → Paths & Directories).
+const _CONFIG_DIR = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+const _DEFAULT_OCR_CACHE = path.join(_CONFIG_DIR, 'BoundaryQC', 'OcrCache');
+function getOcrCacheDir() {
+  return process.env.OCR_CACHE_DIR || _DEFAULT_OCR_CACHE;
+}
+// Ensure default dir exists on startup (custom dir is created lazily on first write)
+const _initOcrCache = getOcrCacheDir();
+if (!fsSync.existsSync(_initOcrCache)) {
   try {
-    fsSync.mkdirSync(OCR_CACHE_DIR, { recursive: true });
+    fsSync.mkdirSync(_initOcrCache, { recursive: true });
   } catch (err) {
     console.warn('Failed to create persistent OCR cache directory:', err.message);
   }
@@ -231,7 +237,94 @@ export function postProcessOcrText(text) {
   return cleaned;
 }
 
+// ── State name / abbreviation lookup table ───────────────────────────────────
+const STATE_ABBREVS = {
+  AL:'Alabama', AK:'Alaska', AZ:'Arizona', AR:'Arkansas', CA:'California',
+  CO:'Colorado', CT:'Connecticut', DE:'Delaware', FL:'Florida', GA:'Georgia',
+  HI:'Hawaii', ID:'Idaho', IL:'Illinois', IN:'Indiana', IA:'Iowa',
+  KS:'Kansas', KY:'Kentucky', LA:'Louisiana', ME:'Maine', MD:'Maryland',
+  MA:'Massachusetts', MI:'Michigan', MN:'Minnesota', MS:'Mississippi',
+  MO:'Missouri', MT:'Montana', NE:'Nebraska', NV:'Nevada', NH:'New Hampshire',
+  NJ:'New Jersey', NM:'New Mexico', NY:'New York', NC:'North Carolina',
+  ND:'North Dakota', OH:'Ohio', OK:'Oklahoma', OR:'Oregon', PA:'Pennsylvania',
+  RI:'Rhode Island', SC:'South Carolina', SD:'South Dakota', TN:'Tennessee',
+  TX:'Texas', UT:'Utah', VT:'Vermont', VA:'Virginia', WA:'Washington',
+  WV:'West Virginia', WI:'Wisconsin', WY:'Wyoming', DC:'District of Columbia',
+};
+const STATE_NAMES_UPPER = new Set(Object.values(STATE_ABBREVS).map(s => s.toUpperCase()));
+
+/**
+ * Scrape county and state from raw OCR/deed text when LLM extraction misses them.
+ * Handles patterns like:
+ *   "Smith County"            → { county: "Smith County", state: null }
+ *   "County of Smith"         → { county: "Smith County", state: null }
+ *   "State of Texas"          → { county: null, state: "Texas" }
+ *   "Smith County, Texas"     → { county: "Smith County", state: "Texas" }
+ *   ", TX" or "(TX)"          → { county: null, state: "Texas" }
+ *
+ * @param {string} text  Raw OCR or deed text
+ * @returns {{ county: string|null, state: string|null }}
+ */
+export function inferCountyStateFromText(text) {
+  if (!text || typeof text !== 'string') return { county: null, state: null };
+
+  let county = null;
+  let state  = null;
+
+  // ── County patterns ──────────────────────────────────────────────────────
+  // Pattern A: "<Name> County" (most common US form)
+  const countyA = text.match(/\b([A-Z][a-zA-Z]{1,25}(?:\s+[A-Z][a-zA-Z]{1,25})?)\s+County\b/);
+  if (countyA) {
+    const raw = countyA[1].trim();
+    const STOPWORDS = /^(this|said|the|a|an|each|any|that|such|my|our|your|their|which|what|above|following)$/i;
+    if (!STOPWORDS.test(raw)) {
+      county = raw + ' County';
+    }
+  }
+
+  // Pattern B: "County of <Name>"
+  if (!county) {
+    const countyB = text.match(/\bCounty\s+of\s+([A-Z][a-zA-Z]{2,25}(?:\s+[A-Z][a-zA-Z]{2,25})?)\b/);
+    if (countyB) {
+      county = countyB[1].trim() + ' County';
+    }
+  }
+
+  // ── State patterns ───────────────────────────────────────────────────────
+  // Pattern C: "State of <Name>"
+  const stateC = text.match(/\bState\s+of\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b/);
+  if (stateC) {
+    const candidate = stateC[1].trim();
+    if (STATE_NAMES_UPPER.has(candidate.toUpperCase())) {
+      state = candidate;
+    }
+  }
+
+  // Pattern D: known state name appearing after county reference: "Smith County, Texas"
+  if (!state) {
+    const stateD = text.match(/\bCounty\s*,\s*([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b/);
+    if (stateD) {
+      const candidate = stateD[1].trim();
+      if (STATE_NAMES_UPPER.has(candidate.toUpperCase())) {
+        state = candidate;
+      }
+    }
+  }
+
+  // Pattern E: 2-letter state abbreviation in typical deed/survey context
+  // e.g. ", TX" or "(TX)" near county or survey term
+  if (!state) {
+    const stateE = text.match(/(?:County|Survey|Township|Section|Range|Tract|Parcel)[^A-Z]{0,30}\b([A-Z]{2})\b/);
+    if (stateE && STATE_ABBREVS[stateE[1]]) {
+      state = STATE_ABBREVS[stateE[1]];
+    }
+  }
+
+  return { county: county || null, state: state || null };
+}
+
 function pruneLongText(text) {
+
   if (!text || text.length < 6000) return text;
   
   const lower = text.toLowerCase();
@@ -376,10 +469,11 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
     let cacheEntry = pdfOcrCache.get(pdfHash);
     
     // Check disk-based persistent cache if not in memory
-    if (!cacheEntry && OCR_CACHE_DIR) {
+    if (!cacheEntry) {
+      const _ocrDir = getOcrCacheDir();
       try {
-        const metaPath = path.join(OCR_CACHE_DIR, `${pdfHash}.json`);
-        const pngPath = path.join(OCR_CACHE_DIR, `${pdfHash}_page1.png`);
+        const metaPath = path.join(_ocrDir, `${pdfHash}.json`);
+        const pngPath = path.join(_ocrDir, `${pdfHash}_page1.png`);
         if (fsSync.existsSync(metaPath)) {
           console.log(`💾 Disk Cache Hit: Loading persistent OCR text for PDF (hash=${pdfHash})`);
           const metaJson = JSON.parse(fsSync.readFileSync(metaPath, 'utf8'));
@@ -463,8 +557,10 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
       // Save cache entry in memory and write to disk
       pdfOcrCache.set(pdfHash, cacheEntry);
       try {
-        const metaPath = path.join(OCR_CACHE_DIR, `${pdfHash}.json`);
-        const pngPath = path.join(OCR_CACHE_DIR, `${pdfHash}_page1.png`);
+        const _ocrDir = getOcrCacheDir();
+        if (!fsSync.existsSync(_ocrDir)) fsSync.mkdirSync(_ocrDir, { recursive: true });
+        const metaPath = path.join(_ocrDir, `${pdfHash}.json`);
+        const pngPath = path.join(_ocrDir, `${pdfHash}_page1.png`);
         
         fsSync.writeFileSync(metaPath, JSON.stringify({
           isScanned: cacheEntry.isScanned,

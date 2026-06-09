@@ -2,8 +2,8 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
-const TARGET_DIR = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/_extracted';
-const DB_PATH = '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
+const TARGET_DIR = process.env.BOUNDARY_DOWNLOADS_DIR || process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/_extracted';
+const DB_PATH = process.env.DATABASE_PATH || '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
 
 async function main() {
   if (!fs.existsSync(TARGET_DIR)) {

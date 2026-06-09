@@ -12,7 +12,7 @@ async function testModel(modelName) {
   
   geminiVision.setProvider('ollama', modelName);
   
-  const filePath = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/TrainPDF/Regency-Title/Regency-Commitment - Issued 3.27.25.pdf';
+  const filePath = process.argv[2] || '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/TrainPDF/Regency-Title/Regency-Commitment - Issued 3.27.25.pdf';
   const pdfBytes = await fs.readFile(filePath);
   
   // Extract digital text first and clean it from ALTA breaks

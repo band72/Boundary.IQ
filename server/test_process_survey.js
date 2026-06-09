@@ -8,7 +8,7 @@ const API = 'http://localhost:5050/api';
 async function run() {
   console.log('Starting verification test for survey and legal description PDF...');
   
-  const folderPath = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
+  const folderPath = process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
   const fileName = 'survey and legal description.pdf';
   
   const params = new URLSearchParams({

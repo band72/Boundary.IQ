@@ -7,7 +7,9 @@
 import { Router } from 'express';
 import { solveDeedText, listAvailableModels, solveFromText, solveFromCourses } from '../services/deedTextSolver.js';
 import * as traverseSvc from '../services/traverse.js';
+import { requireAuth } from '../middleware/auth.js';
 const router = Router();
+router.use(requireAuth);
 
 // ── GET /api/deed/models ─────────────────────────────────────────────────────
 // Returns all available Ollama models with suitability ratings for deed extraction.

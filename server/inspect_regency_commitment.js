@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import pdfParse from 'pdf-parse';
 
 async function main() {
-  const filePath = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/Regency-Commitment - Issued 3.27.25.pdf';
+  const filePath = process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001/Regency-Commitment - Issued 3.27.25.pdf';
   try {
     const buffer = await fs.readFile(filePath);
     const data = await pdfParse(buffer);

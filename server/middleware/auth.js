@@ -7,13 +7,12 @@ import { getSession } from '../services/diagnosticsDb.js';
 export function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
-    let token = null;
 
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
-    } else {
-      token = authHeader || req.query.token || req.body.token;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Access denied. Authorization header required.' });
     }
+
+    const token = authHeader.substring(7);
 
     if (!token) {
       return res.status(401).json({ error: 'Access denied. Authorization token not found.' });

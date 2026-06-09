@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useToast } from '../hooks/useToast';
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -63,6 +64,7 @@ export default function TraverseTab() {
   const [showPrint, setShowPrint] = useState(false);
   const [isOpenEnded, setIsOpenEnded] = useState(false);
   const [typoHint, setTypoHint] = useState(null);
+  const { showToast, ToastPortal } = useToast();
 
   // ── Fix Deed Text state ────────────────────────────────────────────────────
   const [fixDeedText, setFixDeedText] = useState('');
@@ -91,7 +93,8 @@ export default function TraverseTab() {
       }
     });
     if (best) setTypoHint(best);
-  }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [result, courses, pob]);
+
 
   const addCourse = () => setCourses(c => [...c, { ...BLANK_COURSE }]);
   const removeCourse = i => setCourses(c => c.filter((_, idx) => idx !== i));
@@ -374,7 +377,7 @@ export default function TraverseTab() {
             }}>Clear All</button>
             <button className="btn btn-ghost btn-sm" onClick={() => {
               navigator.clipboard.writeText(JSON.stringify(courses, null, 2));
-              alert('Copied courses to clipboard!');
+              showToast('Courses copied to clipboard!');
             }}>Copy JSON</button>
             <button className="btn btn-primary btn-sm" onClick={addCourse}>+ Add Course</button>
           </div>
@@ -578,6 +581,7 @@ export default function TraverseTab() {
           onClose={() => setShowPrint(false)}
         />
       )}
+      <ToastPortal />
     </div>
   );
 }

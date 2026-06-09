@@ -6,7 +6,7 @@ import 'dotenv/config';
 import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'fs';
 import path from 'path';
-import dotenv from 'dotenv';
+import dotenv from 'dotenv'; // kept for hot-reload: dotenv.config({ override: true })
 
 // Configure global undici dispatcher to support 30 minutes timeout for native fetch (e.g. Ollama calls)
 setGlobalDispatcher(new Agent({
@@ -95,6 +95,9 @@ if (fs.existsSync(envPath)) {
 try {
   diagnosticsDb.init();
   console.log('✓ Diagnostics database initialized.');
+  // Purge stale sessions on startup, then every 24 hours
+  diagnosticsDb.purgeExpiredSessions();
+  setInterval(() => diagnosticsDb.purgeExpiredSessions(), 24 * 60 * 60 * 1000);
 } catch (ex) {
   console.error('✗ Failed to initialize diagnostics database:', ex.message);
 }

@@ -1,4 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useToast } from '../hooks/useToast';
+
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
 import { API } from '../config';
@@ -15,6 +17,7 @@ export default function PlatTab() {
   const [showPrint, setShowPrint] = useState(false);
   const [mode, setMode]         = useState('extract'); // 'extract' | 'extract-and-compute'
   const fileRef = useRef();
+  const { showToast, ToastPortal } = useToast();
 
   const handleFile = f => {
     if (!f) return;
@@ -23,6 +26,11 @@ export default function PlatTab() {
     if (preview) URL.revokeObjectURL(preview);
     setPreview(URL.createObjectURL(f));
   };
+
+  // Revoke blob Object URL on unmount to release browser memory
+  useEffect(() => {
+    return () => { if (preview) URL.revokeObjectURL(preview); };
+  }, [preview]);
 
   const run = async () => {
     if (!file) return;
@@ -159,7 +167,7 @@ export default function PlatTab() {
               <span className="status-badge pass">{ext.courses.length} courses</span>
               <button className="btn btn-ghost btn-sm" onClick={() => {
                 navigator.clipboard.writeText(JSON.stringify(ext.courses, null, 2));
-                alert('Copied courses to clipboard!');
+                showToast('Courses copied to clipboard!');
               }}>Copy JSON</button>
             </div>
           </div>
@@ -263,6 +271,7 @@ export default function PlatTab() {
           onClose={() => setShowPrint(false)}
         />
       )}
+      <ToastPortal />
     </div>
   );
 }

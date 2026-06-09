@@ -8,7 +8,7 @@ geminiVision.setProvider('ollama', 'gemma3:4b');
 console.log('Using provider:', geminiVision.getActiveProvider(), '/', geminiVision.getActiveModel());
 
 // Read the raw text file
-const rawText = fs.readFileSync('/home/artwalk/.gemini/antigravity-ide/brain/03ace395-7d9d-43bc-a328-273543ada6f5/scratch/24000500748_text.txt', 'utf8');
+const rawText = fs.readFileSync(process.argv[2] || '/home/artwalk/.gemini/antigravity-ide/brain/03ace395-7d9d-43bc-a328-273543ada6f5/scratch/24000500748_text.txt', 'utf8');
 const lines = rawText.split('\n');
 
 // Extract lines 245 to 293 (1-indexed, so index 244 to 293)

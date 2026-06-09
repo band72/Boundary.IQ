@@ -10,7 +10,7 @@ async function run() {
   // Set provider to Ollama with qwen2.5-coder:1.5b
   geminiVision.setProvider('ollama', 'qwen2.5-coder:1.5b');
 
-  const filePath = '/home/friend/Downloads/Legal Descriptions/#33278.doc';
+  const filePath = process.argv[2] || '/home/friend/Downloads/Legal Descriptions/#33278.doc';
   const fileName = '#33278.doc';
   const pob = { northing: 5000, easting: 5000 };
   const units = 'Feet';

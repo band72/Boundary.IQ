@@ -6,6 +6,7 @@ import fs   from 'fs';
 import path from 'path';
 import * as dxf    from './dxfExport.js';
 import * as sketch from './sketchRenderer.js';
+import { inferCountyStateFromText } from './geminiVision.js';
 
 /**
  * Creates a dated output subfolder and returns its path.
@@ -154,10 +155,11 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
 
     if (conceptual && (!courses || courses.length === 0)) {
       try {
+        const _inferred0 = inferCountyStateFromText(rawOCR || '');
         const skMeta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
-          county:          result.extraction?.county           || null,
-          state:           result.extraction?.state            || null,
+          county:          result.extraction?.county           || _inferred0.county || null,
+          state:           result.extraction?.state            || _inferred0.state  || null,
           units:           result.extraction?.units            || 'Feet',
           areaAcres:       0,
           perimeter:       0,
@@ -192,10 +194,11 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
 
     if (stations.length >= 2 && courses.length >= 1) {
       try {
+        const _inferred1 = inferCountyStateFromText(rawOCR || '');
         const meta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
-          county:          result.extraction?.county           || null,
-          state:           result.extraction?.state            || null,
+          county:          result.extraction?.county           || _inferred1.county || null,
+          state:           result.extraction?.state            || _inferred1.state  || null,
           units:           result.extraction?.units            || 'Feet',
           areaAcres:       result.traverse?.areaAcres          || 0,
           perimeter:       result.traverse?.perimeter          || 0,
@@ -213,8 +216,8 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
       try {
         const skMeta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
-          county:          result.extraction?.county           || null,
-          state:           result.extraction?.state            || null,
+          county:          result.extraction?.county           || _inferred1.county || null,
+          state:           result.extraction?.state            || _inferred1.state  || null,
           units:           result.extraction?.units            || 'Feet',
           areaAcres:       result.traverse?.areaAcres          || 0,
           perimeter:       result.traverse?.perimeter          || 0,
@@ -252,10 +255,11 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
 
         const pages = sketch.renderSketchPages(
           stations, adjusted, courses, skMeta,
-          closure, legalDesc, origLegalDesc, origCourses, showConceptualDetail
+          closure, legalDesc, origLegalDesc, origCourses, showConceptualDetail,
+          false, rawOCR || null
         );
 
-        const pageLabels = ['sketch_p1', 'sketch_p2', 'sketch_p3', 'sketch_p4', 'sketch_p5'];
+        const pageLabels = ['sketch_p1', 'sketch_p2_ocr', 'sketch_p3', 'sketch_p4', 'sketch_p5', 'sketch_p6'];
         const pageBuffers = [];
         Object.entries(pages).forEach(([key, buf], i) => {
           const pngName = shortFileNames ? `Map_p${i + 1}.png` : `${baseName}_map_p${i + 1}.png`;
@@ -264,6 +268,7 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
           pageBuffers.push(buf);
           console.log(`Output: wrote PNG page ${i + 1} — ${path.basename(outPath)}`);
         });
+
 
         // Save combined PDF deliverable
         const pdfName = shortFileNames ? 'Map.pdf' : `${baseName}_map.pdf`;

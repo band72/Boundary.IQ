@@ -8,7 +8,7 @@ const API = 'http://localhost:5050/api';
 async function run() {
   console.log('Starting verification test for Regency-Commitment PDF...');
   
-  const folderPath = '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
+  const folderPath = process.argv[2] || '/home/artwalk/Downloads/drive-download-20260602T132437Z-3-001';
   const fileName = 'Regency-Commitment - Issued 3.27.25.pdf';
   
   // First, verify that the text gets extracted and cached to _extracted/ folder

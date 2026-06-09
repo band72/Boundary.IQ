@@ -16,7 +16,7 @@ async function testCommitment() {
     console.warn('⚠️ GEMINI_API_KEY not found in environment.');
   }
   
-  const filePath = '/home/artwalk/Downloads/windsor commons/PDF.js viewer.pdf';
+  const filePath = process.argv[2] || '/home/artwalk/Downloads/windsor commons/PDF.js viewer.pdf';
   const fileName = path.basename(filePath);
   
   console.log(`Loading title commitment PDF: ${fileName}`);

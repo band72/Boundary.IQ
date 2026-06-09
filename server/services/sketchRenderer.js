@@ -1,11 +1,12 @@
 // ─── Server-Side Boundary Sketch Renderer ────────────────────────────────────
-// Produces 5 PNG pages that mirror the PrintBlueprint.jsx multi-page PDF layout.
+// Produces 6 PNG pages that mirror the PrintBlueprint.jsx multi-page PDF layout.
 //
 //  Page 1 — Main boundary sketch + Mapcheck/Closure footer + Title block
-//  Page 2 — Corrected metes & bounds legal description
-//  Page 3 — Line table + Curve table
-//  Page 4 — Original deed legal description (pre-correction)
-//  Page 5 — Original uncorrected boundary sketch (dashed, UNCORRECTED watermark)
+//  Page 2 — Raw OCR verbatim text (new — added 2026-06-09)
+//  Page 3 — Corrected metes & bounds legal description
+//  Page 4 — Line table + Curve table
+//  Page 5 — Original deed legal description (pre-correction)
+//  Page 6 — Original uncorrected boundary sketch (dashed, UNCORRECTED watermark)
 //
 // Each page is letter-landscape (1056 × 816 px logical, 2× DPR = 2112 × 1632).
 
@@ -37,6 +38,40 @@ const C_PASS   = '#007700';
 const C_FAIL   = '#cc0000';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MODULE-LEVEL FONT PATCH
+// Patch the canvas2d prototype once at import time so every context automatically
+// maps generic 'sans-serif' → 'DejaVu Sans, Liberation Sans, sans-serif'.
+// This ensures accurate font metrics for node-canvas even in parallel batch runs.
+// ─────────────────────────────────────────────────────────────────────────────
+(function patchCanvasFontDescriptor() {
+  // Use a throw-away canvas to get the prototype reference (createCanvas is already imported)
+  try {
+    const _tmp = createCanvas(1, 1);
+    const _ctx = _tmp.getContext('2d');
+    const proto = Object.getPrototypeOf(_ctx);
+    const desc  = Object.getOwnPropertyDescriptor(proto, 'font');
+    if (desc && desc.set && !proto.__biqFontPatched) {
+      const _origSet = desc.set;
+      Object.defineProperty(proto, 'font', {
+        set(val) {
+          let mapped = val;
+          if (typeof val === 'string' && val.includes('sans-serif') && !val.includes('DejaVu')) {
+            mapped = val.replace('sans-serif', '"DejaVu Sans", "Liberation Sans", sans-serif');
+          }
+          _origSet.call(this, mapped);
+        },
+        get: desc.get,
+        configurable: true,
+        enumerable: true,
+      });
+      proto.__biqFontPatched = true;
+    }
+  } catch (_) {
+    // Non-fatal: font rendering will fall back to system default
+  }
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // UTILITY HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -45,28 +80,7 @@ function newCanvas() {
   const canvas = createCanvas(W * DPR, H * DPR);
   const ctx    = canvas.getContext('2d');
   ctx.scale(DPR, DPR);
-
-  // Redefine ctx.font setter to automatically map generic 'sans-serif'
-  // to '"DejaVu Sans", "Liberation Sans", sans-serif' for accurate font metrics
-  const proto = Object.getPrototypeOf(ctx);
-  const desc = Object.getOwnPropertyDescriptor(proto, 'font');
-  if (desc && desc.set) {
-    Object.defineProperty(ctx, 'font', {
-      set(val) {
-        let mapped = val;
-        if (typeof val === 'string' && val.includes('sans-serif') && !val.includes('DejaVu')) {
-          mapped = val.replace('sans-serif', '"DejaVu Sans", "Liberation Sans", sans-serif');
-        }
-        desc.set.call(ctx, mapped);
-      },
-      get() {
-        return desc.get.call(ctx);
-      },
-      configurable: true,
-      enumerable: true
-    });
-  }
-
+  // Font descriptor is patched at the prototype level on module load — no per-instance work needed.
   return { canvas, ctx };
 }
 
@@ -1251,7 +1265,7 @@ function renderPage1(stations, adjusted, courses, meta, closure, showConceptualD
   ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
   ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('BOUNDARY SURVEY SKETCH — PAGE 1 OF 5', MARGIN + 8, titleY + titleBarH / 2);
+  ctx.fillText('BOUNDARY SURVEY SKETCH — PAGE 1 OF 6', MARGIN + 8, titleY + titleBarH / 2);
   if (isBlueprint) {
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 0.5;
@@ -1294,7 +1308,11 @@ function renderPage1(stations, adjusted, courses, meta, closure, showConceptualD
   return canvas.toBuffer('image/png');
 }
 
-function renderPage2(originalLegalDesc, meta, isBlueprint = false) {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE 2 — Raw OCR scan text (verbatim source document text)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderOcrPage(rawOcrText, meta, pageN, pageTotal, isBlueprint = false) {
   const { canvas, ctx } = newCanvas();
   drawPageFrame(ctx, isBlueprint);
 
@@ -1304,7 +1322,113 @@ function renderPage2(originalLegalDesc, meta, isBlueprint = false) {
   ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
   ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION) — PAGE 2 OF 5', MARGIN + 8, titleY + titleBarH / 2);
+  ctx.fillText(`RAW OCR SCAN — SOURCE DOCUMENT TEXT — PAGE ${pageN} OF ${pageTotal}`, MARGIN + 8, titleY + titleBarH / 2);
+  if (isBlueprint) {
+    ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(MARGIN, titleY + titleBarH); ctx.lineTo(W - MARGIN, titleY + titleBarH); ctx.stroke();
+  }
+
+  const bodyY = titleY + titleBarH + 4;
+  const bodyH = H - bodyY - FOOTER_H - 8;
+
+  // Outer border
+  ctx.strokeStyle = isBlueprint ? '#38bdf8' : C_BLACK; ctx.lineWidth = 1;
+  ctx.strokeRect(MARGIN, bodyY, W - MARGIN * 2, bodyH);
+
+  // Panel header
+  const hh = 18;
+  drawPanelHeader(ctx, MARGIN, bodyY, W - MARGIN * 2, hh, 'RAW OCR — VERBATIM EXTRACTED TEXT (PRE-PROCESSING)', isBlueprint);
+
+  // Subtle disclaimer badge
+  ctx.save();
+  ctx.fillStyle = isBlueprint ? 'rgba(56,189,248,0.07)' : 'rgba(196,78,0,0.06)';
+  ctx.fillRect(MARGIN + 2, bodyY + hh + 2, W - MARGIN * 2 - 4, 14);
+  ctx.font = 'italic 7px sans-serif';
+  ctx.fillStyle = isBlueprint ? '#94a3b8' : '#888888';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('This page shows the unmodified OCR output from the source document. Bearing/distance notation errors visible here are corrected automatically by the AI pipeline.', W / 2, bodyY + hh + 9);
+  ctx.restore();
+
+  // Text content — monospace, small, wrapped
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(MARGIN + 1, bodyY + hh + 18, W - MARGIN * 2 - 2, bodyH - hh - 20);
+  ctx.clip();
+
+  ctx.font = '7.5px monospace';
+  ctx.fillStyle = isBlueprint ? '#e2e8f0' : '#1a1a1a';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  const textX   = MARGIN + 10;
+  const maxW    = W - MARGIN * 2 - 20;
+  const lineH   = 11;
+  let   curY    = bodyY + hh + 30;
+  const bottomY = bodyY + bodyH - 6;
+
+  if (rawOcrText && rawOcrText.trim()) {
+    // Split on real newlines first, then wrap long lines
+    const paragraphs = rawOcrText.split(/\r?\n/);
+    outer: for (const para of paragraphs) {
+      if (curY > bottomY) break;
+      if (!para.trim()) {
+        curY += lineH * 0.5; // blank line
+        continue;
+      }
+      // Word-wrap each paragraph
+      const words = para.split(' ');
+      let line = '';
+      for (const word of words) {
+        const test = line + (line ? ' ' : '') + word;
+        if (ctx.measureText(test).width > maxW && line) {
+          ctx.fillText(line, textX, curY);
+          curY += lineH;
+          line = word;
+          if (curY > bottomY) break outer;
+        } else {
+          line = test;
+        }
+      }
+      if (line && curY <= bottomY) {
+        ctx.fillText(line, textX, curY);
+        curY += lineH;
+      }
+    }
+  } else {
+    ctx.font = 'italic 8.5px sans-serif';
+    ctx.fillStyle = isBlueprint ? '#64748b' : '#888888';
+    ctx.fillText('[No raw OCR text available — document may be digitally born (no scan)]', textX, bodyY + hh + 50);
+  }
+
+  ctx.restore();
+
+  // Footer
+  const footerY = bodyY + bodyH + 6;
+  const footerH = H - footerY - MARGIN - 2;
+  const notesW  = W - MARGIN * 2 - TB_W - 8;
+  drawSheetNotes(ctx, MARGIN, footerY, notesW, footerH,
+    'SHEET NOTES', [
+      '1. This page contains the verbatim OCR text extracted from the source document before any AI parsing or correction.',
+      '2. Bearing notation errors (e.g. missing degree symbol, hyphens instead of °) are normalized in downstream processing.',
+      '3. Compare this text with Page 3 (original legal description) to trace AI extraction accuracy.',
+    ], pageN, pageTotal, isBlueprint);
+  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, pageN, pageTotal, isBlueprint);
+
+  return canvas.toBuffer('image/png');
+}
+
+function renderPage2(originalLegalDesc, meta, isBlueprint = false) {
+
+  const { canvas, ctx } = newCanvas();
+  drawPageFrame(ctx, isBlueprint);
+
+  const titleBarH = 18;
+  const titleY    = MARGIN + 2;
+  ctx.fillStyle = isBlueprint ? '#111e36' : C_HEADER;
+  ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
+  ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('ORIGINAL DEED — LEGAL DESCRIPTION (PRE-CORRECTION) — PAGE 3 OF 6', MARGIN + 8, titleY + titleBarH / 2);
   if (isBlueprint) {
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 0.5;
@@ -1323,9 +1447,10 @@ function renderPage2(originalLegalDesc, meta, isBlueprint = false) {
   drawSheetNotes(ctx, MARGIN, footerY, notesW, footerH,
     'SHEET NOTES', [
       '1. This page contains the original deed legal description as extracted prior to AI-assisted repair.',
-      '2. Refer to Page 4 for the corrected metes & bounds legal description after traverse closure repair.',
-    ], 2, 5, isBlueprint);
-  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 2, 5, isBlueprint);
+      '2. Refer to Page 5 for the corrected metes & bounds legal description after traverse closure repair.',
+      '3. See Page 2 for the raw OCR scan of the source document.',
+    ], 3, 6, isBlueprint);
+  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 3, 6, isBlueprint);
 
   return canvas.toBuffer('image/png');
 }
@@ -1340,7 +1465,7 @@ function renderPage3(courses, meta, isBlueprint = false) {
   ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
   ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('SURVEY COMPILATION — LINE AND CURVE DATA TABLES — PAGE 3 OF 5', MARGIN + 8, titleY + titleBarH / 2);
+  ctx.fillText('SURVEY COMPILATION — LINE AND CURVE DATA TABLES — PAGE 4 OF 6', MARGIN + 8, titleY + titleBarH / 2);
   if (isBlueprint) {
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 0.5;
@@ -1495,8 +1620,8 @@ function renderPage3(courses, meta, isBlueprint = false) {
     notes.push(`3. * Assumed segment length (0-length course replaced with 10.0 feet for sketch consistency).`);
   }
   drawSheetNotes(ctx, MARGIN, footerY, notesW, footerH,
-    'DATA TABLE METADATA', notes, 3, 5, isBlueprint);
-  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 3, 5, isBlueprint);
+    'DATA TABLE METADATA', notes, 4, 6, isBlueprint);
+  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 4, 6, isBlueprint);
 
   return canvas.toBuffer('image/png');
 }
@@ -1511,7 +1636,7 @@ function renderPage4(legalDescription, meta, isBlueprint = false) {
   ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
   ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('METES & BOUNDS LEGAL DESCRIPTION — PAGE 4 OF 5', MARGIN + 8, titleY + titleBarH / 2);
+  ctx.fillText('METES & BOUNDS LEGAL DESCRIPTION — PAGE 5 OF 6', MARGIN + 8, titleY + titleBarH / 2);
   if (isBlueprint) {
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 0.5;
@@ -1530,8 +1655,8 @@ function renderPage4(legalDescription, meta, isBlueprint = false) {
     'SHEET NOTES & CERTIFICATION', [
       '1. This legal description represents a mathematical compilation of recorded deed and plat data.',
       '2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.',
-    ], 4, 5, isBlueprint);
-  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 4, 5, isBlueprint);
+    ], 5, 6, isBlueprint);
+  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 5, 6, isBlueprint);
 
   return canvas.toBuffer('image/png');
 }
@@ -1546,7 +1671,7 @@ function renderPage5(originalCourses, meta, isBlueprint = false) {
   ctx.fillRect(MARGIN, titleY, W - MARGIN * 2, titleBarH);
   ctx.fillStyle = isBlueprint ? '#38bdf8' : C_HDR_TXT; ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('ORIGINAL DEED — UNCORRECTED BOUNDARY SKETCH — PAGE 5 OF 5', MARGIN + 8, titleY + titleBarH / 2);
+  ctx.fillText('ORIGINAL DEED — UNCORRECTED BOUNDARY SKETCH — PAGE 6 OF 6', MARGIN + 8, titleY + titleBarH / 2);
   if (isBlueprint) {
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 0.5;
@@ -1579,8 +1704,8 @@ function renderPage5(originalCourses, meta, isBlueprint = false) {
       '1. This sketch represents the original boundary geometry as extracted from the deed prior to any AI-assisted corrections.',
       '2. Dashed lines indicate uncorrected traverse — compare with the corrected solid-line sketch on Page 1.',
       '3. Closure errors and self-intersections (bow-ties) may be present in this original geometry.',
-    ], 5, 5, isBlueprint);
-  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 5, 5, isBlueprint);
+    ], 6, 6, isBlueprint);
+  drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 6, 6, isBlueprint);
 
   return canvas.toBuffer('image/png');
 }
@@ -1627,13 +1752,14 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
  *                                         errorNorthing, errorEasting, status }
  * @param {string}   [legalDescription]  Corrected metes & bounds text
  * @param {string}   [originalLegalDesc] Pre-repair legal description text
+ * @param {string}   [rawOcrText]       Verbatim OCR text from the source document
  * @param {object[]} [originalCourses]   Original (pre-repair) course objects
  * @param {boolean}  [showConceptualDetail] Draw custom site details
  * @param {boolean}  [blueprintTheme]    Force blueprint dark mode theme
- * @returns {{ page1, page2, page3, page4, page5 }}  Each value is a PNG Buffer
+ * @returns {{ page1, page2, page3, page4, page5, page6 }}  Each value is a PNG Buffer
  */
 export function renderSketchPages(stations, adjusted, courses, meta = {},
-  closure, legalDescription, originalLegalDesc, originalCourses, showConceptualDetail = false, blueprintTheme = false) {
+  closure, legalDescription, originalLegalDesc, originalCourses, showConceptualDetail = false, blueprintTheme = false, rawOcrText = null) {
   const isBlueprint = blueprintTheme || meta.blueprintTheme || meta.theme === 'blueprint' || process.env.BLUEPRINT_THEME === 'true';
 
   if (meta) {
@@ -1641,10 +1767,11 @@ export function renderSketchPages(stations, adjusted, courses, meta = {},
   }
   return {
     page1: renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail, isBlueprint),
-    page2: renderPage2(originalLegalDesc || legalDescription || null, meta, isBlueprint),
-    page3: renderPage3(courses, meta, isBlueprint),
-    page4: renderPage4(legalDescription || null, meta, isBlueprint),
-    page5: renderPage5(originalCourses || courses, meta, isBlueprint),
+    page2: renderOcrPage(rawOcrText || null, meta, 2, 6, isBlueprint),
+    page3: renderPage2(originalLegalDesc || legalDescription || null, meta, isBlueprint),
+    page4: renderPage3(courses, meta, isBlueprint),
+    page5: renderPage4(legalDescription || null, meta, isBlueprint),
+    page6: renderPage5(originalCourses || courses, meta, isBlueprint),
   };
 }
 

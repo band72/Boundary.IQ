@@ -18,8 +18,10 @@ import * as plssParser from '../services/plssParser.js';
 import * as traverseSvc from '../services/traverse.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
 import pdfParse from 'pdf-parse';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
+router.use(requireAuth);
 
 // Helper to extract and cache raw text from PDF or Word doc if cache is missing
 async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
@@ -60,8 +62,9 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
     // Fallback: if digital text is empty or lacks boundary keywords, check the persistent disk OCR cache
     if (!text || text.length < 80 || !geminiVision.hasBoundaryKeywords(text)) {
       const fileHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
-      const CONFIG_DIR = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-      const metaPath = path.join(CONFIG_DIR, 'BoundaryQC', 'OcrCache', `${fileHash}.json`);
+      const defaultCacheBase = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+      const ocrCacheDir = process.env.OCR_CACHE_DIR || path.join(defaultCacheBase, 'BoundaryQC', 'OcrCache');
+      const metaPath = path.join(ocrCacheDir, `${fileHash}.json`);
       if (fs.existsSync(metaPath)) {
         try {
           const metaJson = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
@@ -135,25 +138,7 @@ function validatePath(p) {
   if (!p) return null;
   if (p.includes('..')) return null;
 
-  let normalized = p;
-  // Translate developer's home folder to current user's home folder
-  if (normalized.includes('/home/bando')) {
-    normalized = normalized.replace('/home/bando', os.homedir());
-  }
-
-  // Translate /home/artwalk/Downloads/TrainPDF or /home/artwalk/Downloads/Legal Descriptions
-  // to their actual locations under the extracted training folder if the directly requested ones don't exist
-  if (!fs.existsSync(normalized)) {
-    if (normalized.includes('/Downloads/TrainPDF')) {
-      const candidate = normalized.replace('/Downloads/TrainPDF', '/Downloads/training-20260530T124201Z-3-001/training/TrainPDF');
-      if (fs.existsSync(candidate)) normalized = candidate;
-    } else if (normalized.includes('/Downloads/Legal Descriptions')) {
-      const candidate = normalized.replace('/Downloads/Legal Descriptions', '/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions');
-      if (fs.existsSync(candidate)) normalized = candidate;
-    }
-  }
-
-  const resolved = path.resolve(normalized);
+  const resolved = path.resolve(p);
   const roots = getAllowedRoots();
   for (const root of roots) {
     if (resolved.startsWith(root)) return resolved;
@@ -507,30 +492,30 @@ router.get('/download-batch-zip', async (req, res) => {
       return res.status(400).json({ error: 'Directory is empty' });
     }
 
-    const tempZipPath = path.join(os.tmpdir(), `batch_download_${uuidv4().substring(0,8)}.zip`);
-    const zipCmd = `zip -r "${tempZipPath}" .`;
-    
-    const { exec } = await import('child_process');
-    exec(zipCmd, { cwd: validPath }, (err, stdout, stderr) => {
-      if (err) {
-        console.error('Failed to create ZIP archive:', err);
-        return res.status(500).json({ error: 'Failed to create ZIP archive' });
-      }
-      
-      res.download(tempZipPath, `${path.basename(validPath)}_deliverables.zip`, (downloadErr) => {
-        try {
-          fs.unlinkSync(tempZipPath);
-        } catch {}
-        if (downloadErr) {
-          console.warn('ZIP download streaming interrupted:', downloadErr.message);
-        }
-      });
+    const archiver = (await import('archiver')).default;
+    const zipName = `${path.basename(validPath)}_deliverables.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+    const archive = archiver('zip', { zlib: { level: 6 } });
+
+    archive.on('error', (err) => {
+      console.error('archiver error during ZIP streaming:', err);
+      // Headers may already be sent; nothing left to do other than log.
     });
+
+    archive.pipe(res);
+    archive.directory(validPath, false);
+    await archive.finalize();
   } catch (ex) {
     console.error('ZIP download route error:', ex);
-    res.status(500).json({ error: ex.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: ex.message });
+    }
   }
 });
+
 
 // POST /api/folderscan/process-batch
 router.post('/process-batch', async (req, res) => {
@@ -1135,7 +1120,8 @@ router.post('/process-file', async (req, res) => {
     let filePath = path.join(validPath, fileName);
     if (!fs.existsSync(filePath)) {
       // Fallback: search in common training and dataset directories
-      const downloadsDir = path.join(os.homedir(), 'Downloads');
+      const downloadsDir = process.env.BOUNDARY_DOWNLOADS_DIR || path.join(os.homedir(), 'Downloads');
+
       const trainingBase = path.join(downloadsDir, 'training-20260530T124201Z-3-001', 'training');
       const candidates = [
         path.join(trainingBase, 'Legal Descriptions', fileName),
