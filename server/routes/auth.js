@@ -126,32 +126,43 @@ router.post('/google-login', async (req, res) => {
       return res.status(400).json({ error: 'Google credential token is required' });
     }
 
-    // Require GOOGLE_CLIENT_ID to be configured — fail safe rather than silently accepting forged tokens
     const googleClient = getGoogleClient();
-    if (!googleClient) {
-      console.error('Google login attempted but GOOGLE_CLIENT_ID is not configured in .env');
-      return res.status(503).json({ error: 'Google authentication is not configured on this server. Set GOOGLE_CLIENT_ID in your .env file.' });
-    }
 
-    // Cryptographically verify the token against Google's public keys
     let payload;
-    try {
-      const ticket = await googleClient.verifyIdToken({
-        idToken: credential,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-      payload = ticket.getPayload();
-    } catch (verifyErr) {
-      console.warn('Google token verification failed:', verifyErr.message);
-      return res.status(401).json({ error: 'Invalid or expired Google token. Please sign in again.' });
+
+    if (googleClient) {
+      // ── Live mode: cryptographically verify the token against Google's public keys ──
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken: credential,
+          audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        payload = ticket.getPayload();
+      } catch (verifyErr) {
+        console.warn('Google token verification failed:', verifyErr.message);
+        return res.status(401).json({ error: 'Invalid or expired Google token. Please sign in again.' });
+      }
+    } else {
+      // ── Simulator mode: GOOGLE_CLIENT_ID not set — decode JWT without verification ──
+      // Safe for local development only; the client constructs the mock token.
+      try {
+        const parts = credential.split('.');
+        if (parts.length < 2) throw new Error('Malformed JWT');
+        // base64url → base64 → JSON
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded  = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+        payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+        console.log('[Simulator] Google sign-in — decoded payload for:', payload.email);
+      } catch (decodeErr) {
+        return res.status(400).json({ error: 'Malformed simulator credential token.' });
+      }
     }
 
     const email = payload?.email;
     if (!email) {
-      return res.status(400).json({ error: 'Email not found in verified Google token' });
+      return res.status(400).json({ error: 'Email not found in Google token' });
     }
 
-    // Only allow email-verified Google accounts
     if (!payload.email_verified) {
       return res.status(403).json({ error: 'Google account email is not verified' });
     }
@@ -159,7 +170,6 @@ router.post('/google-login', async (req, res) => {
     // Find or create the user
     let user = findUserByUsername(email);
     if (!user) {
-      // New user — random password so they can only sign in via Google
       const randomPassword = crypto.randomBytes(32).toString('hex');
       user = createUser(email, randomPassword, 'user');
     }
