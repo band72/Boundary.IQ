@@ -1260,17 +1260,25 @@ function parseSegmentArray(arr) {
           .replace(/\bWest\b/gi, 'W')
           .replace(/\s+/g, '');
       }
+      const deltaVal = getNum(el, 'delta', 'Delta');
+      const radiusVal = getNum(el, 'radius', 'Radius');
+      const arcLengthVal = getNum(el, 'arcLength', 'ArcLength', 'arc_length', 'arcLength', 'arc_distance', 'arcDistance');
+      const chordDistanceVal = getNum(el, 'chordDistance', 'ChordDistance', 'chord_distance', 'chordDistance');
+      const hasChord = chordBearing && chordDistanceVal != null && chordDistanceVal !== 0;
+      const hasParams = radiusVal != null && (deltaVal != null || arcLengthVal != null);
+      const isUnknownReal = (hasChord || hasParams) ? false : isUnknown;
+
       return {
         type: 'Curve',
         bearing: null,
         distance: null,
-        delta: getNum(el, 'delta', 'Delta'),
-        radius: getNum(el, 'radius', 'Radius'),
-        arcLength: getNum(el, 'arcLength', 'ArcLength', 'arc_length', 'arcLength', 'arc_distance', 'arcDistance'),
+        delta: deltaVal,
+        radius: radiusVal,
+        arcLength: arcLengthVal,
         curveDirection,
         chordBearing,
-        chordDistance: getNum(el, 'chordDistance', 'ChordDistance', 'chord_distance', 'chordDistance'),
-        isUnknown,
+        chordDistance: chordDistanceVal,
+        isUnknown: isUnknownReal,
       };
     }
 
@@ -1297,13 +1305,18 @@ function parseSegmentArray(arr) {
     const deflectionAngle     = getNum(el, 'deflectionAngle', 'DeflectionAngle') ?? null;
     const deflectionDirection = el.deflectionDirection || el.DeflectionDirection || null;
 
+    const distanceVal = getNum(el, 'distance', 'Distance');
+    const hasLineProps = bearing && distanceVal != null && distanceVal !== 0;
+    const hasDeflectProps = deflectionAngle != null && distanceVal != null && distanceVal !== 0;
+    const isUnknownReal = (hasLineProps || hasDeflectProps) ? false : isUnknown;
+
     const course = {
       type: 'Line',
       bearing,
-      distance: getNum(el, 'distance', 'Distance'),
+      distance: distanceVal,
       delta: null, radius: null, arcLength: null,
       curveDirection: null, chordBearing: null, chordDistance: null,
-      isUnknown,
+      isUnknown: isUnknownReal,
     };
 
     if (deflectionAngle !== null && deflectionDirection) {
