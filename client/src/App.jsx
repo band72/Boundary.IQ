@@ -5,6 +5,7 @@ import WriterTab from './components/WriterTab';
 import BatchDeedTab from './components/BatchDeedTab';
 import DashboardTab from './components/DashboardTab';
 import SettingsTab from './components/SettingsTab';
+import UserSettingsTab from './components/UserSettingsTab';
 import HelpModal from './components/HelpModal';
 import LoginScreen from './components/LoginScreen';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
@@ -74,6 +75,9 @@ export default function App() {
   const [hidePlat, setHidePlat]         = useLocalStorage('boundaryiq_hide_plat', false);
   const [hideWriter, setHideWriter]     = useLocalStorage('boundaryiq_hide_writer', false);
 
+  // Panel access policy set by admin — controls which tabs non-admin users see
+  const [panelPolicy] = useLocalStorage('boundaryiq_panel_policy', {});
+
   const [tab, setTab] = useState('traverse');
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -142,21 +146,28 @@ export default function App() {
     }
   };
 
+  const isAdmin = user?.role === 'admin';
+
+  // Helper: is a panel allowed for this user?
+  const isPanelAllowed = (panelId) => {
+    if (isAdmin) return true; // admins always see everything
+    return panelPolicy[panelId] !== false; // default true if unset
+  };
+
   // Auto-redirect if currently active tab gets hidden
   useEffect(() => {
-    if (hideTraverse && tab === 'traverse') {
-      setTimeout(() => setTab('batch'), 0);
-    } else if (hidePlat && tab === 'plat') {
-      setTimeout(() => setTab('batch'), 0);
-    } else if (hideWriter && tab === 'writer') {
-      setTimeout(() => setTab('batch'), 0);
-    }
-  }, [hideTraverse, hidePlat, hideWriter, tab]);
+    if (hideTraverse && tab === 'traverse') { setTimeout(() => setTab('batch'), 0); }
+    else if (hidePlat  && tab === 'plat')   { setTimeout(() => setTab('batch'), 0); }
+    else if (hideWriter && tab === 'writer') { setTimeout(() => setTab('batch'), 0); }
+    // Also redirect if admin locked a tab the user is currently on
+    else if (!isPanelAllowed(tab) && tab !== 'settings') { setTimeout(() => setTab('batch'), 0); }
+  }, [hideTraverse, hidePlat, hideWriter, tab, panelPolicy]);
 
   const visibleTabs = TABS.filter(t => {
+    if (!isPanelAllowed(t.id)) return false; // admin policy
     if (t.id === 'traverse' && hideTraverse) return false;
-    if (t.id === 'plat' && hidePlat) return false;
-    if (t.id === 'writer' && hideWriter) return false;
+    if (t.id === 'plat'     && hidePlat)     return false;
+    if (t.id === 'writer'   && hideWriter)   return false;
     return true;
   });
 
@@ -202,6 +213,15 @@ export default function App() {
               {(user?.username || 'US').substring(0, 2).toUpperCase()}
             </div>
             <span className="user-name" title={user?.username || 'User'}>{user?.username || 'User'}</span>
+            <span style={{
+              fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase',
+              padding: '2px 7px', borderRadius: '99px', flexShrink: 0,
+              background: isAdmin ? 'rgba(201,122,0,0.15)' : 'rgba(61,127,255,0.12)',
+              border: isAdmin ? '1px solid rgba(201,122,0,0.4)' : '1px solid rgba(61,127,255,0.3)',
+              color: isAdmin ? '#ffaa00' : 'var(--accent)',
+            }}>
+              {isAdmin ? '🔑 Admin' : '👤 User'}
+            </span>
             <button className="logout-icon-btn" onClick={handleLogout} title="Sign Out">
               🚪
             </button>
@@ -282,14 +302,19 @@ export default function App() {
               {tab === 'batch'     && <BatchDeedTab />}
               {tab === 'dashboard' && <DashboardTab />}
               {tab === 'settings'  && (
-                <SettingsTab
-                  hideTraverse={hideTraverse}
-                  setHideTraverse={setHideTraverse}
-                  hidePlat={hidePlat}
-                  setHidePlat={setHidePlat}
-                  hideWriter={hideWriter}
-                  setHideWriter={setHideWriter}
-                />
+                isAdmin ? (
+                  <SettingsTab
+                    hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
+                    hidePlat={hidePlat}         setHidePlat={setHidePlat}
+                    hideWriter={hideWriter}     setHideWriter={setHideWriter}
+                  />
+                ) : (
+                  <UserSettingsTab
+                    hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
+                    hidePlat={hidePlat}         setHidePlat={setHidePlat}
+                    hideWriter={hideWriter}     setHideWriter={setHideWriter}
+                  />
+                )
               )}
             </main>
           </TabErrorBoundary>

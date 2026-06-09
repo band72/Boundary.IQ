@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { API } from '../config';
 
+const PANEL_DEFS = [
+  { id: 'traverse',  icon: '📐', label: 'Traverse Compute',        desc: 'Manual coordinate entry & closure analysis', color: '#3d7fff' },
+  { id: 'plat',      icon: '🛰️', label: 'Plat Extraction',         desc: 'AI-powered OCR for boundary images and PDFs', color: '#00d4a8' },
+  { id: 'writer',    icon: '✍️', label: 'Legal Description Writer',  desc: 'Generate professional registry legal text', color: '#a855f7' },
+  { id: 'batch',     icon: '📦', label: 'Batch Deed',               desc: 'Folder scan & batch deed processing pipeline', color: '#c97a00' },
+  { id: 'dashboard', icon: '📊', label: 'Dashboard',                desc: 'Processing statistics and deed review panel', color: '#4285F4' },
+];
+
 export default function SettingsTab({
   hideTraverse: propHideTraverse,
   setHideTraverse: propSetHideTraverse,
@@ -322,13 +330,30 @@ export default function SettingsTab({
 
   // isOllamaOffline is derived below inline where needed
 
+  // ── Panel Access Policy (admin sets which tabs users can see) ──────────
+  const [panelPolicy, setPanelPolicy] = useLocalStorage('boundaryiq_panel_policy', {});
+  const [policyMsg, setPolicyMsg] = useState('');
+
+  const isPanelEnabled = (id) => panelPolicy[id] !== false; // default to true if unset
+
+  const togglePanelPolicy = (id, enabled) => {
+    setPanelPolicy(prev => ({ ...prev, [id]: enabled }));
+    setPolicyMsg('');
+  };
+
+  const savePanelPolicy = () => {
+    // panelPolicy is already live in localStorage via useLocalStorage
+    setPolicyMsg('✓ Panel access policy saved. Users will see updated tabs on next page load.');
+    setTimeout(() => setPolicyMsg(''), 4000);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       
-      {/* ── Title block with slick layout & gradient ───────────────── */}
+      {/* ── Title block ─────────────────────────────────────────────── */}
       <div style={{
         background: 'linear-gradient(135deg, rgba(31, 46, 77, 0.4) 0%, rgba(9, 14, 26, 0.6) 100%)',
-        border: '1px solid var(--border)',
+        border: '1px solid rgba(255, 170, 0, 0.25)',
         borderRadius: 'var(--radius-lg)',
         padding: '2rem',
         backdropFilter: 'blur(12px)',
@@ -336,26 +361,22 @@ export default function SettingsTab({
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
           <div style={{
-            background: 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)',
-            width: '42px',
-            height: '42px',
-            borderRadius: 'var(--radius-md)',
-            display: 'flex',
-            alignItems: 'center',
-            justify: 'center',
-            fontSize: '1.5rem',
-            boxShadow: '0 0 16px rgba(0, 212, 168, 0.4)',
-            color: '#fff',
-            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #c97a00 0%, #ffaa00 100%)',
+            width: '42px', height: '42px', borderRadius: 'var(--radius-md)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1.5rem', boxShadow: '0 0 16px rgba(201, 122, 0, 0.45)', color: '#fff',
           }}>
-            ⚙️
+            🔑
           </div>
-          <div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', background: 'linear-gradient(to right, #ffffff, #8899bb)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              System Configuration
-            </h1>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.2rem' }}>
+              <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', background: 'linear-gradient(to right, #ffffff, #8899bb)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                Admin Configuration
+              </h1>
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', background: 'rgba(201,122,0,0.15)', border: '1px solid rgba(201,122,0,0.4)', color: '#ffaa00', padding: '2px 8px', borderRadius: '99px' }}>ADMIN ONLY</span>
+            </div>
             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Fine-tune the parallel execution and cognitive agent pipelines.
+              System-level configuration, server paths, AI provider management, and user access policies.
             </p>
           </div>
         </div>
@@ -1725,6 +1746,90 @@ export default function SettingsTab({
         </div>
       </div>
 
+      {/* ── Panel Access Policy ───────────────────────────────────────── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(201, 122, 0, 0.35)',
+        boxShadow: '0 4px 24px rgba(201, 122, 0, 0.1)',
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              🔐 Panel Access Policy — User Tab Visibility
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#c97a00', fontWeight: 600 }}>Admins always see all panels</span>
+          </div>
+        </div>
+
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Control which panels are visible to non-admin users. Disabled panels are hidden from the sidebar — users see a lock badge if they attempt to access them via their personal settings.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {PANEL_DEFS.map(panel => {
+              const enabled = isPanelEnabled(panel.id);
+              return (
+                <div key={panel.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0.85rem 1.2rem',
+                  background: enabled ? `rgba(${panel.id === 'traverse' ? '61,127,255' : panel.id === 'plat' ? '0,212,168' : panel.id === 'writer' ? '168,85,247' : panel.id === 'batch' ? '201,122,0' : '66,133,244'},0.05)` : 'rgba(220,50,50,0.04)',
+                  border: `1px solid ${enabled ? `${panel.color}30` : 'rgba(220,50,50,0.2)'}`,
+                  borderRadius: 'var(--radius-md)', transition: 'all 0.3s ease',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>{panel.icon}</span>
+                    <div>
+                      <div style={{ fontWeight: 600, color: enabled ? '#e8eeff' : 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {panel.label}
+                        {!enabled && (
+                          <span style={{ fontSize: '0.68rem', background: 'rgba(220,50,50,0.12)', border: '1px solid rgba(220,50,50,0.3)', color: '#dc6060', padding: '1px 6px', borderRadius: '99px', fontWeight: 700 }}>Hidden from users</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>{panel.desc}</div>
+                    </div>
+                  </div>
+                  <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={enabled} onChange={e => togglePanelPolicy(panel.id, e.target.checked)}
+                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
+                    <div style={{
+                      width: '40px', height: '20px', borderRadius: '10px',
+                      background: enabled ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(220,50,50,0.3)',
+                      border: `1px solid ${enabled ? 'rgba(0,212,168,0.5)' : 'rgba(220,50,50,0.4)'}`,
+                      position: 'relative', transition: 'all 0.25s ease',
+                      boxShadow: enabled ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
+                    }}>
+                      <div style={{
+                        width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+                        position: 'absolute', top: '2px', left: enabled ? '22px' : '3px',
+                        transition: 'left 0.25s ease',
+                      }} />
+                    </div>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+              ⚡ Policy is applied instantly — users see the change on their next page load.
+            </span>
+            <button onClick={savePanelPolicy} className="btn btn-primary" style={{ padding: '0.55rem 1.25rem', fontSize: '0.78rem', borderRadius: 'var(--radius-sm)', background: 'linear-gradient(135deg, #c97a00 0%, #ffaa00 100%)', border: 'none', boxShadow: '0 0 12px rgba(201,122,0,0.3)' }}>
+              💾 Save Access Policy
+            </button>
+          </div>
+
+          {policyMsg && (
+            <div style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)', background: 'rgba(0,212,168,0.08)', border: '1px solid rgba(0,212,168,0.25)', color: 'var(--success)', fontSize: '0.75rem', fontWeight: 500 }}>
+              {policyMsg}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Database Management ──────────────────────────────────────── */}
       <div className="card" style={{
         background: 'rgba(9, 14, 26, 0.4)',
         backdropFilter: 'blur(8px)',
