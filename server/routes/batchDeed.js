@@ -19,6 +19,7 @@ router.use(requireAuth);
 const upload = multer({ limits: { fileSize: 51 * 1024 * 1024 } }); // 51MB per file
 
 const MAX_FILE_SIZE = 51 * 1024 * 1024;
+const PER_DEED_TIMEOUT_MS = 3 * 60 * 1000; // 3 min max per deed — prevents a single hung file from stalling the batch
 
 function normalizeMime(file) {
   let mime = (file.mimetype || '').toLowerCase();
@@ -252,11 +253,27 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
       }
     });
 
-    // Run with concurrency
+    // Run with concurrency — each deed gets a hard 3-minute wall-clock limit
     const sem = new lockService.FifoSemaphore(concurrency);
-    await Promise.all(queue.map(async (fn) => {
+    await Promise.all(queue.map(async (fn, idx) => {
       await sem.acquire();
-      try { await fn(); } finally { sem.release(); }
+      try {
+        await Promise.race([
+          fn(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Per-deed timeout (${PER_DEED_TIMEOUT_MS / 1000}s) exceeded`)), PER_DEED_TIMEOUT_MS)
+          ),
+        ]);
+      } catch (timeoutErr) {
+        // Timeout or unhandled throw — log and mark failed so batch continues
+        const fileName = files[idx]?.originalname || `file[${idx}]`;
+        console.error(`⏱ Deed timed out or failed: ${fileName} —`, timeoutErr.message);
+        if (!results[idx]) {
+          results[idx] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: timeoutErr.message };
+        }
+      } finally {
+        sem.release();
+      }
     }));
 
     const succeeded = results.filter(r => r?.status === 'success').length;

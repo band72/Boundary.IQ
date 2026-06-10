@@ -154,12 +154,15 @@ export function setProvider(provider, model, baseUrl) {
 }
 
 // ── Retry-aware POST (Gemini only) ──────────────────────────────────────────
+const FETCH_TIMEOUT_MS = 90_000; // 90 s — prevents infinite hang on API stall
+
 async function postWithRetry(url, payload) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const body = await res.text();
 
@@ -665,6 +668,7 @@ async function extractViaOpenAI(buffer, mimeType, prompt, model, baseUrl) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const bodyText = await res.text();
 
