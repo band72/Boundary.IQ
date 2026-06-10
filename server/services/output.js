@@ -34,8 +34,9 @@ export function createOutputFolder(sourceFolder) {
 
 /**
  * Write output files for a single processed deed result.
+ * Returns the combined PDF path if one was written, else null.
  */
-export function writeResultFiles(outputFolder, sourceFileName, result, writeResult, shortFileNames = false, showConceptualDetail = false) {
+export async function writeResultFiles(outputFolder, sourceFileName, result, writeResult, shortFileNames = false, showConceptualDetail = false) {
   const baseName = path.parse(sourceFileName).name;
   let targetFolder = outputFolder;
   if (shortFileNames) {
@@ -183,10 +184,11 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
           console.log(`Output: wrote PNG conceptual page ${i + 1} — ${path.basename(outPath)}`);
         });
 
-        // Save combined PDF deliverable
+        // Save combined PDF deliverable — awaited so file is flushed before return
         const pdfName = shortFileNames ? 'Map.pdf' : `${baseName}_map.pdf`;
         const outPdfPath = path.join(targetFolder, pdfName);
-        saveCombinedPdf(outPdfPath, pageBuffers);
+        await saveCombinedPdf(outPdfPath, pageBuffers);
+        return outPdfPath;
       } catch (pngEx) {
         console.warn(`Output: Conceptual PNG sketch failed for ${sourceFileName}:`, pngEx.message);
       }
@@ -269,11 +271,11 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
           console.log(`Output: wrote PNG page ${i + 1} — ${path.basename(outPath)}`);
         });
 
-
-        // Save combined PDF deliverable
+        // Save combined PDF deliverable — awaited so file is flushed before return
         const pdfName = shortFileNames ? 'Map.pdf' : `${baseName}_map.pdf`;
         const outPdfPath = path.join(targetFolder, pdfName);
-        saveCombinedPdf(outPdfPath, pageBuffers);
+        await saveCombinedPdf(outPdfPath, pageBuffers);
+        return outPdfPath;
       } catch (pngEx) {
         console.warn(`Output: PNG sketch failed for ${sourceFileName}:`, pngEx.message);
       }
@@ -281,6 +283,7 @@ export function writeResultFiles(outputFolder, sourceFileName, result, writeResu
   } catch (ex) {
     console.warn(`Failed to write output files for ${sourceFileName}:`, ex.message);
   }
+  return null; // no PDF written
 }
 
 /**
@@ -387,5 +390,59 @@ export function writeBatchSummary(outputFolder, sourcePath, results, elapsedMs) 
     console.log(`Wrote batch summary TXT: ${path.join(outputFolder, '_BATCH_SUMMARY.txt')}`);
   } catch (ex) {
     console.warn('Failed to write batch summary:', ex.message);
+  }
+}
+
+/**
+ * Compile a single _BATCH_REPORT.pdf from all per-deed Map PDFs in the output folder.
+ * Merges both top-level PDFs and PDFs inside short-filename subfolders.
+ * Call this after all writeResultFiles() calls have resolved.
+ */
+export async function writeCombinedBatchPdf(outputFolder) {
+  try {
+    const { PDFDocument } = await import('pdf-lib');
+    const mergedDoc = await PDFDocument.create();
+
+    // Gather per-deed PDFs from top-level and one level of subfolders, sorted alphabetically
+    const allEntries = fs.readdirSync(outputFolder, { withFileTypes: true });
+    const topPdfs = allEntries
+      .filter(e => e.isFile() && e.name.endsWith('.pdf') && !e.name.startsWith('_BATCH'))
+      .map(e => path.join(outputFolder, e.name))
+      .sort();
+
+    const subPdfs = [];
+    for (const entry of allEntries.filter(e => e.isDirectory())) {
+      const subDir = path.join(outputFolder, entry.name);
+      fs.readdirSync(subDir)
+        .filter(f => f.endsWith('.pdf') && !f.startsWith('_BATCH'))
+        .sort()
+        .forEach(f => subPdfs.push(path.join(subDir, f)));
+    }
+
+    const pdfFiles = [...topPdfs, ...subPdfs];
+
+    if (pdfFiles.length === 0) {
+      console.log('writeCombinedBatchPdf: no per-deed PDFs found — skipping batch report.');
+      return null;
+    }
+
+    for (const pdfPath of pdfFiles) {
+      try {
+        const srcBytes = fs.readFileSync(pdfPath);
+        const srcDoc = await PDFDocument.load(srcBytes);
+        const copiedPages = await mergedDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+        copiedPages.forEach(p => mergedDoc.addPage(p));
+      } catch (pageErr) {
+        console.warn(`writeCombinedBatchPdf: skipping ${path.basename(pdfPath)} — ${pageErr.message}`);
+      }
+    }
+
+    const outPath = path.join(outputFolder, '_BATCH_REPORT.pdf');
+    fs.writeFileSync(outPath, await mergedDoc.save());
+    console.log(`Output: compiled combined batch PDF (${pdfFiles.length} deed PDFs) → ${path.basename(outPath)}`);
+    return outPath;
+  } catch (ex) {
+    console.warn('writeCombinedBatchPdf failed:', ex.message);
+    return null;
   }
 }

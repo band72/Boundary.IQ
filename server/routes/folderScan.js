@@ -1057,13 +1057,15 @@ router.post('/process-batch', async (req, res) => {
           if (!r) continue;
           if (r.isMultiParcel && r.parcels) {
             for (const pr of r.parcels) {
-              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
+              await output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
             }
           } else {
-            output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription, shortFileNames, showConceptualDetail);
+            await output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription, shortFileNames, showConceptualDetail);
           }
         }
         output.writeBatchSummary(outputFolder, req.query.path, results, Date.now() - start);
+        // Compile all per-deed Map PDFs into one _BATCH_REPORT.pdf
+        await output.writeCombinedBatchPdf(outputFolder);
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 
@@ -1227,7 +1229,7 @@ router.post('/process-file', async (req, res) => {
       if (autoOutput) {
         try {
           const outputFolder = output.createOutputFolder(validPath);
-          output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
@@ -1509,7 +1511,7 @@ router.post('/process-file', async (req, res) => {
           try {
             const outputFolder = output.createOutputFolder(validPath);
             for (const pr of parcelResults) {
-              output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
+              await output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
             }
           } catch (ex) { console.warn('Auto-output failed:', ex.message); }
         }
@@ -1555,7 +1557,7 @@ router.post('/process-file', async (req, res) => {
           if (autoOutput) {
             try {
               const outputFolder = output.createOutputFolder(validPath);
-              output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
+              await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
             } catch (ex) { console.warn('Auto-output failed:', ex.message); }
           }
 
@@ -1582,7 +1584,7 @@ router.post('/process-file', async (req, res) => {
       if (autoOutput) {
         try {
           const outputFolder = output.createOutputFolder(validPath);
-          output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
@@ -1642,7 +1644,7 @@ router.post('/process-file', async (req, res) => {
       if (autoOutput) {
         try {
           const outputFolder = output.createOutputFolder(validPath);
-          output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
@@ -1672,7 +1674,7 @@ router.post('/process-file', async (req, res) => {
     if (autoOutput) {
       try {
         const outputFolder = output.createOutputFolder(validPath);
-        output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
+        await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 
