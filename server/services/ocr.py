@@ -1,6 +1,12 @@
 import sys
 import easyocr
 
+# Force UTF-8 encoding on stdout and stderr to avoid Windows code-page (charmap) encoding crashes
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python ocr.py <image_path>", file=sys.stderr)

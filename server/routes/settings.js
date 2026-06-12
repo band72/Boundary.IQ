@@ -129,7 +129,14 @@ router.post('/ollama/start', async (req, res) => {
 
   try {
     ollamaSpawnPending = true;
-    const child = spawn('ollama', ['serve'], {
+    const ollamaPath = process.env.OLLAMA_PATH || 'ollama';
+    let cmd = ollamaPath;
+    let args = ['serve'];
+    if (process.platform === 'win32' && (ollamaPath.startsWith('/') || ollamaPath.includes('wsl') || process.env.OLLAMA_RUNS_ON_WSL === 'true' || ollamaPath === '/home/friend/.local/bin/ollama')) {
+      cmd = 'wsl';
+      args = [ollamaPath === 'ollama' ? 'ollama' : ollamaPath, 'serve'];
+    }
+    const child = spawn(cmd, args, {
       detached: true,
       stdio: 'ignore',
     });

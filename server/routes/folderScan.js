@@ -142,7 +142,47 @@ function validatePath(p) {
   if (!p) return null;
   if (p.includes('..')) return null;
 
-  const resolved = path.resolve(p);
+  let normalized = p;
+  // Translate developer's home folder to current user's home folder
+  if (normalized.includes('/home/bando')) {
+    normalized = normalized.replace('/home/bando', os.homedir());
+  }
+  if (normalized.includes('/home/artwalk')) {
+    normalized = normalized.replace('/home/artwalk', os.homedir());
+  }
+
+  // Normalize slashes
+  normalized = normalized.replace(/\\/g, '/');
+
+  // Translate to actual location under the extracted training folder if the directly requested ones don't exist
+  if (!fs.existsSync(normalized)) {
+    const trainingPattern = /\/Downloads\/training-[^\/]+\/training/i;
+    if (trainingPattern.test(normalized)) {
+      const candidate = normalized.replace(trainingPattern, '/Downloads/FILES/training');
+      if (fs.existsSync(candidate)) {
+        normalized = candidate;
+      }
+    } else if (normalized.includes('/Downloads/TrainPDF')) {
+      const candidate = normalized.replace('/Downloads/TrainPDF', '/Downloads/FILES/training/TrainPDF');
+      if (fs.existsSync(candidate)) normalized = candidate;
+    } else if (normalized.includes('/Downloads/Legal Descriptions')) {
+      const candidate = normalized.replace('/Downloads/Legal Descriptions', '/Downloads/FILES/training/Legal Descriptions');
+      if (fs.existsSync(candidate)) normalized = candidate;
+    }
+    
+    // Fallback standard structure
+    if (!fs.existsSync(normalized)) {
+      if (normalized.includes('/Downloads/TrainPDF')) {
+        const candidate = normalized.replace('/Downloads/TrainPDF', '/Downloads/training-20260530T124201Z-3-001/training/TrainPDF');
+        if (fs.existsSync(candidate)) normalized = candidate;
+      } else if (normalized.includes('/Downloads/Legal Descriptions')) {
+        const candidate = normalized.replace('/Downloads/Legal Descriptions', '/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions');
+        if (fs.existsSync(candidate)) normalized = candidate;
+      }
+    }
+  }
+
+  const resolved = path.resolve(normalized);
   const roots = getAllowedRoots();
   for (const root of roots) {
     if (resolved.startsWith(root)) return resolved;

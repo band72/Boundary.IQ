@@ -131,7 +131,9 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
       const cogoLines = ['Point,Northing,Easting,Description'];
       stations.forEach((s, idx) => {
         const adj = adjusted[idx] || s;
-        cogoLines.push(`${s.seq + 1},${adj.northing.toFixed(4)},${adj.easting.toFixed(4)},${s.course || ''}`);
+        const ptId = 500 + idx;
+        const desc = idx === 0 ? 'COGO POB' : `COGO P${idx}`;
+        cogoLines.push(`${ptId},${adj.northing.toFixed(2)},${adj.easting.toFixed(2)},${desc}`);
       });
       const cogoFile = shortFileNames ? 'Cogo.txt' : `${baseName}_cogo.txt`;
       fs.writeFileSync(path.join(targetFolder, cogoFile), cogoLines.join('\n'));

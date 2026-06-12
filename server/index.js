@@ -183,7 +183,13 @@ const server = app.listen(PORT, async () => {
     } else {
       console.log('⏳ Ollama offline — attempting auto-start (ollama serve)…');
       const ollamaPath = process.env.OLLAMA_PATH || 'ollama';
-      const child = spawn(ollamaPath, ['serve'], { detached: true, stdio: 'ignore' });
+      let cmd = ollamaPath;
+      let args = ['serve'];
+      if (process.platform === 'win32' && (ollamaPath.startsWith('/') || ollamaPath.includes('wsl') || process.env.OLLAMA_RUNS_ON_WSL === 'true' || ollamaPath === '/home/friend/.local/bin/ollama')) {
+        cmd = 'wsl';
+        args = [ollamaPath === 'ollama' ? 'ollama' : ollamaPath, 'serve'];
+      }
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
       child.on('error', (err) => {
         // Handle spawn errors (like ENOENT) gracefully without crashing
       });

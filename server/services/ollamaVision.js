@@ -5,7 +5,9 @@
 //   • Text-only models (qwen, deepseek, …) → /api/generate + format:'json'
 // Ollama API docs: https://github.com/ollama/ollama/blob/main/docs/api.md
 
-import { fetch, Agent } from 'undici';
+import { Agent } from 'undici';
+import { httpFetch } from './httpFetch.js';
+import { spawn } from 'child_process';
 
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 const MAX_RETRIES = 1;   // Reduced from 2 — failing fast is better than hanging SSE for 30+ min
@@ -18,7 +20,7 @@ function modelTimeout(model) {
 
 // Reusable dispatcher — connect/headers/body timeouts stay long (model controls the limit)
 const ollamaAgent = new Agent({
-  connectTimeout: 30000,
+  connectTimeout: 3000, // Reduced to fail fast and trigger recovery if down
   headersTimeout: 1800000,
   bodyTimeout: 1800000,
 });
@@ -78,7 +80,7 @@ export function isVisionCapable(model) { return isVisionModel(model); }
  */
 export async function getStatus() {
   try {
-    const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+    const res = await httpFetch(`${OLLAMA_BASE}/api/tags`, {
       signal: AbortSignal.timeout(3000),
       dispatcher: ollamaAgent,
     });
@@ -92,6 +94,45 @@ export async function getStatus() {
 }
 
 /**
+ * Ensures local Ollama is online, spawning a recovery auto-start if connection refused.
+ */
+export async function ensureOllamaServiceOnline() {
+  const status = await getStatus();
+  if (status.online) return true;
+
+  console.log('⏳ Ollama service is offline — attempting recovery auto-start (ollama serve)…');
+  try {
+    const ollamaPath = process.env.OLLAMA_PATH || 'ollama';
+    let cmd = ollamaPath;
+    let args = ['serve'];
+    if (process.platform === 'win32' && (ollamaPath.startsWith('/') || ollamaPath.includes('wsl') || process.env.OLLAMA_RUNS_ON_WSL === 'true' || ollamaPath === '/home/friend/.local/bin/ollama')) {
+      cmd = 'wsl';
+      args = [ollamaPath === 'ollama' ? 'ollama' : ollamaPath, 'serve'];
+    }
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    child.on('error', (err) => {
+      console.warn('⚠️ Ollama recovery spawn error:', err.message);
+    });
+    child.unref();
+
+    // Poll for up to 15s to wait for it to come online
+    let waited = 0;
+    while (waited < 15000) {
+      await new Promise(r => setTimeout(r, 2000));
+      waited += 2000;
+      const s = await getStatus();
+      if (s.online) {
+        console.log(`✓ Ollama service recovered successfully!`);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ Ollama recovery auto-start failed:', err.message);
+  }
+  return false;
+}
+
+/**
  * Check if an OpenAI-compatible endpoint is reachable and return its model list.
  * Works with Ollama /v1, LM Studio, llama.cpp server, etc.
  * @param {string} baseUrl  e.g. "http://127.0.0.1:11434/v1"
@@ -100,7 +141,7 @@ export async function getStatus() {
 export async function getStatusOpenAI(baseUrl) {
   const url = `${baseUrl.replace(/\/$/, '')}/models`;
   try {
-    const res = await fetch(url, {
+    const res = await httpFetch(url, {
       signal: AbortSignal.timeout(3000),
       dispatcher: ollamaAgent,
     });
@@ -137,7 +178,7 @@ async function generateVisionChat(buffer, model, prompt) {
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      const res = await httpFetch(`${OLLAMA_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -166,6 +207,12 @@ async function generateVisionChat(buffer, model, prompt) {
       console.log(`Ollama vision [${model}] /chat → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
       return { rawText };
     } catch (ex) {
+      const isConnectionError = ex.code === 'ECONNREFUSED' || ex.code === 'ETIMEDOUT' ||
+                                ex.message?.includes('ECONNREFUSED') || ex.message?.includes('ETIMEDOUT');
+      if (isConnectionError) {
+        console.warn(`Ollama /chat connection error detected (${ex.code || ex.message}). Attempting recovery...`);
+        await ensureOllamaServiceOnline();
+      }
       if (ex.name === 'TimeoutError') {
         throw new Error(`Ollama /chat timed out. Model "${model}" may be too large for your hardware.`);
       }
@@ -195,7 +242,7 @@ async function generateTextOnly(prompt, model) {
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
+      const res = await httpFetch(`${OLLAMA_BASE}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -224,6 +271,12 @@ async function generateTextOnly(prompt, model) {
       console.log(`Ollama text [${model}] /generate → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
       return { rawText };
     } catch (ex) {
+      const isConnectionError = ex.code === 'ECONNREFUSED' || ex.code === 'ETIMEDOUT' ||
+                                ex.message?.includes('ECONNREFUSED') || ex.message?.includes('ETIMEDOUT');
+      if (isConnectionError) {
+        console.warn(`Ollama /generate connection error detected (${ex.code || ex.message}). Attempting recovery...`);
+        await ensureOllamaServiceOnline();
+      }
       if (ex.name === 'TimeoutError') {
         throw new Error(`Ollama /generate timed out. Model "${model}" may be too large for your hardware.`);
       }

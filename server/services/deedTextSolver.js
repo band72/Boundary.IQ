@@ -5,7 +5,8 @@
 // ALL geometric math, error diagnosis, and closure repair is handled by Node.js COGO
 // engine — never trusted to the LLM. This makes the system work reliably on 7B models.
 
-import { fetch, Agent } from 'undici';
+import { Agent } from 'undici';
+import { httpFetch } from './httpFetch.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
 import * as platLookup from './platLookupService.js';
@@ -14,6 +15,7 @@ import * as legalWriter from './legalWriter.js';
 import pLimit from 'p-limit';
 
 import { isPlaceholderHallucination } from './geminiVision.js';
+import { ensureOllamaServiceOnline } from './ollamaVision.js';
 
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 
@@ -89,7 +91,6 @@ DEED TEXT:
 ${deedText}`;
 }
 
-// ── Ollama text-only call ─────────────────────────────────────────────────────
 async function callOllama(model, prompt) {
   // Serialize all Ollama requests through the global semaphore (1 slot).
   // This prevents concurrent batches or UI requests from overloading the
@@ -114,7 +115,7 @@ async function callOllama(model, prompt) {
     const maxRetries = 3; // up to 4 total attempts — handles transient empty-response from Ollama
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
+        const res = await httpFetch(`${OLLAMA_BASE}/api/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -150,6 +151,12 @@ async function callOllama(model, prompt) {
         console.log('--------------------------------------');
         return rawText;
       } catch (ex) {
+        const isConnectionError = ex.code === 'ECONNREFUSED' || ex.code === 'ETIMEDOUT' ||
+                                  ex.message?.includes('ECONNREFUSED') || ex.message?.includes('ETIMEDOUT');
+        if (isConnectionError) {
+          console.warn(`Ollama /generate connection error detected (${ex.code || ex.message}). Attempting recovery...`);
+          await ensureOllamaServiceOnline();
+        }
         if (attempt === maxRetries) throw ex;
         console.warn(`Ollama /generate attempt ${attempt + 1} failed: ${ex.message}. Retrying…`);
         await new Promise(r => setTimeout(r, 2000));
@@ -266,6 +273,9 @@ function sanitizeJsonStringValues(jsonStr) {
 // ── JSON parser — robust to common local LLM formatting issues ────────────────
 function parseExtractionJson(raw, deedText) {
   let text = raw.trim();
+
+  // Clean think/thought tags if present
+  text = text.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/g, '').trim();
 
   // Strip markdown fences if model added them despite format:'json'
   text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -1236,7 +1246,7 @@ export function solveFromText(deedText, options = {}) {
  * Returns all available models with a suitability rating.
  */
 export async function listAvailableModels() {
-  const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+  const res = await httpFetch(`${OLLAMA_BASE}/api/tags`, {
     signal: AbortSignal.timeout(5000),
     dispatcher: ollamaAgent,
   });

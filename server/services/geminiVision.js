@@ -1,4 +1,3 @@
-import { fetch } from 'undici';
 import * as ollama from './ollamaVision.js';
 import pdfParse from 'pdf-parse';
 import fs from 'fs/promises';
@@ -12,6 +11,61 @@ import crypto from 'crypto';
 
 const execFileAsync = promisify(execFile);
 const pdfOcrCache = new Map();
+
+let cachedPythonCommand = null;
+async function getPythonCommand() {
+  if (cachedPythonCommand) return cachedPythonCommand;
+  try {
+    await execFileAsync('python3', ['--version']);
+    cachedPythonCommand = 'python3';
+  } catch (err) {
+    try {
+      await execFileAsync('python', ['--version']);
+      cachedPythonCommand = 'python';
+    } catch (err2) {
+      console.warn('⚠️ Neither python3 nor python found in PATH. Defaulting to python.');
+      cachedPythonCommand = 'python';
+    }
+  }
+  return cachedPythonCommand;
+}
+
+async function runPdfToPpm(args, timeout) {
+  try {
+    await execFileAsync('pdftoppm', args, { timeout });
+    return true;
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.log('pdftoppm not found in PATH. Attempting PyMuPDF Python fallback...');
+      const pyCmd = await getPythonCommand();
+      const baseDir = process.cwd();
+      const serverDir = fsSync.existsSync(path.join(baseDir, 'server')) ? path.join(baseDir, 'server') : baseDir;
+      const scriptPath = path.join(serverDir, 'services', 'pdf_to_png.py');
+      
+      let isSingleFile = args.includes('-singlefile');
+      let rIdx = args.indexOf('-r');
+      let dpi = rIdx !== -1 ? args[rIdx + 1] : '150';
+      
+      let tempPdfPath = args[args.length - 2];
+      let tempPngPrefix = args[args.length - 1];
+      
+      let maxPages = '5';
+      let lIdx = args.indexOf('-l');
+      if (lIdx !== -1) {
+        maxPages = args[lIdx + 1];
+      }
+      
+      await execFileAsync(pyCmd, [
+        scriptPath, tempPdfPath, tempPngPrefix, dpi, maxPages, isSingleFile ? 'true' : 'false'
+      ], { 
+        timeout,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      });
+      return true;
+    }
+    throw err;
+  }
+}
 
 // Persistent Disk OCR Cache for Scanned PDFs
 // Path is configurable at runtime via OCR_CACHE_DIR env var (Settings → Paths & Directories).
@@ -58,9 +112,9 @@ async function convertPdfToPng(buffer) {
     await fs.writeFile(tempPdfPath, buffer);
     
     console.log(`Converting PDF page to PNG via pdftoppm...`);
-    await execFileAsync('pdftoppm', [
+    await runPdfToPpm([
       '-png', '-singlefile', '-r', '150', tempPdfPath, tempPngPrefix
-    ], { timeout: 300000 });
+    ], 300000);
     
     const pngBytes = await fs.readFile(tempPngPath);
     console.log(`Successfully converted PDF to PNG image buffer (${(pngBytes.length / 1024).toFixed(1)} KB)`);
@@ -84,9 +138,9 @@ async function convertPdfPagesToPngs(buffer, maxPages = 5) {
     await fs.writeFile(tempPdfPath, buffer);
     
     console.log(`Converting first ${maxPages} PDF pages to PNGs via pdftoppm...`);
-    await execFileAsync('pdftoppm', [
+    await runPdfToPpm([
       '-png', '-r', '150', '-f', '1', '-l', String(maxPages), tempPdfPath, tempPngPrefix
-    ], { timeout: 300000 });
+    ], 300000);
     
     const files = await fs.readdir(tempDir);
     const pngFiles = files.filter(f => f.startsWith('output-') && f.endsWith('.png'));
@@ -454,7 +508,11 @@ async function performLocalOcr(pngBuffer) {
     const serverDir = fsSync.existsSync(path.join(baseDir, 'server')) ? path.join(baseDir, 'server') : baseDir;
     const ocrScriptPath = path.join(serverDir, 'services', 'ocr.py');
     
-    const { stdout } = await execFileAsync('python3', [ocrScriptPath, tempImgPath], { timeout: 120000 });
+    const pyCmd = await getPythonCommand();
+    const { stdout } = await execFileAsync(pyCmd, [ocrScriptPath, tempImgPath], { 
+      timeout: 120000,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+    });
     const rawOcr = stdout ? stdout.trim() : '';
     const ocrText = postProcessOcrText(rawOcr);
     console.log(`Local OCR extraction complete (${ocrText.length} characters).`);
