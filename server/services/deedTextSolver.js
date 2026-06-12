@@ -209,6 +209,60 @@ function cleanInvalidJsonValues(jsonStr) {
   return cleanedLines.join('\n');
 }
 
+// ── JSON string content sanitizer ────────────────────────────────────────────
+// Called AFTER initial extraction to escape dangerous chars inside string values.
+// Handles: unescaped single-quotes, literal newlines, control chars, and the
+// common LLM pattern of emitting degree symbols and bearing apostrophes in
+// OriginalLegalDescription without escaping them.
+function sanitizeJsonStringValues(jsonStr) {
+  // Strategy: walk char by char tracking whether we're inside a JSON string.
+  // When inside, escape any bare control chars and unescaped single-quotes.
+  let out = '';
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < jsonStr.length; i++) {
+    const ch = jsonStr[i];
+
+    if (escape) {
+      out += ch;
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      escape = true;
+      out += ch;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      out += ch;
+      continue;
+    }
+
+    if (inString) {
+      // Escape literal newlines / carriage returns inside strings
+      if (ch === '\n') { out += '\\n'; continue; }
+      if (ch === '\r') { out += '\\r'; continue; }
+      if (ch === '\t') { out += '\\t'; continue; }
+      // Escape other ASCII control chars
+      if (ch.charCodeAt(0) < 0x20) {
+        out += `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`;
+        continue;
+      }
+      // Single-quotes (apostrophes in bearing strings like N45°47') don't need
+      // escaping in JSON, but LLMs sometimes use them to delimit string values
+      // which then appear as unescaped bare quotes inside the real string content.
+      // Leave them as-is (they're valid in JSON strings) — handled by cleanInvalidJsonValues.
+    }
+
+    out += ch;
+  }
+  return out;
+}
+
 // ── JSON parser — robust to common local LLM formatting issues ────────────────
 function parseExtractionJson(raw, deedText) {
   let text = raw.trim();
@@ -223,19 +277,40 @@ function parseExtractionJson(raw, deedText) {
     text = text.slice(firstBrace, lastBrace + 1);
   }
 
-  // Robustly quote any unquoted property values
+  // Pass 1: escape literal control chars / newlines inside string values
+  text = sanitizeJsonStringValues(text);
+
+  // Pass 2: robustly quote any unquoted property values (line-by-line)
   text = cleanInvalidJsonValues(text);
 
   let root;
   try {
     root = JSON.parse(text);
-  } catch {
-    // Try to fix common issues: trailing commas, unquoted nulls
-    const fixed = text
-      .replace(/,\s*([}\]])/g, '$1')   // trailing commas
-      .replace(/:\s*undefined/g, ': null'); // undefined → null
-    root = JSON.parse(fixed);
+  } catch (firstErr) {
+    // Pass 3: trailing commas, undefined → null
+    let fixed = text
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/:\s*undefined/g, ': null');
+    try {
+      root = JSON.parse(fixed);
+    } catch {
+      // Pass 4: nuke everything after a truncation point (LLM cut off mid-value)
+      // Find the last complete key-value pair by locating the last '}' that
+      // closes a plausible Segments array and manually close the object.
+      const segEnd = fixed.lastIndexOf('}');
+      if (segEnd > 0) {
+        const truncated = fixed.slice(0, segEnd + 1);
+        // Ensure the outer object is closed
+        const opens  = (truncated.match(/\{/g) || []).length;
+        const closes = (truncated.match(/\}/g) || []).length;
+        const patch  = truncated + '}'.repeat(Math.max(0, opens - closes));
+        root = JSON.parse(patch); // will throw if still invalid → propagate
+      } else {
+        throw firstErr;
+      }
+    }
   }
+
 
   // Normalize casing variations (some models use lowercase keys)
   const segments = root.Segments || root.segments || root.courses || root.Courses || [];
