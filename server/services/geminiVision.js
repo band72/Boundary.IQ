@@ -119,8 +119,8 @@ let activeModel = process.env.ACTIVE_MODEL || (process.env.ACTIVE_PROVIDER === '
 let geminiApiKey = null;
 let activeOpenAiBaseUrl = process.env.OPENAI_BASE_URL || 'http://127.0.0.1:11434/v1';
 
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 2000;
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 3000;
 
 // ── Public Config API ───────────────────────────────────────────────────────
 
@@ -168,9 +168,9 @@ async function postWithRetry(url, payload) {
 
     if (res.ok) return { status: res.status, body };
 
-    if (res.status === 429 && attempt < MAX_RETRIES) {
-      const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 500;
-      console.warn(`Gemini 429 rate-limit on attempt ${attempt + 1}/${MAX_RETRIES}. Retrying in ${delay.toFixed(0)} ms.`);
+    if ((res.status === 429 || res.status === 503) && attempt < MAX_RETRIES) {
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
+      console.warn(`Gemini ${res.status} on attempt ${attempt + 1}/${MAX_RETRIES}. Retrying in ${(delay/1000).toFixed(1)}s...`);
       await new Promise(r => setTimeout(r, delay));
       continue;
     }
@@ -215,6 +215,30 @@ export function postProcessOcrText(text) {
   if (!text) return '';
   let cleaned = text;
   
+  // ── Unicode normalization (Word typographic fonts + OCR artifacts) ──────────
+  // Unicode prime marks → standard DMS punctuation
+  cleaned = cleaned.replace(/\u2032/g, "'");   // U+2032 PRIME → minutes
+  cleaned = cleaned.replace(/\u2033/g, '"');   // U+2033 DOUBLE PRIME → seconds
+  cleaned = cleaned.replace(/\u2034/g, '"');   // U+2034 TRIPLE PRIME → seconds
+  cleaned = cleaned.replace(/\u02B9/g, "'");   // MODIFIER LETTER PRIME
+  cleaned = cleaned.replace(/\u02BA/g, '"');   // MODIFIER LETTER DOUBLE PRIME
+  // Smart quotes → standard ASCII
+  cleaned = cleaned.replace(/[\u2018\u2019\u201A\u02BC\u00B4]/g, "'");
+  cleaned = cleaned.replace(/[\u201C\u201D\u201E]/g, '"');
+  // Greek capital lookalikes → ASCII (appear in OCR of all-caps Word docs)
+  cleaned = cleaned.replace(/\u039D/g, 'N');   // Ν → N
+  cleaned = cleaned.replace(/\u0391/g, 'A');   // Α → A
+  cleaned = cleaned.replace(/\u039F/g, 'O');   // Ο → O
+  cleaned = cleaned.replace(/\u0395/g, 'E');   // Ε → E
+  cleaned = cleaned.replace(/\u0397/g, 'H');   // Η → H
+  cleaned = cleaned.replace(/\u039A/g, 'K');   // Κ → K
+  cleaned = cleaned.replace(/\u039C/g, 'M');   // Μ → M
+  cleaned = cleaned.replace(/\u03A1/g, 'R');   // Ρ → R
+  cleaned = cleaned.replace(/\u03A4/g, 'T');   // Τ → T
+  cleaned = cleaned.replace(/\u03A5/g, 'Y');   // Υ → Y
+  cleaned = cleaned.replace(/\u03A7/g, 'X');   // Χ → X
+  cleaned = cleaned.replace(/\u03A9/g, 'W');   // Ω → W
+
   // Standardize double single-quotes to double quotes
   cleaned = cleaned.replace(/'\s*'/g, '"');
   cleaned = cleaned.replace(/''/g, '"');
@@ -486,11 +510,12 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
           }
           cacheEntry = {
             isScanned: metaJson.isScanned,
-            extractedText: metaJson.extractedText || '',
-            combinedOcrText: metaJson.combinedOcrText || '',
+            extractedText: postProcessOcrText(metaJson.extractedText || ''),
+            combinedOcrText: postProcessOcrText(metaJson.combinedOcrText || ''),
             firstPageBuffer
           };
           pdfOcrCache.set(pdfHash, cacheEntry);
+
         }
       } catch (cacheErr) {
         console.warn('Failed to load from persistent OCR cache:', cacheErr.message);
@@ -1568,6 +1593,32 @@ RULE 11 — CARDINAL DIRECTION COURSES:
     \u2192 Set "Bearing": the cardinal word as a string, e.g. "NORTHERLY", "WESTERLY", "SOUTHEASTERLY"
     \u2192 The COGO engine will resolve these to exact cardinal azimuths (N=0°, W=270°, etc.)
   Do NOT fabricate a precise DMS bearing (like N00°00'00"E) when the deed only says "northerly".
+
+RULE 12 — DUAL DESCRIPTION / SAME PROPERTY REDESCRIBED:
+  Some deeds contain TWO complete descriptions of the same property — e.g., an original
+  deed description followed by "THIS IS THE SAME PROPERTY AS DESCRIBED IN [SURVEY]..." or
+  "DESCRIBED AS FOLLOWS: FROM THE [point]..." (a second set of traverse calls).
+  Signals to watch for:
+    - "THIS IS THE SAME PROPERTY AS DESCRIBED IN..."
+    - "BEING THE SAME LANDS AS DESCRIBED IN..."
+    - A second "FROM THE [CORNER]" commence + "POINT OF BEGINNING" traverse after
+      the first one has already closed.
+    - "DESCRIBED AS FOLLOWS:" appearing twice in the document.
+  When you detect this pattern:
+    → Extract ONLY the SECOND (most recent, usually more precise) description.
+    → The second description typically follows a surveyor's job reference (e.g., "Job No. 110750").
+    → Ignore the first description entirely — it is superseded.
+  WHY: The two descriptions are for the same parcel. Extracting both or mixing them
+  will produce phantom extra courses that do not close.
+
+RULE 13 — MULTI-PARCEL DEED (PARCEL 1, PARCEL 2, etc.):
+  Some deeds describe multiple separate parcels under "PARCEL 1:", "PARCEL 2:", etc.
+  Each parcel is a separate closed traverse.
+  → Extract ONLY "PARCEL 1" (the first labeled parcel) unless the file explicitly
+    asks for a different parcel.
+  → Set Classification to "METES_BOUNDS" or "HYBRID" as appropriate for that parcel.
+  → Set MentalMapSummary to describe only Parcel 1's shape.
+  WHY: Concatenating two separate traverses creates an uncloseable polygon.
 
 =========================================
 OUTPUT JSON SCHEMA

@@ -195,8 +195,8 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
     }
 
     if (stations.length >= 2 && courses.length >= 1) {
+      const _inferred1 = inferCountyStateFromText(rawOCR || '');
       try {
-        const _inferred1 = inferCountyStateFromText(rawOCR || '');
         const meta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
           county:          result.extraction?.county           || _inferred1.county || null,

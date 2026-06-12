@@ -51,9 +51,32 @@ function assessConfidence(deg, min, sec, format) {
 export function parse(bearing) {
   // Pre-normalize bearing string to handle non-standard characters from OCR or Word conversions
   let clean = bearing.trim()
+    // Normalize Unicode prime marks (from Word typographic fonts)
+    .replace(/\u2032/g, "'"  )    // U+2032 PRIME → minutes apostrophe
+    .replace(/\u2033/g, '"'  )    // U+2033 DOUBLE PRIME → seconds quote
+    .replace(/\u2034/g, '"'  )    // U+2034 TRIPLE PRIME → seconds fallback
+    .replace(/\u02B9/g, "'"  )    // U+02B9 MODIFIER LETTER PRIME
+    .replace(/\u02BA/g, '"'  )    // U+02BA MODIFIER LETTER DOUBLE PRIME
+    // Normalize Greek lookalike letters OCR sometimes produces in all-caps docs
+    .replace(/\u039D/g, 'N'  )    // Ν (Greek Nu) → N
+    .replace(/\u0391/g, 'A'  )    // Α (Greek Alpha) → A
+    .replace(/\u039F/g, 'O'  )    // Ο (Greek Omicron) → O
+    .replace(/\u0395/g, 'E'  )    // Ε (Greek Epsilon) → E
+    .replace(/\u0397/g, 'H'  )    // Η (Greek Eta) → H
+    .replace(/\u039A/g, 'K'  )    // Κ (Greek Kappa) → K
+    .replace(/\u039C/g, 'M'  )    // Μ (Greek Mu) → M
+    .replace(/\u03A1/g, 'R'  )    // Ρ (Greek Rho) → R
+    .replace(/\u03A4/g, 'T'  )    // Τ (Greek Tau) → T
+    .replace(/\u03A5/g, 'Y'  )    // Υ (Greek Upsilon) → Y
+    .replace(/\u03A7/g, 'X'  )    // Χ (Greek Chi) → X
+    .replace(/\u03A9/g, 'W'  )    // Ω (Greek Omega) → W (rare)
+    // Word document smart-quote / special character cleanup
+    .replace(/[\u2018\u2019\u201A\u02BC\u00B4]/g, "'") // smart-left/right single quotes → '
+    .replace(/[\u201C\u201D\u201E]/g, '"')              // smart-left/right double quotes → "
     .replace(/DEGREES|DEG/gi, '°')
     .replace(/MINUTES|MIN/gi, "'")
     .replace(/SECONDS|SEC/gi, '"');
+
 
   // Check if it's a cardinal/ordinal direction word directly
   const cardAz = parseCardinalAzimuth(clean);

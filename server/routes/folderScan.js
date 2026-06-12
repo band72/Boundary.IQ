@@ -12,6 +12,10 @@ import * as db from '../services/diagnosticsDb.js';
 import { isWordDocument, convertToPdf, getMimeType } from '../services/docConversion.js';
 import * as output from '../services/output.js';
 import * as geminiVision from '../services/geminiVision.js';
+// Module-level map: base deed name → last station {northing, easting} of Part A/B etc.
+// Enables multi-part deed chaining (Rec 4) without cross-request state or DB changes.
+const familyEndpoints = new Map();
+
 import * as platLookup from '../services/platLookupService.js';
 import * as resolver from '../services/chainedTraverseResolver.js';
 import * as plssParser from '../services/plssParser.js';
@@ -318,6 +322,27 @@ function parsePrecisionRatio(precisionStr) {
   return 0;
 }
 
+/**
+ * Rec 4 helper — Detect multi-part deed file families.
+ * Matches: 12345L2.doc, 12345L-2.doc, 12345L-B.doc, 12345LB.doc, 12345L_2.pdf
+ * Returns { base, part, partOrder } or null for single-part deeds.
+ * partOrder: A/1 = 1, B/2 = 2, C/3 = 3
+ */
+function _getPartFamily(fileName) {
+  const stem = path.parse(fileName).name;
+  // Pattern: base + optional separator + part indicator (A-D or 2-4)
+  const m = stem.match(/^(.+?)[-_ ]?([A-D]|[2-4])$/i);
+  if (!m) return null;
+  const base = m[1];
+  const part = m[2].toUpperCase();
+  const partOrder = /[A2]/.test(part) ? (['A','2'].includes(part) ? (/A/.test(part) ? 1 : 2) : 2) : 
+    ['B','3'].includes(part) ? (/B/.test(part) ? 2 : 3) :
+    ['C','4'].includes(part) ? (/C/.test(part) ? 3 : 4) : 1;
+  // partOrder mapping
+  const orderMap = { A: 1, '2': 2, B: 2, '3': 3, C: 3, '4': 4, D: 4 };
+  return { base, part, partOrder: orderMap[part] ?? 1 };
+}
+
 // GET /api/folderscan/scan
 router.get('/scan', (req, res) => {
   const validPath = validatePath(req.query.path);
@@ -405,6 +430,18 @@ function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, li
     extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
     refName, refN, refE, pobN, pobE, fileHash
   );
+}
+
+// Helper to determine whether to create a new output folder or reuse an existing one passed in query params
+function getOrCreateOutputFolder(req, validPath) {
+  if (req.query.outputPath) {
+    const p = path.resolve(req.query.outputPath);
+    if (!fs.existsSync(p)) {
+      fs.mkdirSync(p, { recursive: true });
+    }
+    return p;
+  }
+  return output.createOutputFolder(validPath);
 }
 
 // Consolidate reference point and commencement segments for all deeds in the project directory
@@ -1052,7 +1089,7 @@ router.post('/process-batch', async (req, res) => {
     if (autoOutput) {
       try {
         const start = Date.now();
-        outputFolder = output.createOutputFolder(req.query.path);
+        outputFolder = getOrCreateOutputFolder(req, req.query.path);
         for (const r of results) {
           if (!r) continue;
           if (r.isMultiParcel && r.parcels) {
@@ -1228,7 +1265,7 @@ router.post('/process-file', async (req, res) => {
 
       if (autoOutput) {
         try {
-          const outputFolder = output.createOutputFolder(validPath);
+          const outputFolder = getOrCreateOutputFolder(req, validPath);
           await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
@@ -1305,7 +1342,20 @@ router.post('/process-file', async (req, res) => {
       mime = resFallback.mime;
     }
 
-    const pob = { northing: pobN, easting: pobE };
+    // Rec 4 — Multi-part deed chaining:
+    // If this file looks like "12345L2.doc" or "12345L-B.doc" and Part A already
+    // passed in this server session, use Part A's last station as POB instead of
+    // the default (5000, 5000), so Part B closes relative to where Part A ended.
+    const _partFamily = _getPartFamily(fileName);
+    let chainedPob = { northing: pobN, easting: pobE };
+    if (_partFamily && _partFamily.partOrder > 1) {
+      const parentEndpoint = familyEndpoints.get(_partFamily.base);
+      if (parentEndpoint) {
+        chainedPob = parentEndpoint;
+        console.log(`[Rec4 Chain] ${fileName} is Part ${_partFamily.part} of family "${_partFamily.base}" — using chained POB N${chainedPob.northing.toFixed(2)} E${chainedPob.easting.toFixed(2)}`);
+      }
+    }
+    const pob = chainedPob;
 
     const rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
 
@@ -1509,7 +1559,7 @@ router.post('/process-file', async (req, res) => {
         };
         if (autoOutput) {
           try {
-            const outputFolder = output.createOutputFolder(validPath);
+            const outputFolder = getOrCreateOutputFolder(req, validPath);
             for (const pr of parcelResults) {
               await output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
             }
@@ -1556,7 +1606,7 @@ router.post('/process-file', async (req, res) => {
           
           if (autoOutput) {
             try {
-              const outputFolder = output.createOutputFolder(validPath);
+              const outputFolder = getOrCreateOutputFolder(req, validPath);
               await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
             } catch (ex) { console.warn('Auto-output failed:', ex.message); }
           }
@@ -1583,7 +1633,7 @@ router.post('/process-file', async (req, res) => {
 
       if (autoOutput) {
         try {
-          const outputFolder = output.createOutputFolder(validPath);
+          const outputFolder = getOrCreateOutputFolder(req, validPath);
           await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
@@ -1643,7 +1693,7 @@ router.post('/process-file', async (req, res) => {
       // Auto-output if enabled
       if (autoOutput) {
         try {
-          const outputFolder = output.createOutputFolder(validPath);
+          const outputFolder = getOrCreateOutputFolder(req, validPath);
           await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
@@ -1670,10 +1720,20 @@ router.post('/process-file', async (req, res) => {
     saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson, fileHash);
     if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
 
+    // Rec 4: Record endpoint for potential Part B chaining
+    if ((status === 'PASS' || status === 'MEANDER') && _partFamily) {
+      const stations = traverse?.adjustedStations || traverse?.stations || [];
+      const lastSt = stations[stations.length - 1];
+      if (lastSt?.northing != null && lastSt?.easting != null) {
+        familyEndpoints.set(_partFamily.base, { northing: lastSt.northing, easting: lastSt.easting });
+        console.log(`[Rec4 Chain] Recorded endpoint for family "${_partFamily.base}": N${lastSt.northing.toFixed(2)} E${lastSt.easting.toFixed(2)}`);
+      }
+    }
+
     // Auto-output
     if (autoOutput) {
       try {
-        const outputFolder = output.createOutputFolder(validPath);
+        const outputFolder = getOrCreateOutputFolder(req, validPath);
         await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }

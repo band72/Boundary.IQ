@@ -7,6 +7,33 @@ import * as bp from './bearingParser.js';
 import { tryBowtieAutoFix, trySurveyorShapeCorrection, detectBacktracking } from './repair.js';
 
 /**
+ * Rec 3 helper — produce up to 3 course-set variants by flipping the bearing
+ * of a single identified bust course (N↔S, E↔W, both).
+ * Caller tests each variant for closure.
+ */
+function _targetedBearingFlipVariants(courses, bustIdx) {
+  const b = courses[bustIdx];
+  if (!b?.bearing) return [];
+  const bearing = b.bearing;
+  const variants = [];
+
+  // N↔S flip
+  const ns = bearing.startsWith('N') ? bearing.replace(/^N/, 'S') : bearing.replace(/^S/, 'N');
+  // E↔W flip
+  const ew = bearing.endsWith('E') ? bearing.replace(/E$/, 'W') : bearing.replace(/W$/, 'E');
+  // Both
+  const both = ns.endsWith('E') ? ns.replace(/E$/, 'W') : ns.replace(/W$/, 'E');
+
+  for (const flippedBearing of [ns, ew, both]) {
+    if (flippedBearing !== bearing) {
+      variants.push(courses.map((c, i) => i === bustIdx ? { ...c, bearing: flippedBearing } : c));
+    }
+  }
+  return variants;
+}
+
+
+/**
  * Extraction Agent: Ingests documents and parses them into structured JSON.
  * Supports targeted, context-aware visual re-reading of specific segment coordinates.
  */
@@ -48,11 +75,13 @@ export class CogoAgent {
       // Parse precision number for threshold check
       let precisionVal = 0;
       if (precisionRatio.includes(':')) {
-        const cleaned = precisionRatio.split(':')[1].replace(/,/g, '').replace('∞', '999999999').trim();
+        // Handle '1:∞ (Perfect)' and plain '1:∞' — strip everything after the ratio number
+        const cleaned = precisionRatio.split(':')[1].replace(/,/g, '').replace(/[∞∞]/g, '999999999').replace(/\s*\(.*\)/, '').trim();
         precisionVal = parseFloat(cleaned) || 0;
       }
 
-      const isPassing = isOpenEnded || (linearError < 0.30 || precisionVal >= 10000);
+      // Rec 1: linearError === 0 must always pass regardless of precisionVal parsing
+      const isPassing = isOpenEnded || linearError === 0 || linearError < 0.30 || precisionVal >= 10000;
       
       return {
         success: true,
@@ -195,9 +224,28 @@ export class LegalSurveyorAgent {
           const errDistRounded = Math.round(errMag * 100) / 100;
           const courseNum = bestAlign.idx + 1;
           const confidenceNote = bestAlign.parseConfidence === 'LOW' ? ' (bearing flagged as LOW parse confidence)' : '';
+
+          // Improvement #3: Detect unidirectional error — strong signal of bearing error vs distance error
+          const errRatio = Math.min(Math.abs(errN), Math.abs(errE)) / (errMag || 1);
+          const isUnidirectional = errRatio < 0.05;
+          let directionalNote = '';
+          if (isUnidirectional) {
+            const dominantDir = Math.abs(errE) > Math.abs(errN) ? 'East-West' : 'North-South';
+            const dominantVal = Math.max(Math.abs(errE), Math.abs(errN));
+            const orthogonalVal = Math.min(Math.abs(errE), Math.abs(errN));
+            directionalNote = ` IMPORTANT DIAGNOSTIC: The error is almost entirely in the ${dominantDir} direction ` +
+              `(dominant component = ${dominantVal.toFixed(2)} ft, orthogonal = ${orthogonalVal.toFixed(2)} ft). ` +
+              `This pattern strongly indicates a BEARING error (wrong minutes or seconds) on an approximately ` +
+              `${dominantDir} course — NOT a distance error. Check whether Course ${courseNum} or any near-parallel ` +
+              `side of the parcel uses a slightly different bearing system (e.g. plat bearing vs deed bearing). ` +
+              `Common cause: adjacent parallel sides have mismatched bearings (e.g. S89°21'43"W vs N89°43'05"E) ` +
+              `due to different survey control being used for each side.`;
+          }
+
           const visualFeedback = `Our geometry engine detected a linear error of ${errMag.toFixed(2)} ft. ` +
             `This error is highly aligned with Course ${courseNum} (${bestAlign.bearing} at ${bestAlign.distance.toFixed(2)} ft) with a ${Math.round(bestAlign.score * 100)}% match score${confidenceNote}. ` +
-            `Please re-read Course ${courseNum} in the document carefully. The distance may contain a transcription shift of ${errDistRounded} ft (e.g. check for missing decimals or transposed digits).`;
+            `Please re-read Course ${courseNum} in the document carefully. The distance may contain a transcription shift of ${errDistRounded} ft (e.g. check for missing decimals or transposed digits).` +
+            directionalNote;
 
           diagnoses.push({
             type: 'OCR_TRANSCRIPTION_BUST',
@@ -211,9 +259,63 @@ export class LegalSurveyorAgent {
       }
     }
 
+    // 6. Hypothesis: Commencement Leg Strip (high priority)
+    // When the closure error vector matches the cumulative displacement of
+    // the first 1-3 courses within 5%, those courses are commencement runs
+    // that the extractor mistakenly included in the boundary.
+    if (courses.length > 2 && cogoReport.linearError > 5.0) {
+      const errN = cogoReport.errorNorthing ?? 0;
+      const errE = cogoReport.errorEasting ?? 0;
+      const errMag = Math.hypot(errN, errE);
+
+      for (let stripLen = 1; stripLen <= Math.min(3, courses.length - 2); stripLen++) {
+        let cumN = 0, cumE = 0, allResolvable = true;
+        for (let k = 0; k < stripLen; k++) {
+          const c = courses[k];
+          if (!c.bearing || c.isUnknown || c.distance == null) { allResolvable = false; break; }
+          try {
+            const parsed = bp.parse(c.bearing);
+            if (!parsed?.azimuthDeg) { allResolvable = false; break; }
+            const az = parsed.azimuthDeg * Math.PI / 180;
+            cumN += c.distance * Math.cos(az);
+            cumE += c.distance * Math.sin(az);
+          } catch { allResolvable = false; break; }
+        }
+        if (!allResolvable) continue;
+
+        const residN = errN + cumN;
+        const residE = errE + cumE;
+        const residMag = Math.hypot(residN, residE);
+
+        if (residMag < errMag * 0.15) {
+          const stripped = courses.slice(stripLen);
+          const names = courses.slice(0, stripLen).map((c, k) => `C${k+1}(${c.bearing},${c.distance}ft)`).join('+');
+          
+          let linErr = Infinity;
+          try {
+            const testResult = traverseSvc.compute({ pointOfBeginning: pob, courses: stripped, units, isOpenEnded: false });
+            linErr = testResult?.closure?.linearError ?? Infinity;
+          } catch {}
+
+          const isPassing = linErr < 1.0;
+          const confidence = isPassing ? 0.98 : (linErr < 50.0 ? 0.85 : 0.50);
+
+          diagnoses.push({
+            type: 'COMMENCEMENT_STRIP',
+            confidence,
+            message: `Commencement Leg Strip: leading ${stripLen} course(s) [${names}] are reference-point runs, not boundary. Residual: ${linErr.toFixed(2)}ft`,
+            apply: () => stripped,
+          });
+        }
+      }
+    }
+
     // Sort diagnoses by confidence
-    diagnoses.sort((a, b) => b.confidence - a.confidence);
-    return diagnoses;
+    const sortedDiagnoses = diagnoses.sort((a, b) => b.confidence - a.confidence);
+    console.log(`[${this.name}] Generated ${sortedDiagnoses.length} hypotheses: ${sortedDiagnoses.map(d => `${d.type}(${(d.confidence*100).toFixed(0)}%)`).join(', ')}`);
+    return sortedDiagnoses;
+
+
   }
 }
 
@@ -341,7 +443,7 @@ export class SupervisorAgent {
 
     while (turn <= maxTurns) {
       console.log(`\n--- Conversational Agent Loop: Turn ${turn} ---`);
-      const turnRecord = { turn, timestamp: new Date().toISOString(), feedbackSent: currentFeedback, diagnoses: [], outcome: null };
+      const turnRecord = { turn, timestamp: new Date().toISOString(), feedbackSent: currentFeedback, diagnoses: [], outcome: null, linearError: null };
 
       // Turn A: Call Extraction Agent (Visual / OCR text parsing)
       const extraction = await this.extractor.extract(buffer, mimeType, currentFeedback);
@@ -367,6 +469,22 @@ export class SupervisorAgent {
       // Turn B: Call COGO Agent to check mathematically perfect closure
       const cogoReport = this.cogo.analyze(extraction.courses, pob, units, isOpenEnded);
       lastTraverseReport = cogoReport;
+      turnRecord.linearError = cogoReport.linearError ?? null;
+
+      // Rec 5: Early exit if error has stalled (< 5% improvement) for 2 consecutive turns
+      // Avoids burning all remaining AI calls on a deed that's clearly not converging
+      if (agentTurns.length >= 2 && cogoReport.linearError > 5) {
+        const prevErr1 = agentTurns.at(-1)?.linearError ?? Infinity;
+        const prevErr2 = agentTurns.at(-2)?.linearError ?? Infinity;
+        const recentlyStalled = Math.abs(prevErr1 - prevErr2) < Math.max(prevErr2 * 0.05, 0.5)
+                             && Math.abs(cogoReport.linearError - prevErr1) < Math.max(prevErr1 * 0.05, 0.5);
+        if (recentlyStalled) {
+          console.warn(`[${this.name}] Error stalled at ~${cogoReport.linearError.toFixed(2)} ft for 2 turns — early exit (Rec 5).`);
+          turnRecord.outcome = 'STALL_EXIT';
+          agentTurns.push(turnRecord);
+          break;
+        }
+      }
 
       if (cogoReport.success && cogoReport.isPassing) {
         console.log(`[${this.name}] SUCCESS: COGO Agent achieved passing closure on Turn ${turn}! Ratio: ${cogoReport.precisionRatio}`);
@@ -436,6 +554,38 @@ export class SupervisorAgent {
       // If mathematical / structural corrections failed, check if we have a visual feedback candidate
       const ocrBustDiag = diagnoses.find(d => d.type === 'OCR_TRANSCRIPTION_BUST');
       if (ocrBustDiag && ocrBustDiag.feedbackPrompt) {
+        // Rec 3: If model has re-read the same bust course ≥2 turns without improvement,
+        // try a targeted single-course N↔S/E↔W bearing flip instead of asking again.
+        const bustIdx = ocrBustDiag.bustCourseIndex ?? -1;
+        const turnsOnSameCourse = bustIdx >= 0
+          ? agentTurns.filter(t => t.bustCourseIndex === bustIdx).length
+          : 0;
+
+        if (turnsOnSameCourse >= 2 && bustIdx >= 0) {
+          console.log(`[${this.name}] Bust course ${bustIdx} re-read failed ${turnsOnSameCourse}x — trying targeted bearing flip (Rec 3).`);
+          const flippedVariants = _targetedBearingFlipVariants(extraction.courses, bustIdx);
+          let flipSolved = false;
+          for (const flippedCourses of flippedVariants) {
+            const flipReport = this.cogo.analyze(flippedCourses, pob, units, isOpenEnded);
+            if (flipReport.success && flipReport.isPassing) {
+              console.log(`[${this.name}] SUCCESS: Targeted bearing flip on course ${bustIdx} resolved closure!`);
+              extraction.courses = flipReport.courses;
+              extraction.rawJson = JSON.stringify(flipReport.courses);
+              const { trustScore, trustLevel, trustFlags } = this.scorer.score(extraction.courses, flipReport);
+              turnRecord.outcome = 'PASS_VIA_TARGETED_FLIP';
+              agentTurns.push(turnRecord);
+              return {
+                status: 'PASS',
+                extraction,
+                traverse: flipReport,
+                error: null,
+                repairStageUsed: `Stage 5: Targeted Bearing Flip (course ${bustIdx + 1})`,
+                agentTurns, trustScore, trustLevel, trustFlags, bustCourseIndex: bustIdx,
+              };
+            }
+          }
+        }
+
         console.log(`[${this.name}] Escalating OCR bust to Extractor: "${ocrBustDiag.feedbackPrompt}"`);
         currentFeedback = ocrBustDiag.feedbackPrompt;
         turnRecord.bustCourseIndex = ocrBustDiag.bustCourseIndex ?? null;

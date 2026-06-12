@@ -28,6 +28,8 @@ const PASS_PRECISION_RATIO = 10000.0;
  */
 export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpenEnded = false, fileName = '', maxTurns = 3) {
   const pipelineStart = Date.now();
+  let bustCourseIdx = -1;  // Index of the most-suspected single-bust course (-1 = unknown)
+
 
   // ── Stage 5: Hierarchical Multi-Agent Deed Resolution System ────────────────────
   console.log('Repair Pipeline Stage 5: Executing Hierarchical Multi-Agent System...');
@@ -127,6 +129,33 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     return { finalExtraction: extraction, finalTraverse: traverse, status: 'PASS', repairStageUsed: 'Stage 1: Direct Traverse', traverseError: null, originalExtraction, solutionSteps: steps };
   }
 
+  // ── Stage 0.5: Preemptive Commencement Leg Stripper ───────────────────
+  if (traverse && !isPassing(traverse) && extraction.courses?.length > 2) {
+    const stripResult = _tryPreemptiveCommencementStrip(
+      extraction.courses, pob, units, actualOpenEnded, traverse.closure
+    );
+    if (stripResult) {
+      console.log(`Stage 0.5 Preemptive Commencement Stripper: removed ${stripResult.stripLen} leading course(s).`);
+      extraction = {
+        ...extraction,
+        courses: stripResult.courses,
+        rawJson: JSON.stringify(stripResult.courses),
+        message: stripResult.message
+      };
+      // Recompute traverse on the stripped courses so subsequent stages use the correct traverse baseline
+      const [tStrip, eStrip] = tryCompute(extraction.courses, pob, units, actualOpenEnded);
+      if (tStrip) {
+        traverse = tStrip;
+        traverseError = eStrip;
+        if (isPassing(traverse)) {
+          console.log(`Stage 0.5 PASS: ${traverse.closure.precisionRatio}`);
+          const steps = buildSolutionSteps(originalExtraction, extraction, stripResult.message, traverse, Date.now() - pipelineStart);
+          return { finalExtraction: extraction, finalTraverse: traverse, status: 'PASS', repairStageUsed: stripResult.message, traverseError: null, originalExtraction, solutionSteps: steps };
+        }
+      }
+    }
+  }
+
   // ── Stage 1: Bowtie / Quadrant Inversion Auto-Fix ─────────────────────
   console.log('Stage 1: Bowtie/Quadrant Inversion bearing-flip repair.');
   const stage1Extraction = tryBowtieAutoFix(extraction, pob, units);
@@ -188,8 +217,8 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
       return isNaN(v) ? 0 : v;
     })();
 
-    const COMPASS_RULE_MIN_PRECISION = 5000;  // 1:5,000 minimum
-    const COMPASS_RULE_MAX_LINEAR_FT = 1.0;   // 1.0 ft maximum misclosure
+    const COMPASS_RULE_MIN_PRECISION = 3000;  // 1:3,000 minimum (1970s–2000s survey standard)
+    const COMPASS_RULE_MAX_LINEAR_FT = 2.0;   // 2.0 ft maximum misclosure (relaxed from 1.0 ft)
 
     if (linErr > 0 && linErr <= COMPASS_RULE_MAX_LINEAR_FT && precVal >= COMPASS_RULE_MIN_PRECISION) {
       console.log(`Stage 3.5 PASS (Compass Rule): error=${linErr.toFixed(4)}ft ratio=${precStr} — applying Bowditch adjustment`);
@@ -356,8 +385,64 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     }
   }
 
+  // ── Stage 3.8: Bearing Consistency Harmonizer ─────────────────────────────
+  // Near-antiparallel course pairs with 0.01°–5° bearing mismatch.
+  // Classic pattern: deed south line vs plat ROW use different bearing control.
+  if (bestTraverse && !isPassing(bestTraverse) && !actualOpenEnded) {
+    console.log('Stage 3.8: Bearing Consistency Harmonizer.');
+    const s38result = _tryBearingHarmonization(bestExtraction?.courses || [], pob, units, actualOpenEnded);
+    if (s38result) {
+      const [t38] = tryCompute(s38result.courses, pob, units, actualOpenEnded);
+      if (t38 && isPassing(t38)) {
+        console.log(`Stage 3.8 PASS: ${t38.closure.precisionRatio} — ${s38result.message}`);
+        t38.courses = s38result.courses;
+        const steps38 = buildSolutionSteps(originalExtraction, s38result, s38result.message, t38, Date.now() - pipelineStart);
+        return { finalExtraction: s38result, finalTraverse: t38, status: 'PASS',
+          repairStageUsed: `Stage 3.8: ${s38result.message}`, traverseError: null,
+          originalExtraction, solutionSteps: steps38 };
+      } else {
+        console.log(`Stage 3.8: error=${t38?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
+      }
+    } else {
+      console.log('Stage 3.8: No near-antiparallel pair found within 5°.');
+    }
+  }
+
+  // ── Stage 3.9: Commencement Leg Stripper ──────────────────────────────────
+  // When the closure error vector (dN, dE) closely matches one or two leading
+  // courses (within 5%), those courses are misidentified commencement legs.
+  // Strip them from the boundary and retest.
+  // Dominant pattern: the extractor includes "COMMENCE … THENCE S.89°W 1318.72ft
+  // … THENCE S.00°W 30ft … POB" causing a ~1319ft unidirectional error.
+  if (bestTraverse && !isPassing(bestTraverse) && bestExtraction?.courses?.length > 2) {
+    console.log('Stage 3.9: Commencement Leg Stripper.');
+    const s39result = _tryCommencementStrip(
+      bestExtraction.courses, pob, units, actualOpenEnded, bestTraverse.closure
+    );
+    if (s39result) {
+      const [t39] = tryCompute(s39result.courses, pob, units, actualOpenEnded);
+      if (t39 && isPassing(t39)) {
+        console.log(`Stage 3.9 PASS: ${t39.closure.precisionRatio} — ${s39result.message}`);
+        t39.courses = s39result.courses;
+        const steps39 = buildSolutionSteps(
+          originalExtraction, s39result, s39result.message, t39, Date.now() - pipelineStart
+        );
+        return {
+          finalExtraction: s39result, finalTraverse: t39, status: 'PASS',
+          repairStageUsed: `Stage 3.9: ${s39result.message}`,
+          traverseError: null, originalExtraction, solutionSteps: steps39,
+        };
+      } else {
+        console.log(`Stage 3.9: error=${t39?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
+      }
+    } else {
+      console.log('Stage 3.9: No commencement-leg match found within 5%.');
+    }
+  }
+
   // ── Stage 2: Dual-Run Consensus (Generative Fallback) ───────────────────
   console.log('Stage 2: Dual-run Gemini consensus voting.');
+
   let stage2Extraction = null, t2 = null;
   try {
     stage2Extraction = await gemini.extractBoundary(imageBytes, mimeType);
@@ -419,6 +504,23 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
   }
 
+
+  // ── Stage 4.5b: Bearing-Minute Perturbation ─────────────────────────────
+  // Near-unidirectional error + known bust course → perturb bearing ±1'–30'.
+  if (bustCourseIdx >= 0 && bestExtraction?.courses && bestTraverse && !isPassing(bestTraverse)) {
+    const pbResult = _tryBearingMinutePerturbation(
+      bestExtraction.courses, bustCourseIdx, pob, units, actualOpenEnded, bestTraverse.closure);
+    if (pbResult) {
+      const [tPB] = tryCompute(pbResult.courses, pob, units, actualOpenEnded);
+      if (tPB && isPassing(tPB)) {
+        console.log(`Stage 4.5b PASS: ${tPB.closure.precisionRatio}`);
+        const stepsPB = buildSolutionSteps(originalExtraction, pbResult, pbResult.message, tPB, Date.now() - pipelineStart);
+        return { finalExtraction: pbResult, finalTraverse: tPB, status: 'PASS',
+          repairStageUsed: pbResult.message, traverseError: null, originalExtraction, solutionSteps: stepsPB };
+      }
+    }
+  }
+
   if (isMeanderDeed(bestExtraction)) {
     console.log('Stage 4: Detected MEANDER deed (water boundary).');
     return {
@@ -443,6 +545,196 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Stage 3.9 helper — Commencement Leg Stripper.
+ * When the closure error vector (errN, errE) closely matches the cumulative
+ * northing/easting of the first 1–3 courses (within 5% of error magnitude),
+ * those courses were incorrectly included as boundary courses but are actually
+ * commencement (reference) runs. Strip them and re-test closure.
+ *
+ * Dominant pattern: "COMMENCE … S.89°43'W 1318.72ft → S.00°14'W 30ft → POB"
+ * extractor includes both legs, causing ~1319ft westward closure error.
+ */
+function _tryPreemptiveCommencementStrip(courses, pob, units, isOpenEnded, closure) {
+  const errN = closure?.errorNorthing ?? 0;
+  const errE = closure?.errorEasting ?? 0;
+  const errMag = Math.hypot(errN, errE);
+  if (errMag < 5.0 || courses.length < 3) return null;
+
+  let bestStrip = null;
+  let minResid = Infinity;
+
+  for (let stripLen = 1; stripLen <= Math.min(3, courses.length - 2); stripLen++) {
+    let cumN = 0, cumE = 0;
+    let allResolvable = true;
+    for (let k = 0; k < stripLen; k++) {
+      const c = courses[k];
+      if (!c.bearing || c.isUnknown || c.distance == null) { allResolvable = false; break; }
+      let parsed;
+      try { parsed = bp.parse(c.bearing); } catch { allResolvable = false; break; }
+      if (!parsed?.azimuthDeg) { allResolvable = false; break; }
+      const az = parsed.azimuthDeg * Math.PI / 180;
+      cumN += c.distance * Math.cos(az);
+      cumE += c.distance * Math.sin(az);
+    }
+    if (!allResolvable) continue;
+
+    const residN = errN + cumN;
+    const residE = errE + cumE;
+    const residMag = Math.hypot(residN, residE);
+
+    if (residMag < errMag * 0.15 && residMag < minResid) {
+      minResid = residMag;
+      const stripped = courses.slice(stripLen);
+      const stripped_names = courses.slice(0, stripLen).map((c, k) => `C${k+1}(${c.bearing},${c.distance}ft)`).join(' + ');
+      bestStrip = {
+        courses: stripped,
+        message: `Stage 0.5: Preemptive Commencement Stripper removed ${stripLen} leading course(s) [${stripped_names}] — were commencement runs, not boundary`,
+        stripLen
+      };
+    }
+  }
+  return bestStrip;
+}
+
+function _tryCommencementStrip(courses, pob, units, isOpenEnded, closure) {
+  const errN = closure?.errorNorthing ?? 0;
+  const errE = closure?.errorEasting ?? 0;
+  const errMag = Math.hypot(errN, errE);
+  if (errMag < 5.0 || courses.length < 3) return null;
+
+  let bestStrip = null;
+  let minResid = Infinity;
+
+  // For each possible leading strip length (1, 2, 3 courses):
+  for (let stripLen = 1; stripLen <= Math.min(3, courses.length - 2); stripLen++) {
+    let cumN = 0, cumE = 0;
+    let allResolvable = true;
+    for (let k = 0; k < stripLen; k++) {
+      const c = courses[k];
+      if (!c.bearing || c.isUnknown || c.distance == null) { allResolvable = false; break; }
+      let parsed;
+      try { parsed = bp.parse(c.bearing); } catch { allResolvable = false; break; }
+      if (!parsed?.azimuthDeg) { allResolvable = false; break; }
+      const az = parsed.azimuthDeg * Math.PI / 180;
+      cumN += c.distance * Math.cos(az);
+      cumE += c.distance * Math.sin(az);
+    }
+    if (!allResolvable) continue;
+
+    // Check if stripping these courses would reduce the error significantly
+    const residN = errN + cumN;  // error PLUS the commencement displacement → should approach 0
+    const residE = errE + cumE;
+    const residMag = Math.hypot(residN, residE);
+
+
+    // Accept if the stripped courses account for ≥85% of the error
+    if (residMag < errMag * 0.15 && residMag < minResid) {
+      const stripped = courses.slice(stripLen);
+      const [test] = tryCompute(stripped, pob, units, isOpenEnded);
+      if (test && isPassing(test)) {
+        minResid = residMag;
+        const stripped_names = courses.slice(0, stripLen).map((c, k) => `C${k+1}(${c.bearing},${c.distance}ft)`).join(' + ');
+        bestStrip = {
+          courses: stripped,
+          message: `Commencement Leg Stripper: removed ${stripLen} leading course(s) [${stripped_names}] — were commencement runs, not boundary`,
+        };
+      }
+    }
+  }
+  return bestStrip;
+}
+
+/**
+ * Stage 4.5b helper — Bearing-Minute Perturbation.
+ * Activates only when closure error is near-unidirectional (errRatio < 0.15).
+ * Tests ±1',±2',±5',±10',±20',±30' on the identified bust course bearing.
+ */
+
+function _tryBearingMinutePerturbation(courses, bustIdx, pob, units, isOpenEnded, closure) {
+  const bustCourse = courses[bustIdx];
+  if (!bustCourse?.bearing || bustCourse.type?.toLowerCase() !== 'line') return null;
+  const errN = closure?.errorNorthing ?? 0;
+  const errE = closure?.errorEasting ?? 0;
+  const errMag = Math.hypot(errN, errE);
+  if (errMag < 0.30) return null;
+  if (Math.min(Math.abs(errN), Math.abs(errE)) / (errMag || 1) > 0.15) return null;
+
+  const azToQB = (az) => {
+    const a = ((az % 360) + 360) % 360;
+    let q1, q2, dd;
+    if (a <= 90)       { q1 = 'N'; q2 = 'E'; dd = a; }
+    else if (a <= 180) { q1 = 'S'; q2 = 'E'; dd = 180 - a; }
+    else if (a <= 270) { q1 = 'S'; q2 = 'W'; dd = a - 180; }
+    else               { q1 = 'N'; q2 = 'W'; dd = 360 - a; }
+    const d = Math.floor(dd), mr = (dd - d) * 60, m = Math.floor(mr);
+    const s = Math.min(59, Math.round((mr - m) * 60));
+    return `${q1}${String(d).padStart(2,'0')}°${String(m).padStart(2,'0')}'${String(s).padStart(2,'0')}"${q2}`;
+  };
+  let parsed; try { parsed = bp.parse(bustCourse.bearing); } catch { return null; }
+  if (!parsed?.azimuth) return null;
+  for (const dm of [1, 2, 5, 10, 20, 30, -1, -2, -5, -10, -20, -30]) {
+    const nb = azToQB(((parsed.azimuth + dm / 60) % 360 + 360) % 360);
+    if (nb === bustCourse.bearing) continue;
+    const tc = courses.map((c, i) => i === bustIdx ? { ...c, bearing: nb } : c);
+    const [t] = tryCompute(tc, pob, units, isOpenEnded);
+    if (t && isPassing(t)) return {
+      courses: tc,
+      message: `Stage 4.5b: Bearing Perturbation — C${bustIdx + 1} ${bustCourse.bearing} ${dm > 0 ? '+' : ''}${dm}' → ${nb}`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Stage 3.8 helper — Bearing Consistency Harmonizer.
+ * Finds near-antiparallel course pairs with 0.01°–5° bearing mismatch and
+ * tests harmonizing each to its partner's exact reverse bearing.
+ */
+function _tryBearingHarmonization(courses, pob, units, isOpenEnded) {
+  const to360 = az => ((az % 360) + 360) % 360;
+  const azToQB = (az) => {
+    const a = to360(az);
+    let q1, q2, dd;
+    if (a <= 90)       { q1 = 'N'; q2 = 'E'; dd = a; }
+    else if (a <= 180) { q1 = 'S'; q2 = 'E'; dd = 180 - a; }
+    else if (a <= 270) { q1 = 'S'; q2 = 'W'; dd = a - 180; }
+    else               { q1 = 'N'; q2 = 'W'; dd = 360 - a; }
+    const d = Math.floor(dd), mr = (dd - d) * 60, m = Math.floor(mr);
+    const s = Math.min(59, Math.round((mr - m) * 60));
+    return `${q1}${String(d).padStart(2,'0')}°${String(m).padStart(2,'0')}'${String(s).padStart(2,'0')}"${q2}`;
+  };
+  const N = courses.length;
+  for (let i = 0; i < N; i++) {
+    if (courses[i].type?.toLowerCase() !== 'line' || !courses[i].bearing) continue;
+    let pI; try { pI = bp.parse(courses[i].bearing); } catch { continue; }
+    if (!pI?.azimuth) continue;
+    const revI = to360(pI.azimuth + 180);
+    for (let j = i + 1; j < N; j++) {
+      if (courses[j].type?.toLowerCase() !== 'line' || !courses[j].bearing) continue;
+      let pJ; try { pJ = bp.parse(courses[j].bearing); } catch { continue; }
+      if (!pJ?.azimuth) continue;
+      const diff = Math.min(Math.abs(revI - pJ.azimuth), 360 - Math.abs(revI - pJ.azimuth));
+      if (diff <= 0.01 || diff >= 5.0) continue;
+      // Variant A: harmonize i → reverse of j
+      const nbA = azToQB(to360(pJ.azimuth + 180));
+      if (nbA !== courses[i].bearing) {
+        const vA = courses.map((c, k) => k === i ? { ...c, bearing: nbA } : c);
+        const [tA] = tryCompute(vA, pob, units, isOpenEnded);
+        if (tA && isPassing(tA)) return { courses: vA, message: `Bearing Harmonization: C${i+1} → reverse of C${j+1} (${courses[i].bearing}→${nbA})` };
+      }
+      // Variant B: harmonize j → reverse of i
+      const nbB = azToQB(revI);
+      if (nbB !== courses[j].bearing) {
+        const vB = courses.map((c, k) => k === j ? { ...c, bearing: nbB } : c);
+        const [tB] = tryCompute(vB, pob, units, isOpenEnded);
+        if (tB && isPassing(tB)) return { courses: vB, message: `Bearing Harmonization: C${j+1} → reverse of C${i+1} (${courses[j].bearing}→${nbB})` };
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * Builds a structured solution-steps record comparing original vs repaired courses.
@@ -732,6 +1024,38 @@ function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
   }
 
   // ────────────────────────────────────────────────────────────────
+  // PRINCIPLE 6: Bearing minute ↔ second digit swap
+  // Typist/OCR error: minutes and seconds transposed (e.g. 21'43" → 43'21").
+  // Tract 13 pattern: S89°21'43"W vs N89°43'05"E — 21↔43 digits.
+  // ────────────────────────────────────────────────────────────────
+  for (let i = 0; i < N_COURSES; i++) {
+    const c = courses[i];
+    if (!c.bearing || c.type?.toLowerCase() !== 'line') continue;
+    const dmsMatch = c.bearing.match(/^([NS])(\d+)[°d](\d+)[′'](\d+(?:\.\d+)?)["″]([EW])$/i);
+    if (!dmsMatch) continue;
+    const [, q1, deg, min, sec, q2] = dmsMatch;
+    const bearingVariants = new Set();
+    // Variant A: swap minutes ↔ seconds
+    if (min !== sec) bearingVariants.add(`${q1}${deg}°${sec}'${min}"${q2}`);
+    // Variant B: swap tens digit of minutes (e.g. 21→12)
+    if (min.length === 2) {
+      const ms = min[1] + min[0];
+      if (ms !== min && parseInt(ms) < 60) bearingVariants.add(`${q1}${deg}°${ms}'${sec}"${q2}`);
+    }
+    // Variant C: swap tens digit of seconds (e.g. 43→34)
+    const si = sec.split('.')[0];
+    if (si.length === 2) {
+      const ss = si[1] + si[0];
+      if (ss !== si && parseInt(ss) < 60) bearingVariants.add(`${q1}${deg}°${min}'${sec.replace(si, ss)}"${q2}`);
+    }
+    for (const nb of bearingVariants) {
+      if (nb === c.bearing) continue;
+      const fixed = courses.map((cc, j) => j === i ? { ...cc, bearing: nb } : { ...cc });
+      tryCandidate(fixed, `Scrivener fix: C${i + 1} bearing ${c.bearing}→${nb} (min/sec digit swap)`);
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
   // PRINCIPLE 4: Distance digit-drop / transcription errors
   // Common patterns from real deed typist errors:
   //   d ± 10, d ± 20  (leading digit dropped or added)
@@ -762,6 +1086,60 @@ function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
       );
       tryCandidate(fixed,
         `Scrivener fix: C${i + 1} distance ${d.toFixed(2)}→${testDist.toFixed(2)}ft (digit error)`);
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // PRINCIPLE 7: Invalid bearing degrees (> 90°)
+  // Scrivener/OCR error: bearing degrees read > 90° (e.g. 99° or 92°).
+  // Strategy: Identify courses with bearing degrees > 90. Replace the leading
+  // digit to bring it under 90° (e.g. 99° → 89° or 80°), or test other likely transpositions.
+  // ────────────────────────────────────────────────────────────────
+  for (let i = 0; i < N_COURSES; i++) {
+    const c = courses[i];
+    if (!c.bearing) continue;
+
+    const b = c.bearing.toUpperCase().trim();
+    const degMatch = b.match(/^([NSns])\s*(\d{2,3})([°\-\s])(.*)$/i);
+    if (!degMatch) continue;
+    const [, q1, degStr, sep, rest] = degMatch;
+    const degVal = parseInt(degStr, 10);
+    if (degVal <= 90) continue;
+
+    const bearingVariants = new Set();
+    
+    // Scenario 1: Leading digit substitution. e.g. "99" -> replace first '9' with '8' -> "89"
+    if (degStr.length === 2 && degStr.startsWith('9')) {
+      const restDigit = degStr[1];
+      bearingVariants.add(`${q1}8${restDigit}${sep}${rest}`);
+      bearingVariants.add(`${q1}80${sep}${rest}`);
+    } else if (degStr.length === 3) {
+      // E.g. "108" -> strip '1' -> "08" -> "8"
+      const withoutOne = degStr.slice(1);
+      const valWithoutOne = parseInt(withoutOne, 10);
+      if (valWithoutOne <= 90) {
+        bearingVariants.add(`${q1}${valWithoutOne}${sep}${rest}`);
+      }
+    }
+
+    // Try general digit replacements for leading char
+    const replacedLeading8 = '8' + degStr.slice(1);
+    if (parseInt(replacedLeading8, 10) <= 90) {
+      bearingVariants.add(`${q1}${replacedLeading8}${sep}${rest}`);
+    }
+    const replacedLeading7 = '7' + degStr.slice(1);
+    if (parseInt(replacedLeading7, 10) <= 90) {
+      bearingVariants.add(`${q1}${replacedLeading7}${sep}${rest}`);
+    }
+
+    bearingVariants.add(`${q1}89${sep}${rest}`);
+    bearingVariants.add(`${q1}80${sep}${rest}`);
+    bearingVariants.add(`${q1}90${sep}${rest}`);
+
+    for (const nb of bearingVariants) {
+      if (nb === c.bearing) continue;
+      const fixed = courses.map((cc, j) => j === i ? { ...cc, bearing: nb } : { ...cc });
+      tryCandidate(fixed, `Scrivener fix: C${i + 1} bearing ${c.bearing}→${nb} (invalid bearing degrees > 90° corrected)`);
     }
   }
 

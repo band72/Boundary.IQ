@@ -48,7 +48,9 @@ RULES:
 12. MEANDER BOUNDARIES: If a segment follows a meandering waterway, creek, river boundary, shoreline, road centerline, or irregular line with no defined bearing and/or distance, set "Bearing" (or "ChordBearing") and/or "Distance" (or "ChordDistance") to null and set "IsUnknown" to true. Do NOT fabricate or estimate values. The system will solve this as an unknown/meander gap close leg.
 13. OPEN-ENDED TRAVERSE: Identify if the traverse is open-ended (e.g. it is an easement description, a road centerline, meanders, or terminates without returning to the Point of Beginning / POB). Set "IsOpenEnded": true or false accordingly.
 14. Output ONLY a JSON object. No explanation, no markdown.
-15. Under no circumstances should you ever return the placeholder segments from the example output format below. If you cannot find any valid metes-and-bounds traverse courses in the deed text, return an empty segments list "Segments": [].
+15. DUAL DESCRIPTION — If the deed contains TWO complete traverse descriptions of the SAME property (signals: "THIS IS THE SAME PROPERTY AS DESCRIBED IN...", "BEING THE SAME LANDS AS DESCRIBED IN...", or a second "POINT OF BEGINNING" traverse after the first), extract ONLY the SECOND (more recent/precise) description. Ignore the first. The second usually follows a surveyor's job number or "JOB NO." reference.
+16. MULTI-PARCEL DEED — If the deed labels separate parcels as "PARCEL 1:", "PARCEL 2:", etc., extract ONLY "PARCEL 1" boundary courses. Do NOT mix courses from multiple parcels.
+
 
 OUTPUT FORMAT:
 {
@@ -290,6 +292,7 @@ function parseExtractionJson(raw, deedText) {
     normalizedCourses = [];
   }
 
+
   // Apply Commencement Splitting Heuristic if deedText is provided
   if (deedText && normalizedCourses.length > 0) {
     // 1. Remove placeholder commencement segments
@@ -300,7 +303,6 @@ function parseExtractionJson(raw, deedText) {
       return !isPlaceholder;
     });
 
-    // If the model already separated some real commencement courses, we keep them.
     if (cleanComm.length === 0) {
       // Try to find the Point of Beginning in the deed text to split the courses.
       const pobRegex = /\b(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)\b/gi;
@@ -355,17 +357,39 @@ function parseExtractionJson(raw, deedText) {
           }
         }
 
+        // COGO-verification override: Try stripping 1..4 leading courses.
+        // If any gives a traverse that closes to < 1ft linear error, prefer it
+        // over the text-match result (text-match fails when all distances appear
+        // on both sides of the POB clause).
+        let cogoVerifiedK = -1;
+        const cogoMaxStrip = Math.min(4, normalizedCourses.length - 2);
+        for (let ck = 1; ck <= cogoMaxStrip; ck++) {
+          const testCourses = normalizedCourses.slice(ck);
+          const testResult = tryCompute(testCourses, pob || { northing: 5000, easting: 5000 }, units || 'Feet');
+          if (testResult && testResult.result && !testResult.error) {
+            const linErr = testResult.result.closure?.linearError ?? Infinity;
+            if (linErr < 1.0) {
+              cogoVerifiedK = ck;
+              console.log(`[DeedTextSolver] COGO-verified commencement strip at k=${ck}: linErr=${linErr.toFixed(4)}ft — accepting.`);
+              break;
+            }
+          }
+        }
+
+        const acceptedK = cogoVerifiedK >= 0 ? cogoVerifiedK : bestK;
+
         // Only split if the best split point is between 1 and courses.length - 2
         // and we have a positive/significant match score.
-        if (bestK > 0 && bestK < normalizedCourses.length) {
-          console.log(`[DeedTextSolver] Heuristic split at index ${bestK}: moving first ${bestK} courses to commencement segments.`);
-          const commSegs = normalizedCourses.slice(0, bestK);
-          const boundSegs = normalizedCourses.slice(bestK);
+        if (acceptedK > 0 && acceptedK < normalizedCourses.length) {
+          console.log(`[DeedTextSolver] Commencement split at index ${acceptedK}${cogoVerifiedK >= 0 ? ' (COGO-verified)' : ' (text-match)'}: moving first ${acceptedK} courses to commencement.`);
+          const commSegs = normalizedCourses.slice(0, acceptedK);
+          const boundSegs = normalizedCourses.slice(acceptedK);
           normalizedCourses = boundSegs;
           commencementSegments = [...cleanComm, ...commSegs];
         } else {
           commencementSegments = cleanComm;
         }
+
       } else {
         commencementSegments = cleanComm;
       }
@@ -619,6 +643,17 @@ function buildCorrectionTable(originalCourses, repairedCourses, steps) {
 export async function solveDeedText(deedText, model, options = {}) {
   const startTime = Date.now();
 
+  // ── Normalize Unicode artifacts from Word/OCR before any processing ─────────
+  deedText = (deedText || '')
+    .replace(/\u2032/g, "'").replace(/\u2033/g, '"').replace(/\u2034/g, '"')
+    .replace(/\u02B9/g, "'").replace(/\u02BA/g, '"')
+    .replace(/[\u2018\u2019\u201A\u02BC\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/\u039D/g, 'N').replace(/\u0391/g, 'A').replace(/\u039F/g, 'O')
+    .replace(/\u0395/g, 'E').replace(/\u0397/g, 'H').replace(/\u039A/g, 'K')
+    .replace(/\u039C/g, 'M').replace(/\u03A1/g, 'R').replace(/\u03A4/g, 'T')
+    .replace(/\u03A5/g, 'Y').replace(/\u03A7/g, 'X').replace(/\u03A9/g, 'W');
+
   const pob = {
     northing: options.pobNorthing ?? 5000,
     easting:  options.pobEasting  ?? 5000,
@@ -628,7 +663,8 @@ export async function solveDeedText(deedText, model, options = {}) {
 
   console.log(`[DeedTextSolver] Model: ${model} | POB: N${pob.northing} E${pob.easting} | Units: ${units}`);
 
-  const normText = (deedText || '').toUpperCase();
+  const normText = deedText.toUpperCase();
+
   if (normText.includes('RIDGECREST') && normText.includes('LOT 12') && normText.includes('STREAM')) {
     console.log('[DeedTextSolver] Ridgecrest interceptor triggered!');
     const courses = [

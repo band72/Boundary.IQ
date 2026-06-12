@@ -107,7 +107,9 @@ async function getStats() {
 async function scanFolder(folderPath) {
   console.log(`\n${ANSI_COLORS.fgCyan}🔍 Scanning folder: ${folderPath}...${ANSI_COLORS.reset}`);
   try {
-    const res = await fetch(`${BASE_URL}/api/folderscan/scan?path=${encodeURIComponent(folderPath)}`);
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const res = await fetch(`${BASE_URL}/api/folderscan/scan?path=${encodeURIComponent(folderPath)}`, { headers });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       throw new Error(errBody.error || `HTTP ${res.status}`);
@@ -128,9 +130,12 @@ async function scanFolder(folderPath) {
 async function processSingleFile(folderPath, fileName, index, total, batchId) {
   const startTime = Date.now();
   try {
-    const url = `${BASE_URL}/api/folderscan/process-file?path=${encodeURIComponent(folderPath)}&file=${encodeURIComponent(fileName)}&batchId=${batchId}&autoOutput=true`;
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const url = `${BASE_URL}/api/folderscan/process-file?path=${encodeURIComponent(folderPath)}&file=${encodeURIComponent(fileName)}&batchId=${batchId}&autoOutput=true&force=true`;
     const res = await fetch(url, {
       method: 'POST',
+      headers,
       signal: AbortSignal.timeout(1800000) // 30 min timeout for local CPU inference
     });
     if (!res.ok) {
