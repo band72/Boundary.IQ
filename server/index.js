@@ -17,6 +17,8 @@ setGlobalDispatcher(new Agent({
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 // Initialize services
 import * as gemini from './services/geminiVision.js';
@@ -106,6 +108,26 @@ try {
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(';').filter(Boolean).map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'];
+
+// ── Security middleware ──────────────────────────────────────────────────────
+// Helmet adds ~12 security headers (CSP, X-Frame-Options, HSTS, etc.)
+app.use(helmet({
+  contentSecurityPolicy: false, // disabled: React SPA needs inline scripts from Vite
+  crossOriginEmbedderPolicy: false, // disabled: canvas/DXF exports need cross-origin fetch
+}));
+
+// Rate limit: auth endpoints only — 10 attempts per IP per 15 minutes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many authentication attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV === 'development' && req.ip === '::1', // skip localhost in dev
+});
+app.use('/api/auth/login',    authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/google-login', authLimiter);
 
 app.use(cors({
   origin: allowedOrigins,

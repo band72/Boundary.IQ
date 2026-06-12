@@ -45,3 +45,7 @@ server/list_*.js
 server/tag_files.js
 server/check_failures*.js
 server/tail_deed_logs.js
+server/render_*.js
+server/scripts/test_*.js
+server/scripts/export_*.mjs
+agent.py

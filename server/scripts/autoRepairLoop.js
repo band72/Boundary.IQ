@@ -22,7 +22,15 @@ const PORT     = process.env.PORT || 5050;
 const BASE_URL = `http://localhost:${PORT}`;
 const dirIdx = process.argv.indexOf('--dir');
 const FAILED_DIR = (dirIdx !== -1 && process.argv[dirIdx + 1])
-  || '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions/_FAILED';
+  || process.env.TRAINING_DIR
+  || null;
+
+if (!FAILED_DIR) {
+  console.error('\n✗ No input directory specified.');
+  console.error('  Use:  node scripts/autoRepairLoop.js --dir /path/to/_FAILED');
+  console.error('  Or:   set TRAINING_DIR=/path/to/_FAILED in your .env\n');
+  process.exit(1);
+}
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 let authToken = null;

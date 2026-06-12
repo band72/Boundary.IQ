@@ -11,6 +11,7 @@ import * as bp from './bearingParser.js';
 import * as platLookup from './platLookupService.js';
 import * as plssParser from './plssParser.js';
 import * as legalWriter from './legalWriter.js';
+import pLimit from 'p-limit';
 
 import { isPlaceholderHallucination } from './geminiVision.js';
 
@@ -21,6 +22,12 @@ const ollamaAgent = new Agent({
   headersTimeout: 1800000,
   bodyTimeout:    1800000,
 });
+
+// ── Global LLM semaphore ───────────────────────────────────────────────────────
+// Ollama runs one model at a time. Allowing >1 concurrent request causes
+// thundering-herd OOM and empty-response errors. This single concurrency slot
+// is shared across all routes and batch loops server-wide.
+const ollamaLimit = pLimit(1);
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 // Key design: the LLM prompt is intentionally tiny and mechanical.
@@ -84,67 +91,72 @@ ${deedText}`;
 
 // ── Ollama text-only call ─────────────────────────────────────────────────────
 async function callOllama(model, prompt) {
-  const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
-  // For large deeds, bump non-reasoning context window to avoid silent truncation
-  const deedLen = typeof prompt === 'string' ? prompt.length : 0;
-  const nonReasonCtx = deedLen > 6000 ? 32768 : deedLen > 3000 ? 16384 : 8192;
-  const payload = {
-    model,
-    prompt,
-    stream: false,
-    options: isReasoning
-      ? { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
-      : { temperature: 0.0, num_predict: 8192, num_ctx: nonReasonCtx }
-  };
-  if (!isReasoning) {
-    payload.format = 'json';
-  }
-
-  const maxRetries = 3; // up to 4 total attempts — handles transient empty-response from Ollama
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(1800000), // 30 min max for local text inference
-        dispatcher: ollamaAgent,
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        if (res.status === 404) throw new Error(`Model "${model}" not found. Run: ollama pull ${model}`);
-        if (attempt < maxRetries) {
-          console.warn(`Ollama /generate returned ${res.status} on attempt ${attempt + 1}. Retrying…`);
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-          continue;
-        }
-        throw new Error(`Ollama returned ${res.status}: ${errText.substring(0, 200)}`);
-      }
-
-      const data = await res.json();
-      const rawText = data.response || '';
-      if (!rawText.trim()) {
-        // Empty response is transient (model overload / mid-swap). Retry with backoff.
-        if (attempt < maxRetries) {
-          const waitMs = 3000 * (attempt + 1);
-          console.warn(`Ollama returned empty response on attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitMs}ms before retry…`);
-          await new Promise(r => setTimeout(r, waitMs));
-          continue;
-        }
-        throw new Error('Ollama returned empty response string.');
-      }
-      console.log('--- OLLAMA RESPONSE IN CALLOLLAMA ---');
-      console.log(rawText);
-      console.log('--------------------------------------');
-      return rawText;
-    } catch (ex) {
-      if (attempt === maxRetries) throw ex;
-      console.warn(`Ollama /generate attempt ${attempt + 1} failed: ${ex.message}. Retrying…`);
-      await new Promise(r => setTimeout(r, 2000));
+  // Serialize all Ollama requests through the global semaphore (1 slot).
+  // This prevents concurrent batches or UI requests from overloading the
+  // local model and generating empty responses.
+  return ollamaLimit(async () => {
+    const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
+    // For large deeds, bump non-reasoning context window to avoid silent truncation
+    const deedLen = typeof prompt === 'string' ? prompt.length : 0;
+    const nonReasonCtx = deedLen > 6000 ? 32768 : deedLen > 3000 ? 16384 : 8192;
+    const payload = {
+      model,
+      prompt,
+      stream: false,
+      options: isReasoning
+        ? { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
+        : { temperature: 0.0, num_predict: 8192, num_ctx: nonReasonCtx }
+    };
+    if (!isReasoning) {
+      payload.format = 'json';
     }
-  }
-  throw new Error('Exceeded maximum retry attempts for Ollama /api/generate.');
+
+    const maxRetries = 3; // up to 4 total attempts — handles transient empty-response from Ollama
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(1800000), // 30 min max for local text inference
+          dispatcher: ollamaAgent,
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          if (res.status === 404) throw new Error(`Model "${model}" not found. Run: ollama pull ${model}`);
+          if (attempt < maxRetries) {
+            console.warn(`Ollama /generate returned ${res.status} on attempt ${attempt + 1}. Retrying…`);
+            await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+            continue;
+          }
+          throw new Error(`Ollama returned ${res.status}: ${errText.substring(0, 200)}`);
+        }
+
+        const data = await res.json();
+        const rawText = data.response || '';
+        if (!rawText.trim()) {
+          // Empty response is transient (model overload / mid-swap). Retry with backoff.
+          if (attempt < maxRetries) {
+            const waitMs = 3000 * (attempt + 1);
+            console.warn(`Ollama returned empty response on attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitMs}ms before retry…`);
+            await new Promise(r => setTimeout(r, waitMs));
+            continue;
+          }
+          throw new Error('Ollama returned empty response string.');
+        }
+        console.log('--- OLLAMA RESPONSE IN CALLOLLAMA ---');
+        console.log(rawText);
+        console.log('--------------------------------------');
+        return rawText;
+      } catch (ex) {
+        if (attempt === maxRetries) throw ex;
+        console.warn(`Ollama /generate attempt ${attempt + 1} failed: ${ex.message}. Retrying…`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    throw new Error('Exceeded maximum retry attempts for Ollama /api/generate.');
+  });
 }
 
 function cleanInvalidJsonValues(jsonStr) {

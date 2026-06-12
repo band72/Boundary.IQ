@@ -436,10 +436,15 @@ function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, li
 function getOrCreateOutputFolder(req, validPath) {
   if (req.query.outputPath) {
     const p = path.resolve(req.query.outputPath);
-    if (!fs.existsSync(p)) {
-      fs.mkdirSync(p, { recursive: true });
+    // SEC-7: validate against allowed roots to prevent path traversal
+    const safeOutput = validatePath(p);
+    if (!safeOutput) {
+      return null; // caller must check and return 403
     }
-    return p;
+    if (!fs.existsSync(safeOutput)) {
+      fs.mkdirSync(safeOutput, { recursive: true });
+    }
+    return safeOutput;
   }
   return output.createOutputFolder(validPath);
 }

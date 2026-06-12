@@ -82,18 +82,50 @@ function initializeDatabase() {
     );
   `);
 
-  // Migrations (safe — silently ignored if columns already exist)
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ExtractionJson TEXT'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN TraverseJson TEXT'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN AgentTurnsJson TEXT'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN TrustScore REAL'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN SolutionStepsJson TEXT'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ReferencePointName TEXT'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ReferencePointNorthing REAL'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN ReferencePointEasting REAL'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN PobNorthing REAL'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN PobEasting REAL'); } catch {}
-  try { db.exec('ALTER TABLE DeedLogs ADD COLUMN FileHash TEXT'); } catch {}
+  // ── Versioned migrations ───────────────────────────────────────────────────────────
+  // Each entry has a unique name and a SQL statement. Already-applied migrations
+  // are tracked in _Migrations so each runs exactly once, idempotently.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _Migrations (
+      Name TEXT PRIMARY KEY,
+      AppliedAt TEXT NOT NULL
+    );
+  `);
+
+  const appliedMigrations = new Set(
+    db.prepare('SELECT Name FROM _Migrations').all().map(r => r.Name)
+  );
+
+  const migrations = [
+    { name: 'add_ExtractionJson',          sql: 'ALTER TABLE DeedLogs ADD COLUMN ExtractionJson TEXT' },
+    { name: 'add_TraverseJson',            sql: 'ALTER TABLE DeedLogs ADD COLUMN TraverseJson TEXT' },
+    { name: 'add_AgentTurnsJson',          sql: 'ALTER TABLE DeedLogs ADD COLUMN AgentTurnsJson TEXT' },
+    { name: 'add_TrustScore',              sql: 'ALTER TABLE DeedLogs ADD COLUMN TrustScore REAL' },
+    { name: 'add_SolutionStepsJson',       sql: 'ALTER TABLE DeedLogs ADD COLUMN SolutionStepsJson TEXT' },
+    { name: 'add_ReferencePointName',      sql: 'ALTER TABLE DeedLogs ADD COLUMN ReferencePointName TEXT' },
+    { name: 'add_ReferencePointNorthing',  sql: 'ALTER TABLE DeedLogs ADD COLUMN ReferencePointNorthing REAL' },
+    { name: 'add_ReferencePointEasting',   sql: 'ALTER TABLE DeedLogs ADD COLUMN ReferencePointEasting REAL' },
+    { name: 'add_PobNorthing',             sql: 'ALTER TABLE DeedLogs ADD COLUMN PobNorthing REAL' },
+    { name: 'add_PobEasting',              sql: 'ALTER TABLE DeedLogs ADD COLUMN PobEasting REAL' },
+    { name: 'add_FileHash',               sql: 'ALTER TABLE DeedLogs ADD COLUMN FileHash TEXT' },
+  ];
+
+  const applyMigration = db.transaction((m) => {
+    try {
+      db.exec(m.sql);
+    } catch (e) {
+      // Column already exists (SQLITE_ERROR) is the only acceptable silent failure
+      if (!e.message.includes('duplicate column name')) throw e;
+    }
+    db.prepare('INSERT OR IGNORE INTO _Migrations (Name, AppliedAt) VALUES (?, ?)').run(m.name, now());
+  });
+
+  for (const m of migrations) {
+    if (!appliedMigrations.has(m.name)) {
+      applyMigration(m);
+      console.log(`  ✓ Migration applied: ${m.name}`);
+    }
+  }
 
   // Seed heuristics if empty
   const count = db.prepare('SELECT COUNT(*) as c FROM HeuristicTracking').get().c;
@@ -636,18 +668,58 @@ export function getBatchStats(batchId) {
 }
 
 /**
- * Recent batch runs enriched with inline stats (no second query needed in UI).
+ * Recent batch runs enriched with inline stats.
+ * Uses a single aggregate SQL query per batch (no N+1).
  */
 export function getRecentBatchesWithStats(limit = 30) {
   const batches = db.prepare('SELECT * FROM BatchRuns ORDER BY Timestamp DESC LIMIT ?').all(limit);
+  if (batches.length === 0) return [];
+
+  // Single query: aggregate all batch stats for the fetched batch IDs
+  const placeholders = batches.map(() => '?').join(',');
+  const batchIds = batches.map(b => b.BatchId);
+
+  const rows = db.prepare(`
+    SELECT
+      BatchId,
+      COUNT(*) AS total,
+      SUM(CASE WHEN Status = 'PASS'    THEN 1 ELSE 0 END) AS passed,
+      SUM(CASE WHEN Status = 'FAIL'    THEN 1 ELSE 0 END) AS failed,
+      SUM(CASE WHEN Status = 'ERROR'   THEN 1 ELSE 0 END) AS errors,
+      SUM(CASE WHEN Status = 'MEANDER' THEN 1 ELSE 0 END) AS meanders,
+      SUM(CASE WHEN Status = 'SKIP'    THEN 1 ELSE 0 END) AS skipped,
+      AVG(LinearError) AS avgLinearErr,
+      MAX(LinearError) AS maxLinearErr,
+      AVG(PrecisionRatio) AS avgPrecision,
+      MAX(PrecisionRatio) AS bestPrecision
+    FROM DeedLogs
+    WHERE BatchId IN (${placeholders})
+    GROUP BY BatchId
+  `).all(...batchIds);
+
+  const statsByBatch = Object.fromEntries(rows.map(r => [r.BatchId, r]));
+
   return batches.map(b => {
-    const stats = getBatchStats(b.BatchId);
+    const s = statsByBatch[b.BatchId] || {};
     return {
-      batchId:   b.BatchId,
-      timestamp: b.Timestamp,
+      batchId:    b.BatchId,
+      timestamp:  b.Timestamp,
       totalFiles: b.TotalFiles,
       passRate:   b.PassRate,
-      stats,
+      stats: {
+        batchId: b.BatchId,
+        counts: {
+          total:    s.total    || 0,
+          passed:   s.passed   || 0,
+          failed:   s.failed   || 0,
+          errors:   s.errors   || 0,
+          meanders: s.meanders || 0,
+          skipped:  s.skipped  || 0,
+        },
+        passRate: s.total > 0 ? (s.passed / s.total) : 0,
+        closure: { avgLinearErr: s.avgLinearErr || 0, maxLinearErr: s.maxLinearErr || 0 },
+        precision: { avg: s.avgPrecision || 0, best: s.bestPrecision || 0 },
+      },
     };
   });
 }
@@ -698,24 +770,37 @@ export function getSolutionSteps(fileName) {
 // NIST SP 800-132 recommends ≥ 210,000 iterations for PBKDF2-SHA-512.
 // We use 310,000 to stay comfortably above the 2025 guideline.
 const PBKDF2_ITERATIONS = 310_000;
+const PBKDF2_LEGACY_ITERATIONS = 1_000;
 
+/**
+ * Synchronous hash — only used during user creation (once per registration).
+ * The sync variant is intentional here; creation is rare and isolated.
+ */
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 64, 'sha512').toString('hex');
   return `${salt}:${hash}`;
 }
 
+/**
+ * Verify a password and transparently upgrade legacy (1k-iteration) hashes.
+ * Returns { valid: boolean, needsRehash: boolean, newHash?: string }.
+ */
 export function verifyPassword(password, storedHash) {
-  if (!storedHash || !storedHash.includes(':')) return false;
+  if (!storedHash || !storedHash.includes(':')) return { valid: false, needsRehash: false };
   const [salt, originalHash] = storedHash.split(':');
-  // Support both legacy (1,000) and current (310,000) iteration counts.
-  // Legacy hashes have a 128-char hex hash; current ones are also 128-char.
-  // We detect legacy by checking a stored iteration hint embedded in the hash
-  // field. If no hint is present, try PBKDF2_ITERATIONS first, then fall back
-  // to 1,000 so existing accounts keep working through a single re-hash cycle.
   const tryVerify = (iterations) =>
     crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex') === originalHash;
-  return tryVerify(PBKDF2_ITERATIONS) || tryVerify(1_000);
+
+  if (tryVerify(PBKDF2_ITERATIONS)) {
+    return { valid: true, needsRehash: false };
+  }
+  if (tryVerify(PBKDF2_LEGACY_ITERATIONS)) {
+    // Legacy account — re-hash with current iterations transparently
+    console.warn('[Auth] Upgrading legacy 1k-iteration password hash to current strength.');
+    return { valid: true, needsRehash: true, newHash: hashPassword(password) };
+  }
+  return { valid: false, needsRehash: false };
 }
 
 export function createUser(username, password, role = 'user') {
@@ -738,13 +823,13 @@ export function createUser(username, password, role = 'user') {
 export function verifyUser(username, password) {
   const row = db.prepare('SELECT * FROM Users WHERE Username = ?').get(username);
   if (!row) return null;
-  const isValid = verifyPassword(password, row.PasswordHash);
-  if (!isValid) return null;
-  return {
-    id: row.Id,
-    username: row.Username,
-    role: row.Role
-  };
+  const { valid, needsRehash, newHash } = verifyPassword(password, row.PasswordHash);
+  if (!valid) return null;
+  // Transparently re-hash legacy accounts to current PBKDF2 iteration count
+  if (needsRehash && newHash) {
+    db.prepare('UPDATE Users SET PasswordHash = ? WHERE Id = ?').run(newHash, row.Id);
+  }
+  return { id: row.Id, username: row.Username, role: row.Role };
 }
 
 export function createSession(userId) {
@@ -757,6 +842,11 @@ export function createSession(userId) {
 }
 
 export function getSession(token) {
+  // Fast-reject malformed tokens (expected: 64-char hex from randomBytes(32))
+  if (!token || typeof token !== 'string' || token.length !== 64 || !/^[0-9a-f]+$/i.test(token)) {
+    return null;
+  }
+
   const row = db.prepare(`
     SELECT s.Token, s.ExpiresAt, u.Id as UserId, u.Username, u.Role
     FROM Sessions s
@@ -766,6 +856,17 @@ export function getSession(token) {
 
   if (!row) return null;
 
+  // Timing-safe token comparison (prevents timing-oracle attacks)
+  try {
+    const valid = crypto.timingSafeEqual(
+      Buffer.from(token.toLowerCase(), 'hex'),
+      Buffer.from(row.Token.toLowerCase(), 'hex')
+    );
+    if (!valid) return null;
+  } catch {
+    return null;
+  }
+
   // Check expiration
   const nowStr = now();
   if (row.ExpiresAt < nowStr) {
@@ -773,11 +874,7 @@ export function getSession(token) {
     return null;
   }
 
-  return {
-    userId: row.UserId,
-    username: row.Username,
-    role: row.Role
-  };
+  return { userId: row.UserId, username: row.Username, role: row.Role };
 }
 
 export function deleteSession(token) {

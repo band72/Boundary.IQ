@@ -142,20 +142,22 @@ router.post('/google-login', async (req, res) => {
         console.warn('Google token verification failed:', verifyErr.message);
         return res.status(401).json({ error: 'Invalid or expired Google token. Please sign in again.' });
       }
-    } else {
-      // ── Simulator mode: GOOGLE_CLIENT_ID not set — decode JWT without verification ──
-      // Safe for local development only; the client constructs the mock token.
+    } else if (process.env.NODE_ENV === 'development') {
+      // ── Dev-only simulator: decode without verification — NEVER allowed in production ──
       try {
         const parts = credential.split('.');
         if (parts.length < 2) throw new Error('Malformed JWT');
-        // base64url → base64 → JSON
         const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
         const padded  = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
         payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
-        console.log('[Simulator] Google sign-in — decoded payload for:', payload.email);
+        console.log('[Dev Simulator] Google sign-in — decoded payload for:', payload.email);
       } catch (decodeErr) {
         return res.status(400).json({ error: 'Malformed simulator credential token.' });
       }
+    } else {
+      // ── Production without GOOGLE_CLIENT_ID configured ──
+      console.error('[Auth] Google login attempted but GOOGLE_CLIENT_ID is not configured.');
+      return res.status(503).json({ error: 'Google Sign-In is not configured on this server. Contact your administrator.' });
     }
 
     const email = payload?.email;
