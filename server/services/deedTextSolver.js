@@ -39,6 +39,7 @@ RULES:
 6. If a distance (or chord distance) is 0.00, missing, or unclear, set Distance (or ChordDistance) to null and IsUnknown to true.
 7. If a course describes a deflection angle (e.g. "AT A DEFLECTION ANGLE TO THE LEFT/RIGHT OF X DEGREES, Y FEET"), represent it as: "Type": "Line", "Bearing": null, "Distance": Y, "DeflectionAngle": X, "DeflectionDirection": "Left" or "Right", "IsUnknown": (Y === 0 || Y === null)
 8. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
+8a. ACTUAL vs PLAT distances: When a clause contains both an ACTUAL DISTANCE and a PLAT distance (e.g. "AN ACTUAL DISTANCE OF 117.30 FEET (126.97 FEET PLAT)"), always use the ACTUAL DISTANCE. The plat figure appears in parentheses and must NOT be used for the traverse.
 9. Bearings format: "N45°22'10\\"E" — keep the exact degree/minute/second format from the text.
 10. Distances are decimal feet (or meters if stated).
 11. IDENTIFY the Point of Reference (POR) (e.g. the section corner, subdivision corner, or benchmark mentioned) and any commencement/reference runs leading from that Reference Point (POR) to the Point of Beginning (POB).
@@ -84,19 +85,22 @@ ${deedText}`;
 // ── Ollama text-only call ─────────────────────────────────────────────────────
 async function callOllama(model, prompt) {
   const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
+  // For large deeds, bump non-reasoning context window to avoid silent truncation
+  const deedLen = typeof prompt === 'string' ? prompt.length : 0;
+  const nonReasonCtx = deedLen > 6000 ? 32768 : deedLen > 3000 ? 16384 : 8192;
   const payload = {
     model,
     prompt,
     stream: false,
-    options: isReasoning 
+    options: isReasoning
       ? { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
-      : { temperature: 0.0, num_predict: 4096, num_ctx: 8192 }
+      : { temperature: 0.0, num_predict: 8192, num_ctx: nonReasonCtx }
   };
   if (!isReasoning) {
     payload.format = 'json';
   }
 
-  const maxRetries = 1;
+  const maxRetries = 3; // up to 4 total attempts — handles transient empty-response from Ollama
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
@@ -121,6 +125,13 @@ async function callOllama(model, prompt) {
       const data = await res.json();
       const rawText = data.response || '';
       if (!rawText.trim()) {
+        // Empty response is transient (model overload / mid-swap). Retry with backoff.
+        if (attempt < maxRetries) {
+          const waitMs = 3000 * (attempt + 1);
+          console.warn(`Ollama returned empty response on attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitMs}ms before retry…`);
+          await new Promise(r => setTimeout(r, waitMs));
+          continue;
+        }
         throw new Error('Ollama returned empty response string.');
       }
       console.log('--- OLLAMA RESPONSE IN CALLOLLAMA ---');
@@ -228,7 +239,10 @@ function parseExtractionJson(raw, deedText) {
   const referencePointName = root.ReferencePointName || root.referencePointName || null;
   const mapSegment = (s) => {
     const type = (s.Type || s.type || 'Line');
-    const bearing = s.Bearing ?? s.bearing ?? null;
+    const rawBearing = s.Bearing ?? s.bearing ?? null;
+    // Guard: reject cardinal-word bearings (e.g. "SOUTHERLY", "NORTH") from truncated LLM output
+    const CARDINAL_WORD_RE = /^(NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)$/i;
+    const bearing = rawBearing && CARDINAL_WORD_RE.test(rawBearing.trim()) ? null : rawBearing;
     const distance = (s.Distance != null && !isNaN(parseFloat(s.Distance))) ? parseFloat(s.Distance) : null;
     const chordBearing = s.ChordBearing ?? s.chordBearing ?? null;
     const chordDistance = (s.ChordDistance != null && !isNaN(parseFloat(s.ChordDistance))) ? parseFloat(s.ChordDistance) : null;
@@ -362,7 +376,7 @@ function parseExtractionJson(raw, deedText) {
         // over the text-match result (text-match fails when all distances appear
         // on both sides of the POB clause).
         let cogoVerifiedK = -1;
-        const cogoMaxStrip = Math.min(4, normalizedCourses.length - 2);
+        const cogoMaxStrip = Math.min(6, normalizedCourses.length - 2); // increased from 4 to handle longer commencement runs
         for (let ck = 1; ck <= cogoMaxStrip; ck++) {
           const testCourses = normalizedCourses.slice(ck);
           const testResult = tryCompute(testCourses, pob || { northing: 5000, easting: 5000 }, units || 'Feet');
@@ -652,7 +666,13 @@ export async function solveDeedText(deedText, model, options = {}) {
     .replace(/\u039D/g, 'N').replace(/\u0391/g, 'A').replace(/\u039F/g, 'O')
     .replace(/\u0395/g, 'E').replace(/\u0397/g, 'H').replace(/\u039A/g, 'K')
     .replace(/\u039C/g, 'M').replace(/\u03A1/g, 'R').replace(/\u03A4/g, 'T')
-    .replace(/\u03A5/g, 'Y').replace(/\u03A7/g, 'X').replace(/\u03A9/g, 'W');
+    .replace(/\u03A5/g, 'Y').replace(/\u03A7/g, 'X').replace(/\u03A9/g, 'W')
+    // ── OCR digit/letter confusion fixes in DMS bearing context ──────────────
+    // Letter O → digit 0 when appearing in the degrees position of a bearing
+    .replace(/([NSEW]\.)([Oo]+)(°|\()/g, (_, prefix, zeros, sep) => prefix + zeros.replace(/[Oo]/g, '0') + sep)
+    // Spurious letter J → digit 3 in DMS cardinal phrases (common OCR error J≈3)
+    .replace(/\b(NORTH|SOUTH|EAST|WEST)\s+J\s+(\d)/gi, (_, dir, d) => `${dir} 3${d}`)
+    .replace(/(\d)\s+J\s+(\d+)\s+(DEGREES|DEG\.?|°)/gi, (_, a, b, unit) => `${a}3${b} ${unit}`);
 
   const pob = {
     northing: options.pobNorthing ?? 5000,

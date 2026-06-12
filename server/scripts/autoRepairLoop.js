@@ -39,6 +39,30 @@ async function authenticate() {
   throw new Error('Authentication failed on both login and register endpoints');
 }
 
+// ── Ollama model warmup — ensures the model is loaded before batch starts ─────
+async function warmupOllama(model = 'deepseek-r1:8b') {
+  const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+  try {
+    console.log(`Warming up Ollama model: ${model}…`);
+    const r = await fetch(`${OLLAMA_BASE}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, prompt: 'ping', stream: false, options: { num_predict: 1, num_ctx: 512 } }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      if (data.response !== undefined) {
+        console.log(`✓ Ollama model "${model}" warmed up and ready.`);
+        return;
+      }
+    }
+    console.warn(`Ollama warmup returned unexpected response (status ${r.status}). Proceeding anyway.`);
+  } catch (e) {
+    console.warn(`Ollama warmup failed: ${e.message}. Proceeding anyway.`);
+  }
+}
+
 // ── Process one file via the folderscan/process-file endpoint ─────────────────
 async function processFile(folderPath, fileName, outputPath, force) {
   const url = `${BASE_URL}/api/folderscan/process-file`
@@ -116,6 +140,9 @@ async function main() {
 
   await authenticate();
   console.log('✓ Authenticated\n');
+
+  // Warmup: ensure the target LLM model is loaded before serial batch processing
+  await warmupOllama();
 
   const fileIdx = process.argv.indexOf('--file');
   const fileFilter = fileIdx !== -1 ? process.argv[fileIdx + 1] : null;

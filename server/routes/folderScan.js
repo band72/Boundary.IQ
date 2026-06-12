@@ -1279,38 +1279,47 @@ router.post('/process-file', async (req, res) => {
     if (!force) {
       const solvedCase = db.findSolvedCase(fileName, fileHash);
       if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-        console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
         const cachedEx = JSON.parse(solvedCase.extractionJson);
         const cachedTr = JSON.parse(solvedCase.traverseJson);
-        let cachedWrite = null;
         const courses = cachedEx.courses || cachedEx.Courses || [];
-        if (courses.length > 0) {
-          try {
-            cachedWrite = {
-              legalDescription: legalWriter.write({
-                courses,
-                pobNorthing: pobN,
-                pobEasting: pobE,
-                county,
-                state,
-                units: units.toLowerCase(),
-                areaAcres: cachedTr.areaAcres ?? cachedTr.AreaAcres ?? 0,
-                perimeter: cachedTr.perimeter ?? cachedTr.Perimeter ?? 0
-              }),
-              courseCount: courses.length
-            };
-          } catch {}
-        }
-        const result = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true };
-        const linErr = cachedTr.closure?.linearError ?? cachedTr.Closure?.LinearError ?? 0;
-        const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
-        saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED',
-          courses.length, linErr,
-          parsePrecisionRatio(precRatio), solvedCase.status || 'PASS', 'Stage 5: SQLite Case Finder Solved',
-          solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
 
-        await sendResponse('success', result);
-        return;
+        // Sanity-check: a valid deed must have at least 3 boundary courses.
+        // If the cached extraction has fewer, it's a stale/incomplete entry
+        // (e.g. from a previously crashed extraction run). Invalidate and reprocess.
+        if (courses.length < 3) {
+          console.warn(`Cache hit for ${fileName} has only ${courses.length} course(s) — invalidating stale cache entry and reprocessing.`);
+          // Fall through to full processing below
+        } else {
+          console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
+          let cachedWrite = null;
+          if (courses.length > 0) {
+            try {
+              cachedWrite = {
+                legalDescription: legalWriter.write({
+                  courses,
+                  pobNorthing: pobN,
+                  pobEasting: pobE,
+                  county,
+                  state,
+                  units: units.toLowerCase(),
+                  areaAcres: cachedTr.areaAcres ?? cachedTr.AreaAcres ?? 0,
+                  perimeter: cachedTr.perimeter ?? cachedTr.Perimeter ?? 0
+                }),
+                courseCount: courses.length
+              };
+            } catch {}
+          }
+          const result = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true };
+          const linErr = cachedTr.closure?.linearError ?? cachedTr.Closure?.LinearError ?? 0;
+          const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
+          saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED',
+            courses.length, linErr,
+            parsePrecisionRatio(precRatio), solvedCase.status || 'PASS', 'Stage 5: SQLite Case Finder Solved',
+            solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
+
+          await sendResponse('success', result);
+          return;
+        }
       }
 
       const skippedCase = db.findSkippedCase(fileName, fileHash);
