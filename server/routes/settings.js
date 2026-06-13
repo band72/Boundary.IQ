@@ -25,6 +25,9 @@ router.get('/model', async (req, res) => {
 
     const geminiModels = [
       { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'gemini', description: 'Fast, cost-effective multimodal model' },
+      { id: 'gemini-3.5-pro', name: 'Gemini 3.5 Pro', provider: 'gemini', description: 'Flagship high-capability reasoning model' },
+      { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', provider: 'gemini', description: 'Production-grade high-capability reasoning model' },
+      { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite', provider: 'gemini', description: 'Ultra-fast, light multimodal model' },
       { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'gemini', description: 'Previous generation Flash' },
       { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'gemini', description: 'High-capability reasoning model' },
     ];

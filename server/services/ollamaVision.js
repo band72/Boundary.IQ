@@ -107,9 +107,14 @@ export async function ensureOllamaServiceOnline() {
     let args = ['serve'];
     if (process.platform === 'win32' && (ollamaPath.startsWith('/') || ollamaPath.includes('wsl') || process.env.OLLAMA_RUNS_ON_WSL === 'true' || ollamaPath === '/home/friend/.local/bin/ollama')) {
       cmd = 'wsl';
-      args = [ollamaPath === 'ollama' ? 'ollama' : ollamaPath, 'serve'];
+      const actualOllama = ollamaPath === 'ollama' ? 'ollama' : ollamaPath;
+      args = ['sh', '-c', `OLLAMA_HOST=0.0.0.0 ${actualOllama} serve`];
     }
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    const child = spawn(cmd, args, { 
+      detached: true, 
+      stdio: 'ignore',
+      env: { ...process.env, OLLAMA_HOST: '0.0.0.0' }
+    });
     child.on('error', (err) => {
       console.warn('⚠️ Ollama recovery spawn error:', err.message);
     });
