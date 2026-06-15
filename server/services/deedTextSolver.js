@@ -106,7 +106,7 @@ async function callOllama(model, prompt) {
       stream: false,
       options: isReasoning
         ? { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
-        : { temperature: 0.0, num_predict: 8192, num_ctx: nonReasonCtx }
+        : { temperature: 0.0, num_predict: 4096, num_ctx: nonReasonCtx }
     };
     if (!isReasoning) {
       payload.format = 'json';

@@ -1,5 +1,9 @@
 import { getSession } from '../services/diagnosticsDb.js';
 
+// Plan hierarchy: free < pro < enterprise < admin
+const PLAN_RANK = { free: 0, pro: 1, enterprise: 2, admin: 99 };
+const ROLE_RANK = { user: 0, pro: 1, admin: 99 };
+
 /**
  * Express middleware to validate session token via Authorization header.
  * Attaches the authenticated user object to req.user.
@@ -28,6 +32,7 @@ export function requireAuth(req, res, next) {
       id: sessionUser.userId,
       username: sessionUser.username,
       role: sessionUser.role,
+      plan: sessionUser.plan || 'free',
     };
 
     next();
@@ -38,7 +43,7 @@ export function requireAuth(req, res, next) {
 }
 
 /**
- * Optional middleware to enforce role restrictions (e.g. admin-only routes).
+ * Middleware to enforce role restrictions (e.g. admin-only routes).
  */
 export function requireRole(allowedRoles = []) {
   return (req, res, next) => {
@@ -53,4 +58,65 @@ export function requireRole(allowedRoles = []) {
 
     next();
   };
+}
+
+/**
+ * Middleware to enforce minimum subscription plan.
+ * Admins always pass. Plan rank: free < pro < enterprise.
+ */
+export function requirePlan(minPlan = 'pro') {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Access denied. Authentication required.' });
+    }
+
+    // Admins bypass all plan gates
+    if (req.user.role === 'admin') return next();
+
+    const userRank = PLAN_RANK[req.user.plan] ?? 0;
+    const requiredRank = PLAN_RANK[minPlan] ?? 1;
+
+    if (userRank < requiredRank) {
+      return res.status(402).json({
+        error: 'Subscription required.',
+        code: 'UPGRADE_REQUIRED',
+        requiredPlan: minPlan,
+        currentPlan: req.user.plan,
+        upgradeUrl: '/billing',
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Middleware that checks daily deed solve limits for free users.
+ * Attaches usage info to req.usage for downstream use.
+ */
+export function trackDeedUsage(req, res, next) {
+  if (!req.user) return next();
+  // Import lazily to avoid circular deps
+  import('../services/diagnosticsDb.js').then(({ checkDailyLimit, incrementDailyUsage }) => {
+    const limit = checkDailyLimit(req.user.id, req.user.plan);
+    req.usage = limit;
+
+    if (!limit.allowed) {
+      return res.status(429).json({
+        error: 'Daily deed solve limit reached.',
+        code: 'DAILY_LIMIT_REACHED',
+        used: limit.used,
+        limit: limit.limit,
+        upgradeUrl: '/billing',
+        message: `You've used ${limit.used}/${limit.limit} free deed solves today. Upgrade to Pro for unlimited solves.`,
+      });
+    }
+
+    // Increment usage count before processing
+    incrementDailyUsage(req.user.id);
+    next();
+  }).catch(err => {
+    console.error('trackDeedUsage error:', err.message);
+    next(); // Don't block if tracking fails
+  });
 }

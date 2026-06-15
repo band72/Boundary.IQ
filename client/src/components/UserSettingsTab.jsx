@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { API } from '../config';
 
+// Matches the canonical PANEL_DEFS in SettingsTab.jsx and TABS in App.jsx.
+// minRole: 'user' = toggleable by all users | 'admin' = admin-only / in testing
 const PANEL_DEFS = [
-  { id: 'traverse',  icon: '📐', label: 'Traverse Compute',       desc: 'Manual coordinate entry & closure analysis' },
-  { id: 'plat',      icon: '🛰️', label: 'Plat Extraction',        desc: 'AI-powered OCR for boundary images and PDFs' },
-  { id: 'writer',    icon: '✍️', label: 'Legal Description Writer', desc: 'Generate professional registry legal text' },
-  { id: 'batch',     icon: '📦', label: 'Batch Deed',              desc: 'Folder scan & batch deed processing pipeline' },
-  { id: 'dashboard', icon: '📊', label: 'Dashboard',               desc: 'Processing statistics and deed review panel' },
+  { id: 'traverse',  icon: '📐', label: 'Deed Reader',              desc: 'Core deed parsing, coordinate entry & closure analysis', minRole: 'user',  status: 'live'    },
+  { id: 'plat',      icon: '🛰️', label: 'Plat Extraction',         desc: 'AI-powered OCR for boundary images and PDFs',           minRole: 'user',  status: 'testing' },
+  { id: 'writer',    icon: '✍️', label: 'Legal Description Writer', desc: 'Generate professional registry legal text',              minRole: 'user',  status: 'testing' },
+  { id: 'batch',     icon: '📦', label: 'Batch Deed',               desc: 'Folder scan & batch deed processing pipeline',           minRole: 'user',  status: 'testing' },
+  { id: 'dashboard', icon: '📊', label: 'Dashboard',                desc: 'Processing statistics and deed review panel',           minRole: 'user',  status: 'testing' },
 ];
 
 // ── Reusable toggle switch ──────────────────────────────────────────────────
@@ -30,6 +32,162 @@ function Toggle({ checked, onChange, disabled }) {
         }} />
       </div>
     </label>
+  );
+}
+
+// ── My Account section ────────────────────────────────────────────────────────
+function MyAccountSection() {
+  const [displayName, setDisplayName] = useState('');
+  const [profileMsg, setProfileMsg] = useState('');
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  const [curPw, setCurPw]   = useState('');
+  const [newPw, setNewPw]   = useState('');
+  const [confPw, setConfPw] = useState('');
+  const [pwMsg, setPwMsg]   = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+
+  const [sessions, setSessions] = useState([]);
+  const [sessLoading, setSessLoading] = useState(false);
+  const [sessMsg, setSessMsg] = useState('');
+
+  const token = localStorage.getItem('boundaryiq_auth_token');
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+
+  const fmtTime = (s) => s ? new Date(s).toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
+
+  const fetchSessions = useCallback(async () => {
+    setSessLoading(true);
+    try {
+      const r = await fetch(`${API}/auth/me/sessions`, { headers });
+      const d = await r.json();
+      setSessions(d.sessions || []);
+    } catch {}
+    finally { setSessLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchSessions(); }, []);
+
+  const saveProfile = async () => {
+    setProfileLoading(true); setProfileMsg('');
+    try {
+      const r = await fetch(`${API}/auth/me/profile`, { method:'PUT', headers, body:JSON.stringify({displayName}) });
+      const d = await r.json();
+      setProfileMsg(r.ok ? '✓ Display name updated.' : `✗ ${d.error}`);
+    } catch (e) { setProfileMsg(`✗ ${e.message}`); }
+    finally { setProfileLoading(false); }
+  };
+
+  const changePassword = async () => {
+    setPwMsg(''); if (!curPw || !newPw) return setPwMsg('✗ All fields required.');
+    if (newPw.length < 6) return setPwMsg('✗ Password must be ≥ 6 characters.');
+    if (newPw !== confPw) return setPwMsg('✗ New passwords do not match.');
+    setPwLoading(true);
+    try {
+      const r = await fetch(`${API}/auth/me/password`, { method:'PUT', headers, body:JSON.stringify({currentPassword:curPw, newPassword:newPw}) });
+      const d = await r.json();
+      setPwMsg(r.ok ? '✓ Password changed.' : `✗ ${d.error}`);
+      if (r.ok) { setCurPw(''); setNewPw(''); setConfPw(''); fetchSessions(); }
+    } catch (e) { setPwMsg(`✗ ${e.message}`); }
+    finally { setPwLoading(false); }
+  };
+
+  const revokeOtherSessions = async () => {
+    setSessMsg('');
+    try {
+      const r = await fetch(`${API}/auth/me/sessions`, { method:'DELETE', headers });
+      const d = await r.json();
+      setSessMsg(r.ok ? `✓ Revoked ${d.revoked} session(s).` : `✗ ${d.error}`);
+      fetchSessions();
+    } catch (e) { setSessMsg(`✗ ${e.message}`); }
+  };
+
+  const revokeSession = async (fullToken) => {
+    try {
+      await fetch(`${API}/auth/me/sessions/${fullToken}`, { method:'DELETE', headers });
+      fetchSessions();
+    } catch {}
+  };
+
+  const msgStyle = (m) => ({
+    padding:'0.4rem 0.7rem', borderRadius:6, fontSize:'0.75rem',
+    background: m.startsWith('✓') ? 'rgba(0,212,168,.08)' : 'rgba(220,50,50,.1)',
+    border:`1px solid ${m.startsWith('✓') ? 'rgba(0,212,168,.25)' : 'rgba(220,50,50,.25)'}`,
+    color: m.startsWith('✓') ? 'var(--success)' : '#dc3232',
+  });
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+      {/* Display name */}
+      <div className="card" style={{ background:'rgba(9,14,26,.4)', backdropFilter:'blur(8px)', border:'1px solid var(--border)' }}>
+        <div className="card-header" style={{ borderBottom:'1px solid var(--border)', paddingBottom:'0.9rem' }}>
+          <div className="card-title" style={{ fontSize:'1.05rem', fontWeight:700, color:'#fff', display:'flex', alignItems:'center', gap:'0.5rem' }}>👤 Profile</div>
+        </div>
+        <div style={{ padding:'1.25rem', display:'flex', flexDirection:'column', gap:'0.85rem' }}>
+          <div style={{ display:'flex', gap:'0.75rem', alignItems:'flex-end' }}>
+            <div style={{ flex:1, display:'flex', flexDirection:'column', gap:'0.35rem' }}>
+              <label style={{ fontSize:'0.78rem', color:'var(--text-secondary)', fontWeight:600 }}>Display Name</label>
+              <input type="text" placeholder="Your full name or nickname" value={displayName} onChange={e=>{setDisplayName(e.target.value);setProfileMsg('');}}
+                style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0.55rem 0.85rem', color:'var(--text-primary)', fontSize:'0.82rem' }} />
+            </div>
+            <button className="btn btn-primary" onClick={saveProfile} disabled={profileLoading} style={{ padding:'0.55rem 1.25rem', fontSize:'0.78rem', borderRadius:'var(--radius-sm)', whiteSpace:'nowrap' }}>
+              {profileLoading ? '⏳' : '💾 Save'}
+            </button>
+          </div>
+          {profileMsg && <div style={msgStyle(profileMsg)}>{profileMsg}</div>}
+        </div>
+      </div>
+
+      {/* Change password */}
+      <div className="card" style={{ background:'rgba(9,14,26,.4)', backdropFilter:'blur(8px)', border:'1px solid rgba(255,170,0,.2)' }}>
+        <div className="card-header" style={{ borderBottom:'1px solid var(--border)', paddingBottom:'0.9rem' }}>
+          <div className="card-title" style={{ fontSize:'1.05rem', fontWeight:700, color:'#fff', display:'flex', alignItems:'center', gap:'0.5rem' }}>🔑 Change Password</div>
+        </div>
+        <div style={{ padding:'1.25rem', display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+          {[['Current Password', curPw, setCurPw], ['New Password (≥ 6 chars)', newPw, setNewPw], ['Confirm New Password', confPw, setConfPw]].map(([label, val, set]) => (
+            <div key={label} style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+              <label style={{ fontSize:'0.75rem', color:'var(--text-secondary)', fontWeight:600 }}>{label}</label>
+              <input type="password" placeholder="••••••••" value={val} onChange={e=>{set(e.target.value);setPwMsg('');}}
+                style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0.55rem 0.85rem', color:'var(--text-primary)', fontSize:'0.82rem' }} />
+            </div>
+          ))}
+          <button className="btn btn-primary" onClick={changePassword} disabled={pwLoading} style={{ padding:'0.55rem 1.25rem', fontSize:'0.78rem', borderRadius:'var(--radius-sm)', width:'fit-content' }}>
+            {pwLoading ? '⏳ Updating…' : '🔑 Update Password'}
+          </button>
+          {pwMsg && <div style={msgStyle(pwMsg)}>{pwMsg}</div>}
+        </div>
+      </div>
+
+      {/* Active sessions */}
+      <div className="card" style={{ background:'rgba(9,14,26,.4)', backdropFilter:'blur(8px)', border:'1px solid var(--border)' }}>
+        <div className="card-header" style={{ borderBottom:'1px solid var(--border)', paddingBottom:'0.9rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div className="card-title" style={{ fontSize:'1.05rem', fontWeight:700, color:'#fff', display:'flex', alignItems:'center', gap:'0.5rem' }}>🔗 Active Sessions</div>
+          <div style={{ display:'flex', gap:'0.5rem' }}>
+            <button className="btn btn-ghost btn-sm" onClick={fetchSessions} style={{ fontSize:'0.72rem' }}>↻ Refresh</button>
+            <button className="btn btn-ghost btn-sm" onClick={revokeOtherSessions} style={{ fontSize:'0.72rem', color:'#ff7070' }}>🚫 Revoke Others</button>
+          </div>
+        </div>
+        <div style={{ padding:'1.25rem', display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+          {sessLoading ? <div style={{ color:'var(--text-muted)', fontSize:'0.8rem' }}>Loading…</div>
+          : sessions.length === 0 ? <div style={{ color:'var(--text-muted)', fontSize:'0.8rem' }}>No sessions found</div>
+          : sessions.map((s, i) => (
+            <div key={s.tokenPrefix} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.65rem 0.9rem', background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)' }}>
+              <div style={{ width:8, height:8, borderRadius:'50%', flexShrink:0, background:'#50c878', boxShadow:'0 0 6px #50c878' }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:'0.78rem', fontWeight:600, color:'var(--text-primary)' }}>{s.userAgent ? s.userAgent.substring(0,60)+'…' : 'Unknown device'}</div>
+                <div style={{ fontSize:'0.68rem', color:'var(--text-muted)' }}>
+                  {s.ipAddress || 'unknown IP'} · Since {fmtTime(s.createdAt)} · Expires {fmtTime(s.expiresAt)}
+                </div>
+              </div>
+              <span style={{ fontSize:'0.65rem', color:'var(--text-muted)', fontFamily:'monospace' }}>{s.token}</span>
+              {i !== 0 && <button className="btn btn-ghost" style={{ fontSize:'0.65rem', padding:'2px 7px', color:'#ff7070', flexShrink:0 }} onClick={()=>revokeSession(s.fullToken)}>Revoke</button>}
+              {i === 0 && <span style={{ fontSize:'0.65rem', color:'#50c878', flexShrink:0 }}>Current</span>}
+            </div>
+          ))}
+          {sessMsg && <div style={msgStyle(sessMsg)}>{sessMsg}</div>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -59,6 +217,7 @@ export default function UserSettingsTab({
   const [autoOutput,       setAutoOutput]        = useLocalStorage('boundaryiq_auto_output', true);
   const [shortFileNames,   setShortFileNames]    = useLocalStorage('boundaryiq_short_file_names', true);
   const [showConceptualDetail, setShowConceptualDetail] = useLocalStorage('boundaryiq_show_conceptual_detail', true);
+  const [frontendOcr, setFrontendOcr]           = useLocalStorage('boundaryiq_frontend_ocr', false);
   const [openaiBaseUrl,    setOpenaiBaseUrl]      = useLocalStorage('boundaryiq_openai_base_url', 'http://127.0.0.1:11434/v1');
   const [geminiKey,        setGeminiKey]          = useLocalStorage('boundaryiq_gemini_key', '');
   const [openaiKey,        setOpenaiKey]          = useLocalStorage('boundaryiq_openai_key', '');
@@ -101,10 +260,6 @@ export default function UserSettingsTab({
 
   useEffect(() => { fetchModelConfig(); }, [fetchModelConfig]);
 
-  useEffect(() => {
-    if (geminiKey || openaiKey) saveKeysToBackend(geminiKey, openaiKey, true);
-  }, []);
-
   const saveKeysToBackend = async (gKey, oKey, silent = false) => {
     if (!silent) setSaveKeysLoading(true);
     try {
@@ -118,6 +273,10 @@ export default function UserSettingsTab({
     } catch (e) { if (!silent) setKeysMsg(`✗ ${e.message}`); }
     finally { if (!silent) setSaveKeysLoading(false); }
   };
+
+  useEffect(() => {
+    if (geminiKey || openaiKey) saveKeysToBackend(geminiKey, openaiKey, true);
+  }, []);
 
   const switchModel = async (provider, model) => {
     setSwitchingTo(`${provider}/${model}`); setModelLoading(true); setModelMsg('');
@@ -185,6 +344,9 @@ export default function UserSettingsTab({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* ── My Account ──────────────────────────────────────────────── */}
+      <MyAccountSection />
 
       {/* ── Title ─────────────────────────────────────────────────── */}
       <div style={{
@@ -437,6 +599,7 @@ export default function UserSettingsTab({
             { checked: autoOutput,           set: setAutoOutput,           label: 'Auto-Generate Output Files',    desc: 'Automatically create a timestamped output subfolder for each batch run inside the source directory.' },
             { checked: shortFileNames,        set: setShortFileNames,        label: 'Use Short File Names',          desc: 'Save outputs with standardized names (Map, OCR, Summary, Cogo, Script, DXF) inside a per-deed folder.' },
             { checked: showConceptualDetail,  set: setShowConceptualDetail,  label: 'Add Conceptual Details to Maps', desc: 'Overlay neighboring lots, street name, utility easements, and inline course dimensions on check plots.' },
+            { checked: frontendOcr,           set: setFrontendOcr,           label: 'Perform OCR on Frontend',       desc: 'Run OCR directly in the browser (images/PDFs) before uploading. Only plain text is uploaded, reducing server load.' },
           ].map(({ checked, set, label, desc }, i) => (
             <div key={i}>
               {i > 0 && <div style={{ height: '1px', background: 'var(--border)', margin: '0.25rem 0 1rem 0' }} />}
@@ -465,11 +628,12 @@ export default function UserSettingsTab({
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {PANEL_DEFS.map(panel => {
-              const locked = isLocked(panel.id);
-              const hideState = panelHideMap[panel.id]; // only applicable to traverse/plat/writer
+              const isAdminOnly = panel.minRole === 'admin';
+              const locked = isLocked(panel.id) || isAdminOnly;
+              const hideState = panelHideMap[panel.id];
               const isVisible = hideState !== undefined ? !hideState : true;
-              // batch and dashboard toggles are admin-only; users can only toggle traverse/plat/writer
-              const isUserToggleable = ['traverse', 'plat', 'writer'].includes(panel.id) && !locked;
+              // Only traverse is user-toggleable now; others are admin-only (testing)
+              const isUserToggleable = panel.id === 'traverse' && !locked;
               const panelColors = { traverse: '#3d7fff', plat: '#00d4a8', writer: '#a855f7', batch: '#c97a00', dashboard: '#4285F4' };
               const color = panelColors[panel.id] || 'var(--accent)';
 
@@ -477,17 +641,22 @@ export default function UserSettingsTab({
                 <div key={panel.id} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '0.85rem 1.2rem',
-                  background: locked ? 'rgba(255,255,255,0.01)' : (isVisible && !hideState ? `${color}08` : 'rgba(255,255,255,0.02)'),
-                  border: `1px solid ${locked ? 'rgba(255,255,255,0.08)' : (isVisible && !hideState ? `${color}30` : 'var(--border)')}`,
+                  background: isAdminOnly ? 'rgba(255,170,0,0.025)' : (locked ? 'rgba(255,255,255,0.01)' : (isVisible ? `${color}08` : 'rgba(255,255,255,0.02)')),
+                  border: `1px solid ${isAdminOnly ? 'rgba(255,170,0,0.15)' : (locked ? 'rgba(255,255,255,0.08)' : (isVisible ? `${color}30` : 'var(--border)'))}`,
                   borderRadius: 'var(--radius-md)', transition: 'all 0.3s ease',
-                  opacity: locked ? 0.6 : 1,
+                  opacity: isAdminOnly ? 0.65 : (locked ? 0.6 : 1),
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <span style={{ fontSize: '1.2rem' }}>{panel.icon}</span>
                     <div>
-                      <div style={{ fontWeight: 600, color: locked ? 'var(--text-muted)' : '#e8eeff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <div style={{ fontWeight: 600, color: (locked || isAdminOnly) ? 'var(--text-muted)' : '#e8eeff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                         {panel.label}
-                        {locked && <span style={{ fontSize: '0.72rem', background: 'rgba(220,50,50,0.12)', border: '1px solid rgba(220,50,50,0.3)', color: '#dc3232', padding: '1px 6px', borderRadius: '99px', fontWeight: 700 }}>🔒 Restricted</span>}
+                        {isAdminOnly && (
+                          <span style={{ fontSize: '0.6rem', background: 'rgba(255,170,0,0.1)', border: '1px solid rgba(255,170,0,0.3)', color: '#c97a00', padding: '1px 6px', borderRadius: 99, fontWeight: 800, letterSpacing: '0.05em' }}>🔧 Testing</span>
+                        )}
+                        {!isAdminOnly && locked && (
+                          <span style={{ fontSize: '0.72rem', background: 'rgba(220,50,50,0.12)', border: '1px solid rgba(220,50,50,0.3)', color: '#dc3232', padding: '1px 6px', borderRadius: '99px', fontWeight: 700 }}>🔒 Restricted</span>
+                        )}
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>{panel.desc}</div>
                     </div>
@@ -498,8 +667,8 @@ export default function UserSettingsTab({
                       onChange={e => panelSetMap[panel.id](!e.target.checked)}
                     />
                   ) : (
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', padding: '0.2rem 0.6rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '99px' }}>
-                      {locked ? 'Admin Locked' : 'Always On'}
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', padding: '0.2rem 0.6rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '99px', whiteSpace: 'nowrap' }}>
+                      {isAdminOnly ? 'Admin Only' : locked ? 'Admin Locked' : 'Always On'}
                     </div>
                   )}
                 </div>

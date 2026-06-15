@@ -2,13 +2,22 @@
 // Port of BearingParser.cs — parses surveyor bearing strings into azimuth degrees.
 // Supports: "N45°30'00"E", "N45-30-00E", "N 45 30 00 E", "N45.3000E"
 
-const EXPANDED = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*([EWew])\s*$/;
-const DEG_MIN  = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\s]*([EWew])\s*$/;
-const DEG_ONLY = /^\s*([NSns])\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])\s*$/;
-const PACKED   = /^\s*([NSns])\s*(\d+\.\d+)\s*([EWew])\s*$/;
+// Suffix is optional (e.g. S89°21'48")
+const EXPANDED = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*([EWew])?\s*$/;
+const DEG_MIN  = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)['\s]*([EWew])?\s*$/;
+const DEG_ONLY = /^\s*([NSns])\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])?\s*$/;
+const PACKED   = /^\s*([NSns])\s*(\d+\.\d+)\s*([EWew])?\s*$/;
+
+// Prefix is optional (e.g. 89°21'48"E)
+const EXPANDED_NO_PREFIX = /^\s*([NSns])?\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*([EWew])\s*$/;
+const DEG_MIN_NO_PREFIX  = /^\s*([NSns])?\s*(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)['\s]*([EWew])\s*$/;
+const DEG_ONLY_NO_PREFIX = /^\s*([NSns])?\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])\s*$/;
+const PACKED_NO_PREFIX   = /^\s*([NSns])?\s*(\d+\.\d+)\s*([EWew])\s*$/;
 
 function getQuadrant(ns, ew) {
-  const key = ns.toUpperCase() + ew.toUpperCase();
+  const nsClean = (ns || 'N').toUpperCase();
+  const ewClean = (ew || 'W').toUpperCase();
+  const key = nsClean + ewClean;
   const map = { NE: 1, SE: 2, SW: 3, NW: 4 };
   if (!map[key]) throw new Error(`Invalid quadrant: ${key}`);
   return map[key];
@@ -75,7 +84,8 @@ export function parse(bearing) {
     .replace(/[\u201C\u201D\u201E]/g, '"')              // smart-left/right double quotes → "
     .replace(/DEGREES|DEG/gi, '°')
     .replace(/MINUTES|MIN/gi, "'")
-    .replace(/SECONDS|SEC/gi, '"');
+    .replace(/SECONDS|SEC/gi, '"')
+    .replace(/\*/g, ' ');
 
 
   // Check if it's a cardinal/ordinal direction word directly
@@ -120,8 +130,33 @@ export function parse(bearing) {
     .replace(/\s*['’‘`]\s*/g, "'")
     .replace(/\s*(?:"|”|“|'')\s*/g, '"');
 
+  // Replace letter O/o/Q/q with 0 when representing numbers
+  clean = clean
+    .replace(/(?<=\d)[OoQq]/g, '0')
+    .replace(/[OoQq](?=\d)/g, '0')
+    .replace(/[OoQq]\s*°/g, '0°')
+    .replace(/[OoQq]\s*'/g, "0'")
+    .replace(/[OoQq]\s*"/g, '0"');
+
+  // Handle cases where the degree field has no digits and only symbols/letters (e.g. S_J°49'01"E -> S0°49'01"E, S(J° -> S0°)
+  clean = clean.replace(/([NSns])\s*[^0-9°\s]*\s*°/gi, '$10°');
+
   // Handle OCR/scrivener errors where the degree symbol is misread as a letter (e.g. S00P56'28"E -> S00°56'28"E)
   clean = clean.replace(/([NSns]\s*\d{1,3})\s*([^0-9NSEWns\s])\s*(\d{1,2}\s*['])/gi, '$1°$3');
+
+  // Handle OCR/scrivener errors where the degree symbol is misread as a digit (e.g. S00955'38"E -> S00°55'38"E)
+  clean = clean.replace(/([NSns]\s*\d{1,2})([0-9])(\d{2}\s*['])/gi, '$1°$3');
+
+  // Handle double degree symbol OCR errors or LLM translation duplicate degree digit errors (e.g. S72°912'02"W -> S72°12'02"W, S17°047'58"E -> S17°47'58"E)
+  clean = clean.replace(/(\d+)\s*°\s*[0-9]\s*(\d{2}\s*['])/gi, '$1°$2');
+
+  // Handle OCR error where minutes quote is misread as a seconds quote in a degree-minute bearing (e.g. S073°55"E -> S073°55'E)
+  if (clean.includes('°') && clean.includes('"') && !clean.includes("'")) {
+    const numericGroups = clean.match(/\d+(?:\.\d+)?/g);
+    if (numericGroups && numericGroups.length === 2) {
+      clean = clean.replace(/"/g, "'");
+    }
+  }
 
   // Handle smashed degree symbol OCR errors (e.g. S5719'54"W -> S57°19'54"W, S5719'W -> S57°19'00"W)
   if (!clean.includes('°')) {
@@ -137,10 +172,25 @@ export function parse(bearing) {
     }
   }
 
-  // Try expanded DMS
+  // Try expanded DMS (prefix required)
   let m = EXPANDED.exec(clean);
   if (m) {
     const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = parseFloat(m[3]);
+    const sec = parseFloat(m[4]);
+    const ew = (m[5] || 'W').toUpperCase();
+    const decDeg = deg + min / 60.0 + sec / 3600.0;
+    const quadrant = getQuadrant(ns, ew);
+    const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
+    const parseConfidence = m[5] ? assessConfidence(deg, min, sec, 'expanded') : 'LOW';
+    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
+  }
+
+  // Try expanded DMS (prefix optional, suffix required)
+  m = EXPANDED_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
     const deg = parseFloat(m[2]);
     const min = parseFloat(m[3]);
     const sec = parseFloat(m[4]);
@@ -148,14 +198,29 @@ export function parse(bearing) {
     const decDeg = deg + min / 60.0 + sec / 3600.0;
     const quadrant = getQuadrant(ns, ew);
     const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
-    const parseConfidence = assessConfidence(deg, min, sec, 'expanded');
+    const parseConfidence = m[1] ? assessConfidence(deg, min, sec, 'expanded') : 'LOW';
     return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
   }
 
-  // Try degree + minute only (no seconds)
+  // Try degree + minute only (no seconds, prefix required)
   m = DEG_MIN.exec(clean);
   if (m) {
     const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = parseFloat(m[3]);
+    const sec = 0;
+    const ew = (m[4] || 'W').toUpperCase();
+    const decDeg = deg + min / 60.0;
+    const quadrant = getQuadrant(ns, ew);
+    const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
+    const parseConfidence = m[4] ? assessConfidence(deg, min, sec, 'expanded_deg_min') : 'LOW';
+    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
+  }
+
+  // Try degree + minute only (no seconds, prefix optional, suffix required)
+  m = DEG_MIN_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
     const deg = parseFloat(m[2]);
     const min = parseFloat(m[3]);
     const sec = 0;
@@ -163,14 +228,29 @@ export function parse(bearing) {
     const decDeg = deg + min / 60.0;
     const quadrant = getQuadrant(ns, ew);
     const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
-    const parseConfidence = assessConfidence(deg, min, sec, 'expanded_deg_min');
+    const parseConfidence = m[1] ? assessConfidence(deg, min, sec, 'expanded_deg_min') : 'LOW';
     return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
   }
 
-  // Try degree only
+  // Try degree only (prefix required)
   m = DEG_ONLY.exec(clean);
   if (m) {
     const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = 0;
+    const sec = 0;
+    const ew = (m[3] || 'W').toUpperCase();
+    const decDeg = deg;
+    const quadrant = getQuadrant(ns, ew);
+    const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
+    const parseConfidence = m[3] ? assessConfidence(deg, min, sec, 'expanded_deg_only') : 'LOW';
+    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
+  }
+
+  // Try degree only (prefix optional, suffix required)
+  m = DEG_ONLY_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
     const deg = parseFloat(m[2]);
     const min = 0;
     const sec = 0;
@@ -178,20 +258,33 @@ export function parse(bearing) {
     const decDeg = deg;
     const quadrant = getQuadrant(ns, ew);
     const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
-    const parseConfidence = assessConfidence(deg, min, sec, 'expanded_deg_only');
+    const parseConfidence = m[1] ? assessConfidence(deg, min, sec, 'expanded_deg_only') : 'LOW';
     return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
   }
 
-  // Try packed DMS
+  // Try packed DMS (prefix required)
   m = PACKED.exec(clean);
   if (m) {
     const ns = m[1].toUpperCase();
+    const packed = parseFloat(m[2]);
+    const ew = (m[3] || 'W').toUpperCase();
+    const decDeg = packedDmsToDeg(packed);
+    const quadrant = getQuadrant(ns, ew);
+    const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
+    const parseConfidence = m[3] ? assessConfidence(decDeg, 0, 0, 'packed') : 'LOW';
+    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
+  }
+
+  // Try packed DMS (prefix optional, suffix required)
+  m = PACKED_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
     const packed = parseFloat(m[2]);
     const ew = m[3].toUpperCase();
     const decDeg = packedDmsToDeg(packed);
     const quadrant = getQuadrant(ns, ew);
     const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
-    const parseConfidence = assessConfidence(decDeg, 0, 0, 'packed');
+    const parseConfidence = m[1] ? assessConfidence(decDeg, 0, 0, 'packed') : 'LOW';
     return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
   }
 

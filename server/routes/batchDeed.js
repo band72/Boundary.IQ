@@ -27,9 +27,10 @@ function normalizeMime(file) {
   if (mime.includes('png')) return 'image/png';
   if (mime.includes('webp')) return 'image/webp';
   if (mime.includes('pdf')) return 'application/pdf';
+  if (mime.includes('text') || mime.includes('plain')) return 'text/plain';
   if (mime.includes('msword') || mime.includes('wordprocessing')) return 'application/msword';
   const ext = (file.originalname || '').split('.').pop()?.toLowerCase();
-  const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+  const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', txt: 'text/plain' };
   return map[ext] || 'image/jpeg';
 }
 

@@ -48,7 +48,7 @@ async function authenticate() {
 }
 
 // ── Ollama model warmup — ensures the model is loaded before batch starts ─────
-async function warmupOllama(model = 'deepseek-r1:8b') {
+async function warmupOllama(model = 'deepseek-r1:14b') {
   const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
   try {
     console.log(`Warming up Ollama model: ${model}…`);
@@ -150,7 +150,8 @@ async function main() {
   console.log('✓ Authenticated\n');
 
   // Warmup: ensure the target LLM model is loaded before serial batch processing
-  await warmupOllama();
+  const modelToWarmup = process.env.ACTIVE_MODEL || 'deepseek-r1:14b';
+  await warmupOllama(modelToWarmup);
 
   const fileIdx = process.argv.indexOf('--file');
   const fileFilter = fileIdx !== -1 ? process.argv[fileIdx + 1] : null;

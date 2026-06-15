@@ -13,8 +13,13 @@ const API_ORIGIN = new URL(
 const originalFetch = window.fetch;
 window.fetch = async function (url, options = {}) {
   try {
-    const requestOrigin = new URL(url, window.location.href).origin;
-    if (requestOrigin === API_ORIGIN) {
+    const urlString = typeof url === 'string' ? url : (url && url.url ? url.url : String(url));
+    const requestOrigin = new URL(urlString, window.location.href).origin;
+    const isLocalApi = requestOrigin === API_ORIGIN || 
+                       urlString.startsWith('/api') ||
+                       urlString.startsWith('api/') ||
+                       (requestOrigin === window.location.origin && urlString.includes('/api'));
+    if (isLocalApi) {
       const token = localStorage.getItem('boundaryiq_auth_token');
       if (token) {
         options.headers = {

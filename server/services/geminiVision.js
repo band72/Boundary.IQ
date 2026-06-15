@@ -885,7 +885,7 @@ Return ONLY valid JSON. No conversational text or markdown fences.`;
 }
 
 export async function extractBoundary(buffer, mimeType, feedback = null) {
-  let prompt = buildExtractionPrompt();
+  let prompt = activeProvider === 'ollama' ? buildOllamaExtractionPrompt() : buildExtractionPrompt();
   if (feedback) {
     prompt += `\n\n=========================================\nCRITICAL RE-READ DIRECTIONS FROM THE SUPERVISOR / GEOMETRY ENGINE:\n=========================================\n${feedback}\n\nRe-read the original document and correct the segments list carefully based on this feedback.`;
   }
@@ -943,7 +943,7 @@ export async function extractMisclosureRepair(buffer, mimeType, badExtraction, b
     `ErrorE=${badTraverse.closure.errorEasting.toFixed(4)}, ` +
     `Precision=${badTraverse.closure.precisionRatio}`;
 
-  const repairPrompt = `You are an elite Professional Land Surveyor performing a MISCLOSURE REPAIR operation.
+  let repairPrompt = `You are an elite Professional Land Surveyor performing a MISCLOSURE REPAIR operation.
 The boundary traverse below FAILED to close with the following error:
 ${errorVector}
 
@@ -958,6 +958,10 @@ Your task:
 5. Return the COMPLETE corrected segment list — same format as the input but with corrections applied.
 
 Return ONLY the corrected JSON object (same schema as original extraction).`;
+
+  if (activeProvider === 'ollama') {
+    repairPrompt += `\n\nIMPORTANT: Keep your thought process extremely brief (under 5 sentences). Do not repeat rules or explain your steps. Output the corrected JSON object immediately after your thoughts.`;
+  }
 
   const rawText = await extractRaw(buffer, mimeType, repairPrompt);
 
@@ -1163,6 +1167,45 @@ function cleanInvalidJsonValues(jsonStr) {
   return cleanedLines.join('\n');
 }
 
+function tryParseJsonAndGetStructure(jsonStr) {
+  let root = null;
+  let cleanStr = jsonStr.trim();
+  try {
+    root = JSON.parse(cleanStr);
+  } catch (err) {
+    // Check if it's a comma-separated list of objects
+    if (cleanStr.startsWith('{') && cleanStr.endsWith('}')) {
+      try {
+        const wrapped = `[${cleanStr}]`;
+        root = JSON.parse(wrapped);
+        cleanStr = wrapped;
+      } catch (err2) {
+        throw err; // throw original error
+      }
+    } else {
+      throw err;
+    }
+  }
+
+  if (root) {
+    const resultSet = new Set();
+    try {
+      return getStructureFromRoot(root, cleanStr);
+    } catch (structErr) {
+      findDescriptionsRecursive(root, resultSet);
+      const descs = Array.from(resultSet);
+      if (descs.length > 0) {
+        const fallbackResult = parseFromTextFallback(descs[0]);
+        if (fallbackResult) {
+          return fallbackResult;
+        }
+      }
+      throw structErr;
+    }
+  }
+  throw new Error('Parsed root is null');
+}
+
 function parseStructuredResponse(raw) {
   let cleanJson = raw.trim();
   
@@ -1189,94 +1232,55 @@ function parseStructuredResponse(raw) {
   // Robustly quote any unquoted property values
   cleanJson = cleanInvalidJsonValues(cleanJson);
 
-  // Try direct parsing first
+  // 1. Try parsing cleanJson directly using our helper
   try {
-    const root = JSON.parse(cleanJson);
-    if (root) {
-      try {
-        return getStructureFromRoot(root, cleanJson);
-      } catch (structErr) {
-        const resultSet = new Set();
-        findDescriptionsRecursive(root, resultSet);
-        const descs = Array.from(resultSet);
-        if (descs.length > 0) {
-          const fallbackResult = parseFromTextFallback(descs[0]);
-          if (fallbackResult) {
-            console.log(`💡 JSON structure missing standard keys, but successfully extracted ${fallbackResult.courses.length} courses from nested description.`);
-            return fallbackResult;
-          }
-        }
-        throw structErr;
-      }
-    }
+    return tryParseJsonAndGetStructure(cleanJson);
   } catch (err) {
-    // If direct parse fails, try to extract from markdown code blocks
+    // 2. Try to extract from markdown code blocks
     let m = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (m) {
       const extracted = m[1].trim();
       try {
-        const root = JSON.parse(extracted);
-        if (root) {
-          try {
-            return getStructureFromRoot(root, extracted);
-          } catch (structErr) {
-            const resultSet = new Set();
-            findDescriptionsRecursive(root, resultSet);
-            const descs = Array.from(resultSet);
-            if (descs.length > 0) {
-              const fallbackResult = parseFromTextFallback(descs[0]);
-              if (fallbackResult) return fallbackResult;
-            }
-            throw structErr;
-          }
-        }
+        return tryParseJsonAndGetStructure(extracted);
       } catch (err2) {}
     }
     
-    // If still fails, locate the first '{' and last '}'
-    const startIdx = cleanJson.indexOf('{');
-    const endIdx = cleanJson.lastIndexOf('}');
+    // 3. Try to locate the first '{' or '[' and last '}' or ']'
+    const firstBrace = cleanJson.indexOf('{');
+    const firstBracket = cleanJson.indexOf('[');
+    const lastBrace = cleanJson.lastIndexOf('}');
+    const lastBracket = cleanJson.lastIndexOf(']');
+
+    let startIdx = -1;
+    let endIdx = -1;
+
+    if (firstBrace !== -1 && firstBracket !== -1) {
+      startIdx = Math.min(firstBrace, firstBracket);
+    } else {
+      startIdx = firstBrace !== -1 ? firstBrace : firstBracket;
+    }
+
+    if (lastBrace !== -1 && lastBracket !== -1) {
+      endIdx = Math.max(lastBrace, lastBracket);
+    } else {
+      endIdx = lastBrace !== -1 ? lastBrace : lastBracket;
+    }
+
     if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
       const extractedPos = cleanJson.substring(startIdx, endIdx + 1);
       try {
-        const root = JSON.parse(extractedPos);
-        if (root) {
-          try {
-            return getStructureFromRoot(root, extractedPos);
-          } catch (structErr) {
-            const resultSet = new Set();
-            findDescriptionsRecursive(root, resultSet);
-            const descs = Array.from(resultSet);
-            if (descs.length > 0) {
-              const fallbackResult = parseFromTextFallback(descs[0]);
-              if (fallbackResult) return fallbackResult;
-            }
-            throw structErr;
-          }
-        }
+        return tryParseJsonAndGetStructure(extractedPos);
       } catch (err3) {}
     }
   }
 
-  // Fallback parsing logic
+  // 4. Fallback parsing logic
   try {
     let fallbackJson = cleanJson;
     if (fallbackJson.startsWith('```')) fallbackJson = fallbackJson.split('\n').slice(1).join('\n');
     if (fallbackJson.endsWith('```')) fallbackJson = fallbackJson.substring(0, fallbackJson.lastIndexOf('```'));
     fallbackJson = fallbackJson.trim();
-    const root = JSON.parse(fallbackJson);
-    try {
-      return getStructureFromRoot(root, fallbackJson);
-    } catch (structErr) {
-      const resultSet = new Set();
-      findDescriptionsRecursive(root, resultSet);
-      const descs = Array.from(resultSet);
-      if (descs.length > 0) {
-        const fallbackResult = parseFromTextFallback(descs[0]);
-        if (fallbackResult) return fallbackResult;
-      }
-      throw structErr;
-    }
+    return tryParseJsonAndGetStructure(fallbackJson);
   } catch (finalErr) {
     try {
       const fallbackResult = parseFromTextFallback(raw);
@@ -1764,4 +1768,45 @@ Under no circumstances should you ever return the exact example segments (e.g., 
 
 RULE 13 — TITLE COMMITMENTS & EXHIBITS:
 If the text contains title commitment headers, commitment numbers, or references to "Exhibit A" or "Schedule A" (e.g. "OLD REPUBLIC INSURANCE", "Commitment Number", "Exhibit A"), you MUST ignore the document metadata (do not return "See Exhibit A"). Instead, locate the metes-and-bounds description starting with "more particularly described as follows" or "Begin at" on that page, and extract the bearings and distances into the Segments array.`;
+}
+
+export function buildOllamaExtractionPrompt() {
+  return `You are a legal description parser. Convert the following unstructured legal description text into a clean, structured JSON object.
+
+RULES:
+1. Extract the document classification: METES_BOUNDS, SECTION_BREAKDOWN, QUALIFIED_PLSS, HYBRID, LOT_BLOCK, or PLAT.
+2. Extract the Point of Reference (POR) name into "ReferencePointName".
+3. Extract any commencement runs leading from POR to POB into the "CommencementSegments" array. If the description begins directly at the Point of Beginning (POB) and traces the boundary returning to the POB (e.g. 'Begin at the intersection... to the Point of Beginning'), there is NO commencement run. In this case, place all courses in the "Segments" array, and leave "CommencementSegments" empty.
+4. Extract the main property boundary courses starting from the POB into the "Segments" array. Every course in the description MUST be extracted. Do not skip or merge courses. If the description lists numbered courses (e.g., '(1) South 84°53'36" East, 308.19 feet... (2) thence around a curve...'), you MUST extract each numbered course as a separate segment in the array.
+5. For Line courses, specify: Type ("Line"), Bearing, Distance.
+6. For Curve courses, specify: Type ("Curve"), Radius, Delta, ArcLength, CurveDirection ("Left" or "Right"), ChordBearing, ChordDistance.
+7. If a bearing/distance is missing, set to null and set IsUnknown to true.
+8. Set IsOpenEnded to true if it is an open-ended survey line or easement centerline, or false if it is a closed loop boundary.
+9. Keep your thought process brief and go directly to outputting the JSON object. Do not repeat the rules in your thoughts.
+
+JSON OUTPUT FORMAT:
+{
+  "Classification": "METES_BOUNDS",
+  "PreambleFound": true,
+  "IsOpenEnded": false,
+  "MentalMapSummary": "Brief description of the boundary shape (e.g. 5-sided polygon)",
+  "OriginalLegalDescription": "The exact metes-and-bounds text isolated from the document.",
+  "ReferencePointName": "Reference corner name, or null",
+  "CommencementSegments": [
+    { "Type": "Line", "Bearing": "N00°02'10\\"W", "Distance": 330.15, "IsUnknown": false }
+  ],
+  "Segments": [
+    { "Type": "Line", "Bearing": "N45°22'10\\"E", "Distance": 150.25, "IsUnknown": false }
+  ],
+  "ReferencedParcelName": null,
+  "Parcels": null,
+  "ConceptualAnalysis": {
+    "Description": "Analysis of the tracts/lots mentioned.",
+    "ParentTractSizeEstimate": "unknown",
+    "LotSizeEstimate": "0.15 acres",
+    "RelativeComparison": "unknown"
+  }
+}
+
+IMPORTANT: Keep your thought process extremely brief (under 5 sentences). Do not repeat rules or explain your steps. Output the JSON object immediately after your thoughts.`;
 }

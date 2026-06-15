@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import { solveDeedText, listAvailableModels, solveFromText, solveFromCourses } from '../services/deedTextSolver.js';
 import * as traverseSvc from '../services/traverse.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, trackDeedUsage } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
 
@@ -28,7 +28,8 @@ router.get('/models', async (req, res) => {
 // ── POST /api/deed/solve ──────────────────────────────────────────────────────
 // Body: { deedText: string, model?: string, pobNorthing?: number, pobEasting?: number, units?: string }
 // Uses a local LLM to extract courses, then COGO engine to repair and verify closure.
-router.post('/solve', async (req, res) => {
+// trackDeedUsage: enforces free-tier daily limit (5 solves/day) before running the LLM.
+router.post('/solve', trackDeedUsage, async (req, res) => {
   try {
     const { deedText, model, pobNorthing, pobEasting, units, isOpenEnded } = req.body;
 
@@ -65,8 +66,9 @@ router.post('/solve', async (req, res) => {
 
 // ── POST /api/deed/solve-text ─────────────────────────────────────────────────
 // No LLM, no Ollama. Parses deed text with regex + full COGO repair.
+// trackDeedUsage: still counts against the daily limit (uses the solve pipeline).
 // Body: { deedText: string, pobNorthing?: number, pobEasting?: number, units?: string }
-router.post('/solve-text', (req, res) => {
+router.post('/solve-text', trackDeedUsage, (req, res) => {
   try {
     const { deedText, pobNorthing, pobEasting, units } = req.body;
     if (!deedText || typeof deedText !== 'string' || deedText.trim().length < 20) {

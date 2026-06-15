@@ -38,6 +38,7 @@ import folderScanRouter from './routes/folderScan.js';
 import settingsRouter from './routes/settings.js';
 import deedRouter from './routes/deed.js';
 import authRouter from './routes/auth.js';
+import billingRouter from './routes/billing.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '5050');
@@ -107,7 +108,11 @@ try {
 // ── Middleware ───────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(';').filter(Boolean).map(o => o.trim())
-  : ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'];
+  : [
+      'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175',
+      'http://127.0.0.1:5173', 'http://127.0.0.1:5174', 'http://127.0.0.1:5175',
+      ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+    ];
 
 // ── Security middleware ──────────────────────────────────────────────────────
 // Helmet adds ~12 security headers (CSP, X-Frame-Options, HSTS, etc.)
@@ -119,11 +124,11 @@ app.use(helmet({
 // Rate limit: auth endpoints only — 10 attempts per IP per 15 minutes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 100, // Relaxed limit for development/testing
   message: { error: 'Too many authentication attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => process.env.NODE_ENV === 'development' && req.ip === '::1', // skip localhost in dev
+  skip: (req) => process.env.NODE_ENV !== 'production', // skip rate limit in dev/testing environments
 });
 app.use('/api/auth/login',    authLimiter);
 app.use('/api/auth/register', authLimiter);
@@ -134,6 +139,10 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Raw body for Stripe webhook signature verification (must come before json parser)
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -161,6 +170,7 @@ app.use('/api/folderscan', folderScanRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/deed', deedRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/billing', billingRouter);
 
 // ── Error handling ──────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {

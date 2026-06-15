@@ -20,11 +20,11 @@ const BASE_URL = `http://localhost:${PORT}`;
 const BASE_DIR = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions';
 
 // The 20 DB-confirmed failing deeds (db name → actual filename on disk)
+// Note: 13245L__IN and 13245L map to the same physical file — only process once.
 const TARGETS = [
   { db: '12271.doc',        file: '12271.doc' },
   { db: '11211L.doc',       file: '11211L.doc' },
-  { db: '13245L__IN.doc',   file: '13245L.doc' },
-  { db: '13245L.doc',       file: '13245L.doc' },
+  { db: '13245L.doc',       file: '13245L.doc' },   // covers __IN variant too
   { db: '11928L2.doc',      file: '11928L2.doc' },
   { db: '11928L.doc',       file: '11928L.doc' },
   { db: '13235-L2.doc',     file: '13235-L2.doc' },
@@ -42,6 +42,7 @@ const TARGETS = [
   { db: '14200L-B__1.doc',  file: '14200L-B.doc' },
   { db: '12820L__1.doc',    file: '12820L.doc' },
 ];
+
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 let authToken = null;
@@ -62,7 +63,7 @@ async function authenticate() {
 // ── Switch to gemma3:4b for speed ────────────────────────────────────────────
 async function switchModel() {
   try {
-    const r = await fetch(`${BASE_URL}/api/settings/model-config`, {
+    const r = await fetch(`${BASE_URL}/api/settings/model`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
       body: JSON.stringify({ provider: 'ollama', model: 'gemma3:4b' }),
@@ -96,24 +97,41 @@ async function processFile(target, index) {
     const r = await fetch(url.toString(), {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${authToken}` },
-      signal: AbortSignal.timeout(600000), // 10 min max per file
+      // No AbortSignal — let undici's bodyTimeout (30 min) handle it.
+      // deepseek-r1:8b on hard deeds can legitimately take 15+ min.
     });
     const txt = await r.text();
     if (!r.ok) {
       console.log(`[${String(index).padStart(2,'0')}/20] ✗ ${target.db.padEnd(28)} ERROR    ${txt.slice(0, 120)}`);
       return { file: target.db, status: 'ERROR', error: txt.slice(0, 200) };
     }
-    // Response is newline-delimited JSON (streaming) — take last valid JSON line
+    // Response is newline-delimited JSON (streaming keepalives + final result).
+    // Walk lines in reverse; accept the first line that looks like a real result
+    // (has a 'result' key, or status is PASS/FAIL/MEANDER/ERROR).
+    const VALID_STATUSES = new Set(['PASS','FAIL','MEANDER','ERROR','SKIPPED']);
     const lines = txt.trim().split('\n').filter(Boolean);
-    let data = {};
-    for (const line of lines.reverse()) {
-      try { data = JSON.parse(line); break; } catch {}
+    let data = null;
+    for (const line of [...lines].reverse()) {
+      try {
+        const parsed = JSON.parse(line);
+        // Skip heartbeat/progress lines
+        if (parsed.heartbeat || parsed.keepalive || parsed.progress) continue;
+        // Accept if it has a result object or a known final status
+        if (parsed.result || VALID_STATUSES.has(parsed.status)) {
+          data = parsed;
+          break;
+        }
+      } catch { /* not valid JSON, skip */ }
+    }
+    if (!data) {
+      // Fallback: try first line
+      try { data = JSON.parse(lines[0]); } catch { data = {}; }
     }
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     const result  = data.result || data;
     const status  = result.status || data.status || 'UNKNOWN';
     const err     = result.linearError ?? data.linearError ?? null;
-    const icon    = status === 'PASS' ? '✓' : status === 'MEANDER' ? '〰' : '✗';
+    const icon    = status === 'PASS' ? '✓' : status === 'MEANDER' ? '〜' : '✗';
     const errStr  = err != null ? `  err=${parseFloat(err).toFixed(3)}ft` : '';
     const stage   = result.repairStageUsed ? `  [${result.repairStageUsed}]` : '';
     console.log(`[${String(index).padStart(2,'0')}/20] ${icon} ${target.db.padEnd(28)} ${status.padEnd(8)}${errStr}${stage}  (${elapsed}s)`);

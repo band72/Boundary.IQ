@@ -2,12 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { API } from '../config';
 
+// ── Canonical panel registry ───────────────────────────────────────────────
+// minRole: 'user' = all users | 'admin' = admins only (testing-phase toggle)
+// status:  'live' = released | 'testing' = admin/internal only for now
 const PANEL_DEFS = [
-  { id: 'traverse',  icon: '📐', label: 'Traverse Compute',        desc: 'Manual coordinate entry & closure analysis', color: '#3d7fff' },
-  { id: 'plat',      icon: '🛰️', label: 'Plat Extraction',         desc: 'AI-powered OCR for boundary images and PDFs', color: '#00d4a8' },
-  { id: 'writer',    icon: '✍️', label: 'Legal Description Writer',  desc: 'Generate professional registry legal text', color: '#a855f7' },
-  { id: 'batch',     icon: '📦', label: 'Batch Deed',               desc: 'Folder scan & batch deed processing pipeline', color: '#c97a00' },
-  { id: 'dashboard', icon: '📊', label: 'Dashboard',                desc: 'Processing statistics and deed review panel', color: '#4285F4' },
+  { id: 'traverse',  icon: '📐', label: 'Deed Reader',              desc: 'Core deed parsing, coordinate entry & closure analysis', color: '#3d7fff', minRole: 'user',  status: 'live'    },
+  { id: 'plat',      icon: '🛰️', label: 'Plat Extraction',         desc: 'AI-powered OCR for boundary images and PDFs',           color: '#00d4a8', minRole: 'user',  status: 'testing' },
+  { id: 'writer',    icon: '✍️', label: 'Legal Description Writer', desc: 'Generate professional registry legal text',              color: '#a855f7', minRole: 'user',  status: 'testing' },
+  { id: 'batch',     icon: '📦', label: 'Batch Deed',               desc: 'Folder scan & batch deed processing pipeline',           color: '#c97a00', minRole: 'user',  status: 'testing' },
+  { id: 'dashboard', icon: '📊', label: 'Dashboard',                desc: 'Processing statistics and deed review panel',           color: '#4285F4', minRole: 'user',  status: 'testing' },
 ];
 
 export default function SettingsTab({
@@ -38,6 +41,8 @@ export default function SettingsTab({
   const [autoOutput, setAutoOutput]             = useLocalStorage('boundaryiq_auto_output', true);
   const [shortFileNames, setShortFileNames]     = useLocalStorage('boundaryiq_short_file_names', true);
   const [showConceptualDetail, setShowConceptualDetail] = useLocalStorage('boundaryiq_show_conceptual_detail', true);
+  const [ocrEnabled, setOcrEnabled] = useLocalStorage('boundaryiq_ocr_enabled', false);
+  const [frontendOcr, setFrontendOcr]           = useLocalStorage('boundaryiq_frontend_ocr', false);
 
   // Database stats
   const [dbStats, setDbStats]       = useState(null);
@@ -209,6 +214,34 @@ export default function SettingsTab({
     }
   };
 
+  // OCR toggle handler
+  const toggleOcrEnabled = async (newValue) => {
+    setOcrEnabled(newValue);
+    try {
+      const res = await fetch(`${API}/settings/system`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath: systemDbPath,
+          scanRoots: systemScanRoots,
+          ocrCacheDir: systemOcrCacheDir,
+          downloadsDir: systemDownloadsDir,
+          wordDocTrainingDir: systemWordDocTrainingDir,
+          ocrEnabled: newValue,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSystemMsg('✓ OCR setting updated and persisted.');
+        fetchSystemSettings();
+      } else {
+        setSystemMsg(`✗ Error: ${data.error}`);
+      }
+    } catch (e) {
+      setSystemMsg(`✗ Connection Error: ${e.message}`);
+    }
+  };
+
   const startOllama = async () => {
     setStartingOllama(true);
     setModelMsg('⏳ Starting Ollama…');
@@ -265,6 +298,7 @@ export default function SettingsTab({
         setSystemOcrCacheDir(data.ocrCacheDir || '');
         setSystemDownloadsDir(data.downloadsDir || '');
         setSystemWordDocTrainingDir(data.wordDocTrainingDir || '');
+        setOcrEnabled(data.ocrEnabled ?? false);
       }
     } catch (e) {
       console.error('Failed to fetch system settings:', e);
@@ -286,6 +320,7 @@ export default function SettingsTab({
           ocrCacheDir: systemOcrCacheDir,
           downloadsDir: systemDownloadsDir,
           wordDocTrainingDir: systemWordDocTrainingDir,
+          ocrEnabled: ocrEnabled,
         }),
       });
       const data = await res.json();
@@ -1511,6 +1546,65 @@ export default function SettingsTab({
             </div>
           </div>
 
+          <div style={{
+            height: '1px',
+            background: 'var(--border)',
+            margin: '0.25rem 0'
+          }} />
+
+          {/* Perform OCR on Frontend Toggle */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+            <label style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              marginTop: '2px',
+            }}>
+              <input
+                type="checkbox"
+                checked={frontendOcr}
+                onChange={e => setFrontendOcr(e.target.checked)}
+                style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+              />
+              <div style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                background: frontendOcr
+                  ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)'
+                  : 'rgba(255,255,255,0.1)',
+                border: `1px solid ${frontendOcr ? 'rgba(0,212,168,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                position: 'relative',
+                transition: 'all 0.3s ease',
+                boxShadow: frontendOcr ? '0 0 12px rgba(0, 212, 168, 0.3)' : 'none',
+              }}>
+                <div style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  background: '#fff',
+                  position: 'absolute',
+                  top: '2px',
+                  left: frontendOcr ? '22px' : '3px',
+                  transition: 'left 0.3s ease',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </label>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.35rem' }}>
+                Perform OCR on Frontend
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                When enabled, OCR is performed directly in the browser using Tesseract.js (for images) and PDF.js before uploading. Only parsed plain text is sent to the backend, reducing server processing loads.
+              </p>
+            </div>
+          </div>
+
+
           {/* Output Details Info Box */}
           <div style={{
             background: autoOutput ? 'rgba(0, 212, 168, 0.04)' : 'var(--bg-elevated)',
@@ -1769,40 +1863,66 @@ export default function SettingsTab({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {PANEL_DEFS.map(panel => {
-              const enabled = isPanelEnabled(panel.id);
+              const isAdminOnly = panel.minRole === 'admin';
+              const isTesting   = panel.status === 'testing';
+              // Admin-only panels are always locked to users regardless of toggle.
+              // The toggle only applies to user-accessible panels.
+              const enabled = isAdminOnly ? false : isPanelEnabled(panel.id);
               return (
                 <div key={panel.id} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '0.85rem 1.2rem',
-                  background: enabled ? `rgba(${panel.id === 'traverse' ? '61,127,255' : panel.id === 'plat' ? '0,212,168' : panel.id === 'writer' ? '168,85,247' : panel.id === 'batch' ? '201,122,0' : '66,133,244'},0.05)` : 'rgba(220,50,50,0.04)',
-                  border: `1px solid ${enabled ? `${panel.color}30` : 'rgba(220,50,50,0.2)'}`,
+                  background: isAdminOnly
+                    ? 'rgba(255,170,0,0.04)'
+                    : enabled
+                      ? `rgba(${panel.id === 'traverse' ? '61,127,255' : panel.id === 'plat' ? '0,212,168' : panel.id === 'writer' ? '168,85,247' : panel.id === 'batch' ? '201,122,0' : '66,133,244'},0.05)`
+                      : 'rgba(220,50,50,0.04)',
+                  border: `1px solid ${isAdminOnly ? 'rgba(255,170,0,0.2)' : enabled ? `${panel.color}30` : 'rgba(220,50,50,0.2)'}`,
                   borderRadius: 'var(--radius-md)', transition: 'all 0.3s ease',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: '1.2rem' }}>{panel.icon}</span>
-                    <div>
-                      <div style={{ fontWeight: 600, color: enabled ? '#e8eeff' : 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: '#e8eeff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         {panel.label}
-                        {!enabled && (
+                        {/* Role badge */}
+                        {isAdminOnly ? (
+                          <span style={{ fontSize: '0.62rem', background: 'rgba(255,170,0,0.12)', border: '1px solid rgba(255,170,0,0.35)', color: '#ffaa00', padding: '1px 7px', borderRadius: 99, fontWeight: 800, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                            🔑 Admin Only
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.62rem', background: 'rgba(61,127,255,0.10)', border: '1px solid rgba(61,127,255,0.28)', color: 'var(--accent)', padding: '1px 7px', borderRadius: 99, fontWeight: 800, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                            👤 All Users
+                          </span>
+                        )}
+                        {/* Testing chip */}
+                        {isTesting && (
+                          <span style={{ fontSize: '0.6rem', background: 'rgba(255,170,0,0.08)', border: '1px solid rgba(255,170,0,0.25)', color: '#c97a00', padding: '1px 6px', borderRadius: 99, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            🔧 Testing
+                          </span>
+                        )}
+                        {!enabled && !isAdminOnly && (
                           <span style={{ fontSize: '0.68rem', background: 'rgba(220,50,50,0.12)', border: '1px solid rgba(220,50,50,0.3)', color: '#dc6060', padding: '1px 6px', borderRadius: '99px', fontWeight: 700 }}>Hidden from users</span>
                         )}
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>{panel.desc}</div>
                     </div>
                   </div>
-                  <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={enabled} onChange={e => togglePanelPolicy(panel.id, e.target.checked)}
+                  {/* Toggle — disabled for admin-only panels */}
+                  <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: isAdminOnly ? 'not-allowed' : 'pointer', opacity: isAdminOnly ? 0.4 : 1 }}>
+                    <input type="checkbox" checked={enabled} onChange={e => !isAdminOnly && togglePanelPolicy(panel.id, e.target.checked)}
+                      disabled={isAdminOnly}
                       style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
                     <div style={{
                       width: '40px', height: '20px', borderRadius: '10px',
-                      background: enabled ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(220,50,50,0.3)',
-                      border: `1px solid ${enabled ? 'rgba(0,212,168,0.5)' : 'rgba(220,50,50,0.4)'}`,
+                      background: isAdminOnly ? 'rgba(255,170,0,0.15)' : enabled ? 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)' : 'rgba(220,50,50,0.3)',
+                      border: `1px solid ${isAdminOnly ? 'rgba(255,170,0,0.35)' : enabled ? 'rgba(0,212,168,0.5)' : 'rgba(220,50,50,0.4)'}`,
                       position: 'relative', transition: 'all 0.25s ease',
-                      boxShadow: enabled ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
+                      boxShadow: enabled && !isAdminOnly ? '0 0 10px rgba(0, 212, 168, 0.3)' : 'none',
                     }}>
                       <div style={{
                         width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
-                        position: 'absolute', top: '2px', left: enabled ? '22px' : '3px',
+                        position: 'absolute', top: '2px', left: (enabled || isAdminOnly) ? '22px' : '3px',
                         transition: 'left 0.25s ease',
                       }} />
                     </div>

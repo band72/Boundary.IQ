@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useToast } from '../hooks/useToast';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+import { performFrontendOcr } from '../utils/ocr';
 
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
@@ -12,6 +14,8 @@ export default function PlatTab() {
   const [loading, setLoading]   = useState(false);
   const [result, setResult]     = useState(null);   // { extraction, traverse, traverseError }
   const [error, setError]       = useState('');
+  const [ocrStatus, setOcrStatus] = useState('');
+  const [frontendOcr]           = useLocalStorage('boundaryiq_frontend_ocr', false);
   const [pobN, setPobN]         = useState('5000.00');
   const [pobE, setPobE]         = useState('5000.00');
   const [showPrint, setShowPrint] = useState(false);
@@ -34,10 +38,29 @@ export default function PlatTab() {
 
   const run = async () => {
     if (!file) return;
-    setLoading(true); setError(''); setResult(null);
+    setLoading(true); setError(''); setOcrStatus(''); setResult(null);
     try {
+      let processedFile = file;
+      if (frontendOcr) {
+        setOcrStatus(`Running client-side OCR on ${file.name}...`);
+        try {
+          const extractedText = await performFrontendOcr(file, (progressMsg) => {
+            setOcrStatus(progressMsg);
+          });
+          const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+          processedFile = new File(
+            [extractedText],
+            `${baseName}_ocr.txt`,
+            { type: 'text/plain' }
+          );
+        } catch (ocrErr) {
+          console.error('Client OCR failed for plat:', ocrErr);
+        }
+      }
+      setOcrStatus('');
+
       const fd = new FormData();
-      fd.append('image', file);
+      fd.append('image', processedFile);
 
       let url, res;
       if (mode === 'extract-and-compute') {
@@ -156,6 +179,7 @@ export default function PlatTab() {
       </div>
 
       {/* Error */}
+      {ocrStatus && <div className="alert alert-info">⚙️ {ocrStatus}</div>}
       {error && <div className="alert alert-error">⚠ {error}</div>}
 
       {/* Extraction Results */}

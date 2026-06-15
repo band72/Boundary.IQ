@@ -71,6 +71,7 @@ function initializeDatabase() {
       Username TEXT UNIQUE NOT NULL,
       PasswordHash TEXT NOT NULL,
       Role TEXT NOT NULL DEFAULT 'user',
+      Plan TEXT NOT NULL DEFAULT 'free',
       Timestamp TEXT NOT NULL
     );
 
@@ -79,6 +80,53 @@ function initializeDatabase() {
       UserId INTEGER NOT NULL,
       ExpiresAt TEXT NOT NULL,
       FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS Subscriptions (
+      Id INTEGER PRIMARY KEY AUTOINCREMENT,
+      UserId INTEGER UNIQUE NOT NULL,
+      Plan TEXT NOT NULL DEFAULT 'free',
+      StripeCustomerId TEXT,
+      StripeSubscriptionId TEXT,
+      Status TEXT NOT NULL DEFAULT 'inactive',
+      PeriodEnd TEXT,
+      UpdatedAt TEXT NOT NULL,
+      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS UsageTracking (
+      Id INTEGER PRIMARY KEY AUTOINCREMENT,
+      UserId INTEGER NOT NULL,
+      Date TEXT NOT NULL,
+      DeedSolves INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(UserId, Date),
+      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS AuditLog (
+      Id INTEGER PRIMARY KEY AUTOINCREMENT,
+      UserId INTEGER,
+      ActorId INTEGER,
+      Action TEXT NOT NULL,
+      Target TEXT,
+      Detail TEXT,
+      IpAddress TEXT,
+      Timestamp TEXT NOT NULL,
+      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE SET NULL,
+      FOREIGN KEY (ActorId) REFERENCES Users(Id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS InviteTokens (
+      Token TEXT PRIMARY KEY,
+      CreatedByUserId INTEGER NOT NULL,
+      Email TEXT,
+      Note TEXT,
+      UsedByUserId INTEGER,
+      UsedAt TEXT,
+      ExpiresAt TEXT NOT NULL,
+      CreatedAt TEXT NOT NULL,
+      FOREIGN KEY (CreatedByUserId) REFERENCES Users(Id) ON DELETE CASCADE,
+      FOREIGN KEY (UsedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
     );
   `);
 
@@ -108,6 +156,14 @@ function initializeDatabase() {
     { name: 'add_PobNorthing',             sql: 'ALTER TABLE DeedLogs ADD COLUMN PobNorthing REAL' },
     { name: 'add_PobEasting',              sql: 'ALTER TABLE DeedLogs ADD COLUMN PobEasting REAL' },
     { name: 'add_FileHash',               sql: 'ALTER TABLE DeedLogs ADD COLUMN FileHash TEXT' },
+    { name: 'add_Users_Plan',             sql: "ALTER TABLE Users ADD COLUMN Plan TEXT NOT NULL DEFAULT 'free'" },
+    { name: 'add_Users_LastLogin',        sql: 'ALTER TABLE Users ADD COLUMN LastLogin TEXT' },
+    { name: 'add_Users_DisplayName',      sql: 'ALTER TABLE Users ADD COLUMN DisplayName TEXT' },
+    { name: 'add_Users_AvatarUrl',        sql: 'ALTER TABLE Users ADD COLUMN AvatarUrl TEXT' },
+    { name: 'add_Sessions_UserAgent',     sql: 'ALTER TABLE Sessions ADD COLUMN UserAgent TEXT' },
+    { name: 'add_Sessions_IpAddress',     sql: 'ALTER TABLE Sessions ADD COLUMN IpAddress TEXT' },
+    { name: 'add_Sessions_CreatedAt',     sql: 'ALTER TABLE Sessions ADD COLUMN CreatedAt TEXT' },
+    { name: 'add_Users_ForceResetPw',     sql: 'ALTER TABLE Users ADD COLUMN ForceResetPw INTEGER NOT NULL DEFAULT 0' },
   ];
 
   const applyMigration = db.transaction((m) => {
@@ -803,20 +859,36 @@ export function verifyPassword(password, storedHash) {
   return { valid: false, needsRehash: false };
 }
 
-export function createUser(username, password, role = 'user') {
+export function createUser(username, password, role = null, plan = 'free') {
   // Check if duplicate user exists
   const existing = db.prepare('SELECT Id FROM Users WHERE Username = ?').get(username);
   if (existing) {
     throw new Error('Username already exists');
   }
+
+  // First ever user auto-becomes admin (unless ADMIN_EMAIL is set and matches)
+  const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+  const totalUsers = db.prepare('SELECT COUNT(*) as c FROM Users').get().c;
+  let effectiveRole = role;
+  if (!effectiveRole) {
+    if (totalUsers === 0) {
+      effectiveRole = 'admin';
+    } else if (adminEmail && username.toLowerCase() === adminEmail) {
+      effectiveRole = 'admin';
+    } else {
+      effectiveRole = 'user';
+    }
+  }
+
   const passwordHash = hashPassword(password);
-  const result = db.prepare('INSERT INTO Users (Username, PasswordHash, Role, Timestamp) VALUES (?, ?, ?, ?)')
-    .run(username, passwordHash, role, now());
+  const result = db.prepare('INSERT INTO Users (Username, PasswordHash, Role, Plan, Timestamp) VALUES (?, ?, ?, ?, ?)')
+    .run(username, passwordHash, effectiveRole, plan, now());
   
   return {
     id: result.lastInsertRowid,
     username,
-    role
+    role: effectiveRole,
+    plan,
   };
 }
 
@@ -829,15 +901,15 @@ export function verifyUser(username, password) {
   if (needsRehash && newHash) {
     db.prepare('UPDATE Users SET PasswordHash = ? WHERE Id = ?').run(newHash, row.Id);
   }
-  return { id: row.Id, username: row.Username, role: row.Role };
+  touchLastLogin(row.Id);
+  return { id: row.Id, username: row.Username, role: row.Role, plan: row.Plan || 'free' };
 }
 
-export function createSession(userId) {
+export function createSession(userId, { ipAddress = null, userAgent = null } = {}) {
   const token = crypto.randomBytes(32).toString('hex');
-  // Expires in 7 days
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString().replace('T', ' ').slice(0, 19);
-  db.prepare('INSERT INTO Sessions (Token, UserId, ExpiresAt) VALUES (?, ?, ?)')
-    .run(token, userId, expiresAt);
+  db.prepare('INSERT INTO Sessions (Token, UserId, ExpiresAt, IpAddress, UserAgent, CreatedAt) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(token, userId, expiresAt, ipAddress, userAgent, now());
   return token;
 }
 
@@ -848,7 +920,7 @@ export function getSession(token) {
   }
 
   const row = db.prepare(`
-    SELECT s.Token, s.ExpiresAt, u.Id as UserId, u.Username, u.Role
+    SELECT s.Token, s.ExpiresAt, u.Id as UserId, u.Username, u.Role, u.Plan
     FROM Sessions s
     INNER JOIN Users u ON s.UserId = u.Id
     WHERE s.Token = ?
@@ -874,7 +946,7 @@ export function getSession(token) {
     return null;
   }
 
-  return { userId: row.UserId, username: row.Username, role: row.Role };
+  return { userId: row.UserId, username: row.Username, role: row.Role, plan: row.Plan || 'free' };
 }
 
 export function deleteSession(token) {
@@ -893,9 +965,229 @@ export function purgeExpiredSessions() {
 }
 
 export function findUserByUsername(username) {
-  const row = db.prepare('SELECT Id as id, Username as username, Role as role FROM Users WHERE Username = ?').get(username);
-  return row ? { id: row.id, username: row.username, role: row.role } : null;
+  const row = db.prepare('SELECT Id as id, Username as username, Role as role, Plan as plan FROM Users WHERE Username = ?').get(username);
+  return row ? { id: row.id, username: row.username, role: row.role, plan: row.plan || 'free' } : null;
 }
+
+// ── User management ───────────────────────────────────────────────────────────
+
+export function getAllUsers() {
+  return db.prepare(`
+    SELECT u.Id as id, u.Username as username, u.Role as role, u.Plan as plan,
+           u.Timestamp as createdAt, u.LastLogin as lastLogin, u.DisplayName as displayName,
+           s.Status as subStatus, s.PeriodEnd as subPeriodEnd, s.StripeCustomerId as stripeCustomerId
+    FROM Users u
+    LEFT JOIN Subscriptions s ON s.UserId = u.Id
+    ORDER BY u.Timestamp DESC
+  `).all().map(r => ({
+    id: r.id,
+    username: r.username,
+    role: r.role,
+    plan: r.plan || 'free',
+    createdAt: r.createdAt,
+    lastLogin: r.lastLogin,
+    displayName: r.displayName,
+    subStatus: r.subStatus,
+    subPeriodEnd: r.subPeriodEnd,
+    stripeCustomerId: r.stripeCustomerId,
+  }));
+}
+
+export function getUserById(userId) {
+  const row = db.prepare(`
+    SELECT u.Id as id, u.Username as username, u.Role as role, u.Plan as plan,
+           u.Timestamp as createdAt, u.LastLogin as lastLogin, u.DisplayName as displayName,
+           s.Status as subStatus, s.PeriodEnd as subPeriodEnd, s.StripeCustomerId as stripeCustomerId,
+           s.StripeSubscriptionId as stripeSubscriptionId
+    FROM Users u
+    LEFT JOIN Subscriptions s ON s.UserId = u.Id
+    WHERE u.Id = ?
+  `).get(userId);
+  if (!row) return null;
+  return {
+    id: row.id, username: row.username, role: row.role, plan: row.plan || 'free',
+    createdAt: row.createdAt, lastLogin: row.lastLogin, displayName: row.displayName,
+    subStatus: row.subStatus, subPeriodEnd: row.subPeriodEnd,
+    stripeCustomerId: row.stripeCustomerId, stripeSubscriptionId: row.stripeSubscriptionId,
+  };
+}
+
+export function updateUserRole(userId, role) {
+  const allowed = ['user', 'pro', 'admin'];
+  if (!allowed.includes(role)) throw new Error(`Invalid role: ${role}`);
+  db.prepare('UPDATE Users SET Role = ? WHERE Id = ?').run(role, userId);
+}
+
+export function updateUserPlan(userId, plan) {
+  const allowed = ['free', 'pro', 'enterprise'];
+  if (!allowed.includes(plan)) throw new Error(`Invalid plan: ${plan}`);
+  db.prepare('UPDATE Users SET Plan = ? WHERE Id = ?').run(plan, userId);
+  // Also upsert subscription record
+  upsertSubscription(userId, {
+    plan,
+    status: plan === 'free' ? 'inactive' : 'active',
+    periodEnd: plan === 'free' ? null : new Date(Date.now() + 365 * 86400000).toISOString(),
+  });
+}
+
+export function touchLastLogin(userId) {
+  db.prepare('UPDATE Users SET LastLogin = ? WHERE Id = ?').run(now(), userId);
+}
+
+export function getUserCount() {
+  return db.prepare('SELECT COUNT(*) as c FROM Users').get().c;
+}
+
+// ── Subscription management ───────────────────────────────────────────────────
+
+export function upsertSubscription(userId, { plan, stripeCustomerId, stripeSubscriptionId, status, periodEnd } = {}) {
+  db.prepare(`
+    INSERT INTO Subscriptions (UserId, Plan, StripeCustomerId, StripeSubscriptionId, Status, PeriodEnd, UpdatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(UserId) DO UPDATE SET
+      Plan = excluded.Plan,
+      StripeCustomerId = COALESCE(excluded.StripeCustomerId, StripeCustomerId),
+      StripeSubscriptionId = COALESCE(excluded.StripeSubscriptionId, StripeSubscriptionId),
+      Status = excluded.Status,
+      PeriodEnd = excluded.PeriodEnd,
+      UpdatedAt = excluded.UpdatedAt
+  `).run(userId, plan || 'free', stripeCustomerId || null, stripeSubscriptionId || null,
+         status || 'inactive', periodEnd || null, now());
+  // Keep Users.Plan in sync
+  db.prepare('UPDATE Users SET Plan = ? WHERE Id = ?').run(plan || 'free', userId);
+}
+
+export function getSubscriptionByUser(userId) {
+  return db.prepare('SELECT * FROM Subscriptions WHERE UserId = ?').get(userId) || null;
+}
+
+export function getSubscriptionByStripeCustomer(stripeCustomerId) {
+  return db.prepare(`
+    SELECT s.*, u.Username as username
+    FROM Subscriptions s
+    JOIN Users u ON u.Id = s.UserId
+    WHERE s.StripeCustomerId = ?
+  `).get(stripeCustomerId) || null;
+}
+
+export function getSubscriptionByStripeSubscription(stripeSubscriptionId) {
+  return db.prepare(`
+    SELECT s.*, u.Id as userId
+    FROM Subscriptions s
+    JOIN Users u ON u.Id = s.UserId
+    WHERE s.StripeSubscriptionId = ?
+  `).get(stripeSubscriptionId) || null;
+}
+
+// ── Admin order / subscription management ─────────────────────────────────────
+
+/** Returns all subscriptions with user info, usage totals, and Stripe IDs.
+ *  Used by the admin Orders panel. */
+export function getAllSubscriptions() {
+  return db.prepare(`
+    SELECT
+      u.Id          AS userId,
+      u.Username    AS username,
+      u.Username    AS email,
+      u.Role        AS role,
+      u.Timestamp   AS userCreatedAt,
+      COALESCE(s.Plan,   u.Plan)   AS plan,
+      COALESCE(s.Status,'inactive') AS status,
+      s.StripeCustomerId        AS stripeCustomerId,
+      s.StripeSubscriptionId    AS stripeSubscriptionId,
+      s.PeriodEnd               AS periodEnd,
+      s.UpdatedAt               AS updatedAt,
+      COALESCE(ut.totalSolves, 0) AS totalSolves
+    FROM Users u
+    LEFT JOIN Subscriptions s ON s.UserId = u.Id
+    LEFT JOIN (
+      SELECT UserId, SUM(DeedSolves) AS totalSolves
+      FROM UsageTracking
+      GROUP BY UserId
+    ) ut ON ut.UserId = u.Id
+    ORDER BY COALESCE(s.UpdatedAt, u.Timestamp) DESC
+  `).all();
+}
+
+/** Returns MRR stats for the revenue summary card. */
+export function getRevenueStats() {
+  const PLAN_PRICE = { free: 0, pro: 29, enterprise: 99 };
+  const rows = db.prepare(`
+    SELECT COALESCE(s.Plan, u.Plan, 'free') AS plan, COUNT(*) AS cnt
+    FROM Users u
+    LEFT JOIN Subscriptions s ON s.UserId = u.Id AND s.Status = 'active'
+    GROUP BY plan
+  `).all();
+
+  let mrr = 0;
+  const breakdown = {};
+  rows.forEach(r => {
+    const price = PLAN_PRICE[r.plan] || 0;
+    mrr += price * r.cnt;
+    breakdown[r.plan] = (breakdown[r.plan] || 0) + r.cnt;
+  });
+  return { mrr, breakdown, totalUsers: rows.reduce((a, r) => a + r.cnt, 0) };
+}
+
+/** Admin override: set a user's plan directly (no Stripe required). */
+export function adminSetPlan(userId, plan, actorId) {
+  upsertSubscription(userId, {
+    plan,
+    status: plan === 'free' ? 'inactive' : 'active',
+    periodEnd: plan === 'free' ? null : undefined,
+  });
+  logAudit({
+    actorId,
+    userId,
+    action: 'admin_set_plan',
+    target: `userId=${userId}`,
+    detail: { plan }
+  });
+}
+
+/** Admin cancel: downgrade user to free and nullify Stripe fields. */
+export function adminCancelSubscription(userId, actorId) {
+  db.prepare(`
+    UPDATE Subscriptions
+    SET Plan='free', Status='cancelled', PeriodEnd=NULL, UpdatedAt=?
+    WHERE UserId=?
+  `).run(now(), userId);
+  db.prepare('UPDATE Users SET Plan=? WHERE Id=?').run('free', userId);
+  logAudit({
+    actorId,
+    userId,
+    action: 'admin_cancel_subscription',
+    target: `userId=${userId}`,
+    detail: { message: 'cancelled by admin' }
+  });
+}
+
+// ── Usage tracking ────────────────────────────────────────────────────────────
+
+
+const FREE_DAILY_DEED_LIMIT = 5;
+
+export function getDailyUsage(userId) {
+  const date = now().slice(0, 10); // YYYY-MM-DD
+  const row = db.prepare('SELECT DeedSolves FROM UsageTracking WHERE UserId = ? AND Date = ?').get(userId, date);
+  return row ? row.DeedSolves : 0;
+}
+
+export function incrementDailyUsage(userId) {
+  const date = now().slice(0, 10);
+  db.prepare(`
+    INSERT INTO UsageTracking (UserId, Date, DeedSolves) VALUES (?, ?, 1)
+    ON CONFLICT(UserId, Date) DO UPDATE SET DeedSolves = DeedSolves + 1
+  `).run(userId, date);
+}
+
+export function checkDailyLimit(userId, userPlan) {
+  if (userPlan === 'pro' || userPlan === 'enterprise') return { allowed: true, used: null, limit: null };
+  const used = getDailyUsage(userId);
+  return { allowed: used < FREE_DAILY_DEED_LIMIT, used, limit: FREE_DAILY_DEED_LIMIT };
+}
+
+export { FREE_DAILY_DEED_LIMIT };
 
 
 export function getDeedsByReferencePoint(refPointName) {
@@ -935,4 +1227,215 @@ export function switchDbPath(newPath) {
   db.pragma('journal_mode = WAL');
   initializeDatabase();
   console.log(`✓ SQLite Database path successfully switched to: ${dbPath}`);
+}
+
+// ── User CRUD ────────────────────────────────────────────────────────────────
+
+export function deleteUser(userId) {
+  // Sessions cascade via FK ON DELETE CASCADE
+  const result = db.prepare('DELETE FROM Users WHERE Id = ?').run(userId);
+  return result.changes > 0;
+}
+
+export function updateProfile(userId, { displayName } = {}) {
+  db.prepare('UPDATE Users SET DisplayName = ? WHERE Id = ?').run(displayName || null, userId);
+}
+
+export function updatePassword(userId, newPassword) {
+  const hash = hashPassword(newPassword);
+  db.prepare('UPDATE Users SET PasswordHash = ?, ForceResetPw = 0 WHERE Id = ?').run(hash, userId);
+}
+
+export function forceResetPassword(userId) {
+  // Generate a random temporary password
+  const tempPw = crypto.randomBytes(6).toString('hex'); // 12-char hex
+  const hash = hashPassword(tempPw);
+  db.prepare('UPDATE Users SET PasswordHash = ?, ForceResetPw = 1 WHERE Id = ?').run(hash, userId);
+  // Revoke all active sessions so next login uses the temp password
+  db.prepare('DELETE FROM Sessions WHERE UserId = ?').run(userId);
+  return tempPw;
+}
+
+export function verifyPasswordOnly(userId, password) {
+  const row = db.prepare('SELECT PasswordHash FROM Users WHERE Id = ?').get(userId);
+  if (!row) return false;
+  const { valid } = verifyPassword(password, row.PasswordHash);
+  return valid;
+}
+
+export function checkForceReset(userId) {
+  const row = db.prepare('SELECT ForceResetPw FROM Users WHERE Id = ?').get(userId);
+  return row?.ForceResetPw === 1;
+}
+
+// ── Session management ────────────────────────────────────────────────────────
+
+export function getUserSessions(userId) {
+  return db.prepare(`
+    SELECT Token, ExpiresAt, IpAddress, UserAgent, CreatedAt
+    FROM Sessions
+    WHERE UserId = ?
+    ORDER BY CreatedAt DESC
+  `).all(userId).map(s => ({
+    token: s.Token.substring(0, 8) + '…', // masked for security
+    tokenPrefix: s.Token.substring(0, 8),
+    fullToken: s.Token,
+    expiresAt: s.ExpiresAt,
+    ipAddress: s.IpAddress,
+    userAgent: s.UserAgent,
+    createdAt: s.CreatedAt,
+  }));
+}
+
+export function revokeSession(token) {
+  db.prepare('DELETE FROM Sessions WHERE Token = ?').run(token);
+}
+
+export function revokeAllUserSessions(userId) {
+  const result = db.prepare('DELETE FROM Sessions WHERE UserId = ?').run(userId);
+  return result.changes;
+}
+
+export function revokeAllUserSessionsExcept(userId, keepToken) {
+  const result = db.prepare('DELETE FROM Sessions WHERE UserId = ? AND Token != ?').run(userId, keepToken);
+  return result.changes;
+}
+
+// ── Audit log ────────────────────────────────────────────────────────────────
+
+export function logAudit({ userId = null, actorId = null, action, target = null, detail = null, ipAddress = null } = {}) {
+  try {
+    db.prepare(`
+      INSERT INTO AuditLog (UserId, ActorId, Action, Target, Detail, IpAddress, Timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, actorId, action, target, detail ? JSON.stringify(detail) : null, ipAddress, now());
+  } catch (e) {
+    // Audit log failures should never crash the app
+    console.warn('[AuditLog] Write failed:', e.message);
+  }
+}
+
+export function getAuditLog({ limit = 100, offset = 0, userId = null, action = null } = {}) {
+  let sql = `
+    SELECT a.Id, a.Action, a.Target, a.Detail, a.IpAddress, a.Timestamp,
+           u.Username as username, actor.Username as actorUsername
+    FROM AuditLog a
+    LEFT JOIN Users u ON u.Id = a.UserId
+    LEFT JOIN Users actor ON actor.Id = a.ActorId
+  `;
+  const params = [];
+  const conditions = [];
+  if (userId) { conditions.push('a.UserId = ?'); params.push(userId); }
+  if (action) { conditions.push('a.Action = ?'); params.push(action); }
+  if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
+  sql += ' ORDER BY a.Timestamp DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  return db.prepare(sql).all(...params).map(r => ({
+    id: r.Id,
+    action: r.Action,
+    target: r.Target,
+    detail: r.Detail ? (() => { try { return JSON.parse(r.Detail); } catch { return r.Detail; } })() : null,
+    ipAddress: r.IpAddress,
+    timestamp: r.Timestamp,
+    username: r.username,
+    actorUsername: r.actorUsername,
+  }));
+}
+
+// ── Invite tokens ─────────────────────────────────────────────────────────────
+
+export function createInviteToken({ createdByUserId, email = null, note = null, expiresInHours = 72 } = {}) {
+  const token = crypto.randomBytes(20).toString('hex'); // 40-char
+  const expiresAt = new Date(Date.now() + expiresInHours * 3600000).toISOString();
+  db.prepare(`
+    INSERT INTO InviteTokens (Token, CreatedByUserId, Email, Note, ExpiresAt, CreatedAt)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(token, createdByUserId, email || null, note || null, expiresAt, now());
+  return token;
+}
+
+export function getInviteToken(token) {
+  const row = db.prepare(`
+    SELECT it.*, u.Username as createdByUsername
+    FROM InviteTokens it
+    JOIN Users u ON u.Id = it.CreatedByUserId
+    WHERE it.Token = ?
+  `).get(token);
+  if (!row) return null;
+  return {
+    token: row.Token,
+    email: row.Email,
+    note: row.Note,
+    usedByUserId: row.UsedByUserId,
+    usedAt: row.UsedAt,
+    expiresAt: row.ExpiresAt,
+    createdAt: row.CreatedAt,
+    createdByUsername: row.createdByUsername,
+    expired: row.ExpiresAt < now(),
+    used: !!row.UsedByUserId,
+  };
+}
+
+export function redeemInviteToken(token, newUserId) {
+  const row = db.prepare('SELECT * FROM InviteTokens WHERE Token = ?').get(token);
+  if (!row) return { valid: false, reason: 'Token not found' };
+  if (row.UsedByUserId) return { valid: false, reason: 'Token already used' };
+  if (row.ExpiresAt < now()) return { valid: false, reason: 'Token expired' };
+  db.prepare('UPDATE InviteTokens SET UsedByUserId = ?, UsedAt = ? WHERE Token = ?')
+    .run(newUserId, now(), token);
+  return { valid: true, email: row.Email };
+}
+
+export function listInvites(createdByUserId = null) {
+  let sql = `
+    SELECT it.Token, it.Email, it.Note, it.ExpiresAt, it.CreatedAt,
+           it.UsedAt, it.UsedByUserId,
+           creator.Username as createdByUsername,
+           used_user.Username as usedByUsername
+    FROM InviteTokens it
+    JOIN Users creator ON creator.Id = it.CreatedByUserId
+    LEFT JOIN Users used_user ON used_user.Id = it.UsedByUserId
+  `;
+  const params = [];
+  if (createdByUserId) { sql += ' WHERE it.CreatedByUserId = ?'; params.push(createdByUserId); }
+  sql += ' ORDER BY it.CreatedAt DESC';
+  return db.prepare(sql).all(...params).map(r => ({
+    token: r.Token,
+    email: r.Email,
+    note: r.Note,
+    expiresAt: r.ExpiresAt,
+    createdAt: r.CreatedAt,
+    usedAt: r.UsedAt,
+    usedByUsername: r.usedByUsername,
+    createdByUsername: r.createdByUsername,
+    expired: r.ExpiresAt < now(),
+    used: !!r.UsedByUserId,
+  }));
+}
+
+export function revokeInviteToken(token) {
+  db.prepare('DELETE FROM InviteTokens WHERE Token = ?').run(token);
+}
+
+// ── Usage statistics per user (admin view) ────────────────────────────────────
+
+export function getUserDailyStats(userId, days = 30) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  return db.prepare(`
+    SELECT Date as date, DeedSolves as deedSolves
+    FROM UsageTracking
+    WHERE UserId = ? AND Date >= ?
+    ORDER BY Date ASC
+  `).all(userId, since);
+}
+
+export function getSystemStats() {
+  const userCount = db.prepare('SELECT COUNT(*) as c FROM Users').get().c;
+  const proCount = db.prepare("SELECT COUNT(*) as c FROM Users WHERE Plan != 'free'").get().c;
+  const sessionCount = db.prepare('SELECT COUNT(*) as c FROM Sessions WHERE ExpiresAt > ?').get(now()).c;
+  const todayDate = now().slice(0, 10);
+  const todaySolves = db.prepare('SELECT COALESCE(SUM(DeedSolves),0) as s FROM UsageTracking WHERE Date = ?').get(todayDate).s;
+  const totalSolves = db.prepare('SELECT COALESCE(SUM(DeedSolves),0) as s FROM UsageTracking').get().s;
+  return { userCount, proCount, sessionCount, todaySolves, totalSolves };
 }

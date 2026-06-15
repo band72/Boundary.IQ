@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import * as lockService from '../services/lockService.js';
 import crypto from 'crypto';
+import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -28,7 +29,7 @@ const router = Router();
 router.use(requireAuth);
 
 // Helper to extract and cache raw text from PDF or Word doc if cache is missing
-async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
+async function ensureExtractedText(filePath, fileName, fileBytes, validPath, forceOcr = false) {
   const ext = path.extname(fileName).toLowerCase();
   if (ext === '.txt') {
     try {
@@ -41,10 +42,10 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
   const base = path.parse(fileName).name;
   const extractedTxtPath = path.join(validPath, '_extracted', base + '.txt');
 
-  if (fs.existsSync(extractedTxtPath)) {
+  if (!forceOcr && fs.existsSync(extractedTxtPath)) {
     try {
       const cachedText = fs.readFileSync(extractedTxtPath, 'utf-8');
-      if (cachedText && cachedText.trim().length >= 80 && geminiVision.hasBoundaryKeywords(cachedText)) {
+      if (cachedText && cachedText.trim().length >= 80) {
         return cachedText;
       }
     } catch {}
@@ -64,12 +65,13 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
     }
 
     // Fallback: if digital text is empty or lacks boundary keywords, check the persistent disk OCR cache
-    if (!text || text.length < 80 || !geminiVision.hasBoundaryKeywords(text)) {
+    if (forceOcr || !text || text.length < 80 || !geminiVision.hasBoundaryKeywords(text)) {
       const fileHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
       const defaultCacheBase = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
       const ocrCacheDir = process.env.OCR_CACHE_DIR || path.join(defaultCacheBase, 'BoundaryQC', 'OcrCache');
       const metaPath = path.join(ocrCacheDir, `${fileHash}.json`);
-      if (fs.existsSync(metaPath)) {
+      
+      if (!forceOcr && fs.existsSync(metaPath)) {
         try {
           const metaJson = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
           if (metaJson.combinedOcrText) {
@@ -78,6 +80,16 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath) {
           }
         } catch (cacheErr) {
           console.warn('Failed to parse from disk OCR cache:', cacheErr.message);
+        }
+      } else {
+        // Run python OCR
+        try {
+          console.log(`🔍 Running OCR on ${fileName}...`);
+          const cmd = `python3 ./scripts/ocr_pdf.py "${filePath}"`;
+          const result = execSync(cmd, { encoding: 'utf-8' });
+          text = result.trim();
+        } catch (e) {
+          console.error(`OCR failed for ${fileName}:`, e.message);
         }
       }
     }
@@ -603,6 +615,7 @@ router.get('/download-batch-zip', async (req, res) => {
 router.post('/process-batch', async (req, res) => {
   let keepAlive = null;
   let hasLock = false;
+  const forceOcr = req.query.forceOcr !== undefined ? req.query.forceOcr === 'true' : (process.env.OCR_ENABLED === 'true');
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
@@ -679,7 +692,6 @@ router.post('/process-batch', async (req, res) => {
     const tasks = batch.map((filePath, index) => async () => {
       const fileName = path.basename(filePath);
       console.log(`FolderScan processing: ${fileName}`);
-      let rawDocText = '';
       let fileHash = null;
 
       try {
@@ -702,39 +714,41 @@ router.post('/process-batch', async (req, res) => {
         }
 
         // Check cache
-        const solvedCase = db.findSolvedCase(fileName, fileHash);
-        if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-          console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
-          const cachedEx = JSON.parse(solvedCase.extractionJson);
-          const cachedTr = JSON.parse(solvedCase.traverseJson);
-          let cachedWrite = null;
-          if (cachedEx.courses?.length > 0) {
-            try {
-              cachedWrite = { legalDescription: legalWriter.write({ courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter }), courseCount: cachedEx.courses.length };
-            } catch {}
+        if (!forceOcr) {
+          const solvedCase = db.findSolvedCase(fileName, fileHash);
+          if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
+            console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
+            const cachedEx = JSON.parse(solvedCase.extractionJson);
+            const cachedTr = JSON.parse(solvedCase.traverseJson);
+            let cachedWrite = null;
+            if (cachedEx.courses?.length > 0) {
+              try {
+                cachedWrite = { legalDescription: legalWriter.write({ courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter }), courseCount: cachedEx.courses.length };
+              } catch {}
+            }
+            results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
+            saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED', cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
+            return;
           }
-          results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
-          saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED', cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
-          return;
-        }
 
-        // Check skipped cache
-        const skippedCase = db.findSkippedCase(fileName, fileHash);
-        if (skippedCase?.extractionJson) {
-          console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
-          const cachedEx = JSON.parse(skippedCase.extractionJson);
-          results[index] = {
-            fileName,
-            status: 'skipped',
-            extraction: cachedEx,
-            traverse: null,
-            legalDescription: null,
-            error: null,
-            skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
-            conceptualAnalysis: cachedEx.conceptualAnalysis || null
-          };
-          saveDeedLogWrapper(req, batchId, fileName, skippedCase.parcelName || `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, fileHash);
-          return;
+          // Check skipped cache
+          const skippedCase = db.findSkippedCase(fileName, fileHash);
+          if (skippedCase?.extractionJson) {
+            console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
+            const cachedEx = JSON.parse(skippedCase.extractionJson);
+            results[index] = {
+              fileName,
+              status: 'skipped',
+              extraction: cachedEx,
+              traverse: null,
+              legalDescription: null,
+              error: null,
+              skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
+              conceptualAnalysis: cachedEx.conceptualAnalysis || null
+            };
+            saveDeedLogWrapper(req, batchId, fileName, skippedCase.parcelName || `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, fileHash);
+            return;
+          }
         }
 
         const upperName = fileName.toUpperCase();
@@ -750,7 +764,7 @@ router.post('/process-batch', async (req, res) => {
         const pob = { northing: pobN, easting: pobE };
 
         // ── Multi-Parcel Fan-Out ───────────────────────────────────────────────
-        rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+        let rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath, forceOcr);
         const namedParcels = extractNamedParcels(rawDocText);
         if (namedParcels && namedParcels.length >= 2) {
           console.log(`FolderScan: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels: ${namedParcels.map(p => p.label).join(', ')}`);
@@ -763,48 +777,50 @@ router.post('/process-batch', async (req, res) => {
             const parcelHash = crypto.createHash('sha256').update(parcelText).digest('hex');
 
             // Check solved cache for this parcel
-            const solvedCase = db.findSolvedCase(parcelFileName, parcelHash);
-            if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-              console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
-              const cachedEx = JSON.parse(solvedCase.extractionJson);
-              const cachedTr = JSON.parse(solvedCase.traverseJson);
-              let cachedWrite = null;
-              if (cachedEx.courses?.length > 0) {
-                try {
-                  cachedWrite = {
-                    legalDescription: legalWriter.write({
-                      courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
-                    }),
-                    courseCount: cachedEx.courses.length
-                  };
-                } catch {}
+            if (!forceOcr) {
+              const solvedCase = db.findSolvedCase(parcelFileName, parcelHash);
+              if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
+                console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
+                const cachedEx = JSON.parse(solvedCase.extractionJson);
+                const cachedTr = JSON.parse(solvedCase.traverseJson);
+                let cachedWrite = null;
+                if (cachedEx.courses?.length > 0) {
+                  try {
+                    cachedWrite = {
+                      legalDescription: legalWriter.write({
+                        courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
+                      }),
+                      courseCount: cachedEx.courses.length
+                    };
+                  } catch {}
+                }
+                const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
+                parcelResults.push(pRes);
+                const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+                saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
+                continue;
               }
-              const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
-              parcelResults.push(pRes);
-              const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
-              saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
-              continue;
-            }
 
-            // Check skipped cache for this parcel
-            const skippedCase = db.findSkippedCase(parcelFileName, parcelHash);
-            if (skippedCase?.extractionJson) {
-              console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
-              const cachedEx = JSON.parse(skippedCase.extractionJson);
-              const pRes = {
-                fileName: parcelFileName,
-                status: 'skipped',
-                extraction: cachedEx,
-                traverse: null,
-                legalDescription: null,
-                error: null,
-                skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
-                conceptualAnalysis: cachedEx.conceptualAnalysis || null
-              };
-              parcelResults.push(pRes);
-              const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
-              saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, parcelHash);
-              continue;
+              // Check skipped cache for this parcel
+              const skippedCase = db.findSkippedCase(parcelFileName, parcelHash);
+              if (skippedCase?.extractionJson) {
+                console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
+                const cachedEx = JSON.parse(skippedCase.extractionJson);
+                const pRes = {
+                  fileName: parcelFileName,
+                  status: 'skipped',
+                  extraction: cachedEx,
+                  traverse: null,
+                  legalDescription: null,
+                  error: null,
+                  skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
+                  conceptualAnalysis: cachedEx.conceptualAnalysis || null
+                };
+                parcelResults.push(pRes);
+                const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+                saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, parcelHash);
+                continue;
+              }
             }
 
             if (!geminiVision.hasBoundaryKeywords(parcelText)) {
@@ -1180,6 +1196,7 @@ router.post('/process-batch', async (req, res) => {
 // POST /api/folderscan/process-file
 router.post('/process-file', async (req, res) => {
   let keepAlive = null;
+  const forceOcr = req.query.forceOcr === 'true';
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });

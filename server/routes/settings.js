@@ -183,7 +183,7 @@ router.post('/keys', requireRole(['admin']), (req, res) => {
 });
 
 // Helper to save system settings back to .env file for persistence (atomic write)
-function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir) {
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir, newOcrEnabled) {
   const envPath = path.resolve(process.cwd(), '.env');
   const envTmpPath = envPath + '.tmp';
 
@@ -214,6 +214,7 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
   if (newOcrCacheDir !== undefined) vars['OCR_CACHE_DIR'] = newOcrCacheDir;
   if (newDownloadsDir !== undefined) vars['BOUNDARY_DOWNLOADS_DIR'] = newDownloadsDir;
   if (newWordDocTrainingDir !== undefined) vars['WORD_DOC_TRAINING_DIR'] = newWordDocTrainingDir;
+  if (newOcrEnabled !== undefined) vars['OCR_ENABLED'] = String(newOcrEnabled);
 
   const newLines = [];
   newLines.push('# Boundary.IQ — Environment Variables');
@@ -244,6 +245,7 @@ router.get('/system', (req, res) => {
       ocrCacheDir:        process.env.OCR_CACHE_DIR             || '',
       downloadsDir:       process.env.BOUNDARY_DOWNLOADS_DIR    || '',
       wordDocTrainingDir: process.env.WORD_DOC_TRAINING_DIR     || '',
+      ocrEnabled:        process.env.OCR_ENABLED === 'true',
     });
   } catch (ex) {
     res.status(500).json({ error: ex.message });
@@ -253,7 +255,7 @@ router.get('/system', (req, res) => {
 // POST /api/settings/system — update all path settings (admin only)
 router.post('/system', requireRole(['admin']), (req, res) => {
   try {
-    const { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir } = req.body;
+    const { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled } = req.body;
 
     // 1. Switch Database Path if changed
     if (dbPath && dbPath !== dbSvc.getDbPath()) {
@@ -270,9 +272,10 @@ router.post('/system', requireRole(['admin']), (req, res) => {
     if (ocrCacheDir !== undefined)        process.env.OCR_CACHE_DIR             = ocrCacheDir;
     if (downloadsDir !== undefined)       process.env.BOUNDARY_DOWNLOADS_DIR    = downloadsDir;
     if (wordDocTrainingDir !== undefined) process.env.WORD_DOC_TRAINING_DIR     = wordDocTrainingDir;
+    if (ocrEnabled !== undefined)         process.env.OCR_ENABLED             = String(ocrEnabled);
 
     // 4. Persist to .env file for server restarts
-    saveSystemSettingsToEnv(dbPath, scanRoots, undefined, undefined, undefined, undefined, ocrCacheDir, downloadsDir, wordDocTrainingDir);
+    saveSystemSettingsToEnv(dbPath, scanRoots, undefined, undefined, undefined, undefined, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled);
 
     res.json({
       success: true,
@@ -282,6 +285,7 @@ router.post('/system', requireRole(['admin']), (req, res) => {
       ocrCacheDir:        process.env.OCR_CACHE_DIR          || '',
       downloadsDir:       process.env.BOUNDARY_DOWNLOADS_DIR || '',
       wordDocTrainingDir: process.env.WORD_DOC_TRAINING_DIR  || '',
+      ocrEnabled:        process.env.OCR_ENABLED === 'true',
     });
   } catch (ex) {
     res.status(500).json({ error: `Failed to update system settings: ${ex.message}` });

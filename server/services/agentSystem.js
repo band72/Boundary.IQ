@@ -4,7 +4,7 @@
 import * as gemini from './geminiVision.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
-import { tryBowtieAutoFix, trySurveyorShapeCorrection, detectBacktracking } from './repair.js';
+import { tryBowtieAutoFix, trySurveyorShapeCorrection, detectBacktracking, isMeanderDeed, tryScrivenerErrorSolver, applyCompassRuleIfEligible } from './repair.js';
 
 /**
  * Rec 3 helper — produce up to 3 course-set variants by flipping the bearing
@@ -81,20 +81,31 @@ export class CogoAgent {
       }
 
       // Rec 1: linearError === 0 must always pass regardless of precisionVal parsing
-      const isPassing = isOpenEnded || linearError === 0 || linearError < 0.30 || precisionVal >= 10000;
+      let isPassing = isOpenEnded || linearError === 0 || linearError < 0.30 || precisionVal >= 10000;
+      let finalResult = result;
+      if (!isPassing) {
+        const adjusted = applyCompassRuleIfEligible(result);
+        if (adjusted.compassRuleApplied) {
+          finalResult = adjusted;
+          isPassing = true;
+        }
+      }
+      
+      const finalLinearError = finalResult.closure?.linearError || 0;
+      const finalPrecisionRatio = finalResult.closure?.precisionRatio || '1:0';
       
       return {
         success: true,
         isPassing,
-        linearError,
-        precisionRatio,
-        errorNorthing: result.closure?.errorNorthing || 0,
-        errorEasting: result.closure?.errorEasting || 0,
-        perimeter: result.perimeter || 0,
-        areaAcres: result.areaAcres || 0,
-        stations: result.stations || [],
-        adjustedStations: result.adjustedStations || [],
-        courses: result.courses || []
+        linearError: finalLinearError,
+        precisionRatio: finalPrecisionRatio,
+        errorNorthing: finalResult.closure?.errorNorthing || 0,
+        errorEasting: finalResult.closure?.errorEasting || 0,
+        perimeter: finalResult.perimeter || 0,
+        areaAcres: finalResult.areaAcres || 0,
+        stations: finalResult.stations || [],
+        adjustedStations: finalResult.adjustedStations || [],
+        courses: finalResult.courses || []
       };
     } catch (err) {
       console.warn(`[${this.name}] Traverse analysis failed:`, err.message);
@@ -123,24 +134,27 @@ export class LegalSurveyorAgent {
     this.name = 'Legal Surveyor Agent';
   }
 
-  diagnose(courses, cogoReport, pob = { northing: 5000, easting: 5000 }, units = 'Feet') {
+  diagnose(courses, cogoReport, pob = { northing: 5000, easting: 5000 }, units = 'Feet', extraction = null, isOpenEnded = false) {
     console.log(`[${this.name}] Diagnosing traverse misclosure of ${cogoReport.linearError.toFixed(4)} ft.`);
     const diagnoses = [];
 
     // 1. Hypothesis: 3-Side Meander Loop
     if (courses.length === 3) {
-      diagnoses.push({
-        type: 'MEANDER_COMPLETION',
-        confidence: 0.95,
-        message: 'Exactly 3 lines exist. Suggest appending an automated 4th meandering closure segment.',
-        apply: () => {
-          const extended = [
-            ...courses,
-            { type: 'Line', bearing: '', distance: null, isUnknown: true, description: 'Meandering line (Agentic Stage 5)' }
-          ];
-          return traverseSvc.autoFixUnknownRuns(extended, pob);
-        }
-      });
+      const isMeander = extraction ? isMeanderDeed(extraction) : false;
+      if (isMeander) {
+        diagnoses.push({
+          type: 'MEANDER_COMPLETION',
+          confidence: 0.95,
+          message: 'Exactly 3 lines exist. Suggest appending an automated 4th meandering closure segment.',
+          apply: () => {
+            const extended = [
+              ...courses,
+              { type: 'Line', bearing: '', distance: null, isUnknown: true, description: 'Meandering line (Agentic Stage 5)' }
+            ];
+            return traverseSvc.autoFixUnknownRuns(extended, pob);
+          }
+        });
+      }
     }
 
     // 2. Hypothesis: 4-Course Rectangular alignment scrivener
@@ -308,6 +322,18 @@ export class LegalSurveyorAgent {
           });
         }
       }
+    }
+    // 7. Hypothesis: Scrivener error (distance typo, bearing typo, etc.)
+    if (courses.length >= 3) {
+      diagnoses.push({
+        type: 'SCRIVENER_CORRECTION',
+        confidence: 0.82,
+        message: 'Evaluating deterministic scrivener corrections (single-course bearing/distance flips/typos).',
+        apply: () => {
+          const sRes = tryScrivenerErrorSolver({ courses }, pob, units, isOpenEnded);
+          return sRes?.courses || courses;
+        }
+      });
     }
 
     // Sort diagnoses by confidence
@@ -512,7 +538,7 @@ export class SupervisorAgent {
       }
 
       // Turn C: Call Legal Surveyor Agent to diagnose misclosure error
-      const diagnoses = this.surveyor.diagnose(extraction.courses, cogoReport, pob, units);
+      const diagnoses = this.surveyor.diagnose(extraction.courses, cogoReport, pob, units, extraction, isOpenEnded);
       turnRecord.diagnoses = diagnoses.map(d => ({ type: d.type, confidence: d.confidence, message: d.message }));
 
       let solvedWithMath = false;

@@ -5,6 +5,7 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useStatsRefresh } from '../hooks/useStatsRefresh.jsx';
 import { API } from '../config';
 import FolderBrowserModal from './FolderBrowserModal';
+import { performFrontendOcr } from '../utils/ocr';
 
 export default function BatchDeedTab() {
   const { triggerStatsRefresh } = useStatsRefresh();
@@ -15,6 +16,7 @@ export default function BatchDeedTab() {
   const [county]     = useLocalStorage('boundaryiq_batch_county', '');
   const [stateVal] = useLocalStorage('boundaryiq_batch_state', '');
   const [concurrentAgents]      = useLocalStorage('boundaryiq_concurrent_agents', 5);
+  const [frontendOcr]           = useLocalStorage('boundaryiq_frontend_ocr', false);
 
   // Point of Reference state hooks
   const [useReferencePoint, setUseReferencePoint] = useLocalStorage('boundaryiq_use_ref_point', false);
@@ -157,6 +159,7 @@ export default function BatchDeedTab() {
   const [loading, setLoading]   = useState(false);
   const [results, setResults]   = useState(null);   // BatchDeedResult | null
   const [error, setError]       = useState('');
+  const [ocrStatus, setOcrStatus] = useState('');
   const [, setExpanded] = useState({});
   const [activeIdx, setActiveIdx] = useState(0);
   const [showPrint, setShowPrint] = useState(false);
@@ -713,10 +716,35 @@ export default function BatchDeedTab() {
 
   const runBatch = async () => {
     if (!files.length) return;
-    setLoading(true); setError(''); setResults(null); setExpanded({}); setActiveIdx(0);
+    setLoading(true); setError(''); setOcrStatus(''); setResults(null); setExpanded({}); setActiveIdx(0);
     try {
+      let processedFiles = [...files];
+      if (frontendOcr) {
+        processedFiles = [];
+        for (let i = 0; i < files.length; i++) {
+          const originalFile = files[i];
+          setOcrStatus(`Running client-side OCR on ${originalFile.name} (${i + 1}/${files.length})...`);
+          try {
+            const extractedText = await performFrontendOcr(originalFile, (progressMsg) => {
+              setOcrStatus(`[${i + 1}/${files.length}] ${progressMsg}`);
+            });
+            const baseName = originalFile.name.substring(0, originalFile.name.lastIndexOf('.')) || originalFile.name;
+            const textFile = new File(
+              [extractedText],
+              `${baseName}_ocr.txt`,
+              { type: 'text/plain' }
+            );
+            processedFiles.push(textFile);
+          } catch (ocrErr) {
+            console.error(`Client OCR failed for ${originalFile.name}:`, ocrErr);
+            processedFiles.push(originalFile);
+          }
+        }
+      }
+      setOcrStatus('');
+
       const fd = new FormData();
-      files.forEach(f => fd.append('images', f));
+      processedFiles.forEach(f => fd.append('images', f));
 
       const { n: activePobN, e: activePobE } = getPobCoordinates();
       const params = new URLSearchParams({
@@ -1645,6 +1673,7 @@ export default function BatchDeedTab() {
       </div>
 
       {/* ── Error ─────────────────────────────────────────────────────────────── */}
+      {ocrStatus && <div className="alert alert-info">⚙️ {ocrStatus}</div>}
       {error && <div className="alert alert-error">⚠ {error}</div>}
 
       {/* ── Results summary + download ─────────────────────────────────────────── */}

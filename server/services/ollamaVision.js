@@ -271,6 +271,8 @@ async function generateTextOnly(prompt, model) {
       const data = await res.json();
       const rawText = data.response || '';
       if (!rawText.trim()) {
+        console.warn('Ollama response keys:', Object.keys(data));
+        console.warn('Ollama response sample:', JSON.stringify(data).slice(0, 1000));
         throw new Error('Ollama returned empty response string.');
       }
       console.log(`Ollama text [${model}] /generate → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);

@@ -9,13 +9,14 @@ router.use(requireAuth);
 
 const upload = multer({ limits: { fileSize: 51 * 1024 * 1024 } }); // 51MB
 
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']);
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf', 'text/plain']);
 
 function normalizeMime(file) {
   let mime = (file.mimetype || '').toLowerCase();
+  if (mime.includes('text') || mime.includes('plain')) return 'text/plain';
   if (ALLOWED_MIME.has(mime)) return mime;
   const ext = (file.originalname || '').split('.').pop()?.toLowerCase();
-  const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' };
+  const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf', txt: 'text/plain' };
   return map[ext] || mime;
 }
 

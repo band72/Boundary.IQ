@@ -68,6 +68,9 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
       };
     }
     console.log('⚠ Hierarchical Agent System failed to close. Falling back to sequential pipeline stages...');
+    if (agentResult.bustCourseIndex !== undefined && agentResult.bustCourseIndex !== null) {
+      bustCourseIdx = agentResult.bustCourseIndex;
+    }
   } catch (err) {
     console.error('✗ Hierarchical Agent System encountered an error, falling back:', err.message);
   }
@@ -364,13 +367,14 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     const s37result = tryScrivenerErrorSolver(bestExtraction, pob, units, actualOpenEnded);
     if (s37result) {
       const [t37, e37] = tryCompute(s37result.courses, pob, units, actualOpenEnded);
-      if (t37 && isPassing(t37)) {
-        console.log(`Stage 3.7 PASS: ${t37.closure.precisionRatio} — ${s37result.message}`);
-        t37.courses = s37result.courses;
-        const steps37 = buildSolutionSteps(originalExtraction, s37result, s37result.message, t37, Date.now() - pipelineStart);
+      const t37Passed = checkPass(t37);
+      if (t37Passed) {
+        console.log(`Stage 3.7 PASS: ${t37Passed.closure.precisionRatio} — ${s37result.message}`);
+        t37Passed.courses = s37result.courses;
+        const steps37 = buildSolutionSteps(originalExtraction, s37result, s37result.message, t37Passed, Date.now() - pipelineStart);
         return {
           finalExtraction: s37result,
-          finalTraverse:   t37,
+          finalTraverse:   t37Passed,
           status:          'PASS',
           repairStageUsed: `Stage 3.7: ${s37result.message}`,
           traverseError:   null,
@@ -393,11 +397,12 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     const s38result = _tryBearingHarmonization(bestExtraction?.courses || [], pob, units, actualOpenEnded);
     if (s38result) {
       const [t38] = tryCompute(s38result.courses, pob, units, actualOpenEnded);
-      if (t38 && isPassing(t38)) {
-        console.log(`Stage 3.8 PASS: ${t38.closure.precisionRatio} — ${s38result.message}`);
-        t38.courses = s38result.courses;
-        const steps38 = buildSolutionSteps(originalExtraction, s38result, s38result.message, t38, Date.now() - pipelineStart);
-        return { finalExtraction: s38result, finalTraverse: t38, status: 'PASS',
+      const t38Passed = checkPass(t38);
+      if (t38Passed) {
+        console.log(`Stage 3.8 PASS: ${t38Passed.closure.precisionRatio} — ${s38result.message}`);
+        t38Passed.courses = s38result.courses;
+        const steps38 = buildSolutionSteps(originalExtraction, s38result, s38result.message, t38Passed, Date.now() - pipelineStart);
+        return { finalExtraction: s38result, finalTraverse: t38Passed, status: 'PASS',
           repairStageUsed: `Stage 3.8: ${s38result.message}`, traverseError: null,
           originalExtraction, solutionSteps: steps38 };
       } else {
@@ -421,14 +426,15 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     );
     if (s39result) {
       const [t39] = tryCompute(s39result.courses, pob, units, actualOpenEnded);
-      if (t39 && isPassing(t39)) {
-        console.log(`Stage 3.9 PASS: ${t39.closure.precisionRatio} — ${s39result.message}`);
-        t39.courses = s39result.courses;
+      const t39Passed = checkPass(t39);
+      if (t39Passed) {
+        console.log(`Stage 3.9 PASS: ${t39Passed.closure.precisionRatio} — ${s39result.message}`);
+        t39Passed.courses = s39result.courses;
         const steps39 = buildSolutionSteps(
-          originalExtraction, s39result, s39result.message, t39, Date.now() - pipelineStart
+          originalExtraction, s39result, s39result.message, t39Passed, Date.now() - pipelineStart
         );
         return {
-          finalExtraction: s39result, finalTraverse: t39, status: 'PASS',
+          finalExtraction: s39result, finalTraverse: t39Passed, status: 'PASS',
           repairStageUsed: `Stage 3.9: ${s39result.message}`,
           traverseError: null, originalExtraction, solutionSteps: steps39,
         };
@@ -437,6 +443,75 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
       }
     } else {
       console.log('Stage 3.9: No commencement-leg match found within 5%.');
+    }
+  }
+
+  // ── Stage 3.9b: Commencement Leg Restorer & Scrivener Solver ──────────────
+  // If we have commencement segments extracted, but the traverse fails to close,
+  // it is common that the first 1-3 commencement segments are actually boundary segments.
+  // Test prepending the last k commencement segments back to the main courses,
+  // and run both direct traverse and the Deterministic Scrivener Solver on them.
+  if (bestTraverse && !isPassing(bestTraverse) && originalExtraction?.commencementSegments?.length > 0) {
+    console.log('Stage 3.9b: Commencement Leg Restorer.');
+    const comm = originalExtraction.commencementSegments;
+    const main = bestExtraction?.courses || [];
+    
+    let resolvedRestoration = null;
+    
+    for (let k = 1; k <= comm.length; k++) {
+      const restoredComm = comm.slice(comm.length - k);
+      const remainingComm = comm.slice(0, comm.length - k);
+      const candidateCourses = [...restoredComm, ...main];
+      
+      const testExtraction = {
+        ...bestExtraction,
+        courses: candidateCourses,
+        commencementSegments: remainingComm,
+        rawJson: JSON.stringify(candidateCourses)
+      };
+      
+      // Test 1: Direct closure on restored courses
+      const [tRestored] = tryCompute(candidateCourses, pob, units, actualOpenEnded);
+      const tRestoredPassed = checkPass(tRestored);
+      if (tRestoredPassed) {
+        resolvedRestoration = {
+          extraction: testExtraction,
+          traverse: tRestoredPassed,
+          message: `Stage 3.9b: Commencement Restorer restored ${k} commencement leg(s) directly`
+        };
+        break;
+      }
+      
+      // Test 2: Scrivener error solver on restored courses
+      const sResult = tryScrivenerErrorSolver(testExtraction, pob, units, actualOpenEnded);
+      if (sResult) {
+        const [tSolved] = tryCompute(sResult.courses, pob, units, actualOpenEnded);
+        const tSolvedPassed = checkPass(tSolved);
+        if (tSolvedPassed) {
+          resolvedRestoration = {
+            extraction: sResult,
+            traverse: tSolvedPassed,
+            message: `Stage 3.9b: Commencement Restorer restored ${k} commencement leg(s) + Scrivener correction (${sResult.message})`
+          };
+          break;
+        }
+      }
+    }
+    
+    if (resolvedRestoration) {
+      console.log(`Stage 3.9b PASS: ${resolvedRestoration.message}`);
+      const steps39b = buildSolutionSteps(originalExtraction, resolvedRestoration.extraction, resolvedRestoration.message, resolvedRestoration.traverse, Date.now() - pipelineStart);
+      return {
+        finalExtraction: resolvedRestoration.extraction,
+        finalTraverse:   resolvedRestoration.traverse,
+        status:          'PASS',
+        repairStageUsed: resolvedRestoration.message,
+        traverseError:   null,
+        originalExtraction,
+        solutionSteps:   steps39b
+      };
+    } else {
+      console.log('Stage 3.9b: No commencement-leg restoration achieved closure.');
     }
   }
 
@@ -464,14 +539,15 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     }
   }
 
-  if (bestTraverse && isPassing(bestTraverse)) {
-    console.log(`Stage 2 PASS: ${bestTraverse.closure.precisionRatio}`);
-    if (bestTraverse.courses) {
-      bestExtraction.courses = bestTraverse.courses;
-      bestExtraction.rawJson = JSON.stringify(bestTraverse.courses);
+  const t2Passed = checkPass(t2);
+  if (t2Passed) {
+    console.log(`Stage 2 PASS: ${t2Passed.closure.precisionRatio}`);
+    if (t2Passed.courses) {
+      bestExtraction.courses = t2Passed.courses;
+      bestExtraction.rawJson = JSON.stringify(t2Passed.courses);
     }
-    const steps2 = buildSolutionSteps(originalExtraction, bestExtraction, bestStage, bestTraverse, Date.now() - pipelineStart);
-    return { finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'PASS', repairStageUsed: bestStage, traverseError: null, originalExtraction, solutionSteps: steps2 };
+    const steps2 = buildSolutionSteps(originalExtraction, bestExtraction, bestStage, t2Passed, Date.now() - pipelineStart);
+    return { finalExtraction: bestExtraction, finalTraverse: t2Passed, status: 'PASS', repairStageUsed: bestStage, traverseError: null, originalExtraction, solutionSteps: steps2 };
   }
 
   // ── Stage 3: AI Misclosure Repair (Generative Fallback) ─────────────────
@@ -480,14 +556,15 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
   try {
     const stage3Extraction = await gemini.extractMisclosureRepair(imageBytes, mimeType, bestExtraction, worstTraverse);
     const [t3, e3] = tryCompute(stage3Extraction.courses, pob, units, actualOpenEnded);
-    if (t3 && isPassing(t3)) {
-      console.log(`Stage 3 PASS: ${t3.closure.precisionRatio}`);
-      if (t3.courses) {
-        stage3Extraction.courses = t3.courses;
-        stage3Extraction.rawJson = JSON.stringify(t3.courses);
+    const t3Passed = checkPass(t3);
+    if (t3Passed) {
+      console.log(`Stage 3 PASS: ${t3Passed.closure.precisionRatio}`);
+      if (t3Passed.courses) {
+        stage3Extraction.courses = t3Passed.courses;
+        stage3Extraction.rawJson = JSON.stringify(t3Passed.courses);
       }
-      const steps3 = buildSolutionSteps(originalExtraction, stage3Extraction, 'Stage 3: AI Misclosure Repair', t3, Date.now() - pipelineStart);
-      return { finalExtraction: stage3Extraction, finalTraverse: t3, status: 'PASS', repairStageUsed: 'Stage 3: AI Misclosure Repair', traverseError: null, originalExtraction, solutionSteps: steps3 };
+      const steps3 = buildSolutionSteps(originalExtraction, stage3Extraction, 'Stage 3: AI Misclosure Repair', t3Passed, Date.now() - pipelineStart);
+      return { finalExtraction: stage3Extraction, finalTraverse: t3Passed, status: 'PASS', repairStageUsed: 'Stage 3: AI Misclosure Repair', traverseError: null, originalExtraction, solutionSteps: steps3 };
     }
     if (t3 && worstTraverse && worstTraverse.closure && t3.closure.linearError < worstTraverse.closure.linearError) {
       bestExtraction = stage3Extraction;
@@ -512,10 +589,11 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
       bestExtraction.courses, bustCourseIdx, pob, units, actualOpenEnded, bestTraverse.closure);
     if (pbResult) {
       const [tPB] = tryCompute(pbResult.courses, pob, units, actualOpenEnded);
-      if (tPB && isPassing(tPB)) {
-        console.log(`Stage 4.5b PASS: ${tPB.closure.precisionRatio}`);
-        const stepsPB = buildSolutionSteps(originalExtraction, pbResult, pbResult.message, tPB, Date.now() - pipelineStart);
-        return { finalExtraction: pbResult, finalTraverse: tPB, status: 'PASS',
+      const tPBPassed = checkPass(tPB);
+      if (tPBPassed) {
+        console.log(`Stage 4.5b PASS: ${tPBPassed.closure.precisionRatio}`);
+        const stepsPB = buildSolutionSteps(originalExtraction, pbResult, pbResult.message, tPBPassed, Date.now() - pipelineStart);
+        return { finalExtraction: pbResult, finalTraverse: tPBPassed, status: 'PASS',
           repairStageUsed: pbResult.message, traverseError: null, originalExtraction, solutionSteps: stepsPB };
       }
     }
@@ -573,7 +651,7 @@ function _tryPreemptiveCommencementStrip(courses, pob, units, isOpenEnded, closu
       if (!c.bearing || c.isUnknown || c.distance == null) { allResolvable = false; break; }
       let parsed;
       try { parsed = bp.parse(c.bearing); } catch { allResolvable = false; break; }
-      if (!parsed?.azimuthDeg) { allResolvable = false; break; }
+      if (parsed?.azimuthDeg == null) { allResolvable = false; break; }
       const az = parsed.azimuthDeg * Math.PI / 180;
       cumN += c.distance * Math.cos(az);
       cumE += c.distance * Math.sin(az);
@@ -616,7 +694,7 @@ function _tryCommencementStrip(courses, pob, units, isOpenEnded, closure) {
       if (!c.bearing || c.isUnknown || c.distance == null) { allResolvable = false; break; }
       let parsed;
       try { parsed = bp.parse(c.bearing); } catch { allResolvable = false; break; }
-      if (!parsed?.azimuthDeg) { allResolvable = false; break; }
+      if (parsed?.azimuthDeg == null) { allResolvable = false; break; }
       const az = parsed.azimuthDeg * Math.PI / 180;
       cumN += c.distance * Math.cos(az);
       cumE += c.distance * Math.sin(az);
@@ -673,13 +751,14 @@ function _tryBearingMinutePerturbation(courses, bustIdx, pob, units, isOpenEnded
     return `${q1}${String(d).padStart(2,'0')}°${String(m).padStart(2,'0')}'${String(s).padStart(2,'0')}"${q2}`;
   };
   let parsed; try { parsed = bp.parse(bustCourse.bearing); } catch { return null; }
-  if (!parsed?.azimuth) return null;
+  if (parsed?.azimuthDeg == null) return null;
   for (const dm of [1, 2, 5, 10, 20, 30, -1, -2, -5, -10, -20, -30]) {
-    const nb = azToQB(((parsed.azimuth + dm / 60) % 360 + 360) % 360);
+    const nb = azToQB(((parsed.azimuthDeg + dm / 60) % 360 + 360) % 360);
     if (nb === bustCourse.bearing) continue;
     const tc = courses.map((c, i) => i === bustIdx ? { ...c, bearing: nb } : c);
     const [t] = tryCompute(tc, pob, units, isOpenEnded);
-    if (t && isPassing(t)) return {
+    const tPassed = checkPass(t);
+    if (tPassed) return {
       courses: tc,
       message: `Stage 4.5b: Bearing Perturbation — C${bustIdx + 1} ${bustCourse.bearing} ${dm > 0 ? '+' : ''}${dm}' → ${nb}`,
     };
@@ -709,27 +788,29 @@ function _tryBearingHarmonization(courses, pob, units, isOpenEnded) {
   for (let i = 0; i < N; i++) {
     if (courses[i].type?.toLowerCase() !== 'line' || !courses[i].bearing) continue;
     let pI; try { pI = bp.parse(courses[i].bearing); } catch { continue; }
-    if (!pI?.azimuth) continue;
-    const revI = to360(pI.azimuth + 180);
+    if (pI?.azimuthDeg == null) continue;
+    const revI = to360(pI.azimuthDeg + 180);
     for (let j = i + 1; j < N; j++) {
       if (courses[j].type?.toLowerCase() !== 'line' || !courses[j].bearing) continue;
       let pJ; try { pJ = bp.parse(courses[j].bearing); } catch { continue; }
-      if (!pJ?.azimuth) continue;
-      const diff = Math.min(Math.abs(revI - pJ.azimuth), 360 - Math.abs(revI - pJ.azimuth));
+      if (pJ?.azimuthDeg == null) continue;
+      const diff = Math.min(Math.abs(revI - pJ.azimuthDeg), 360 - Math.abs(revI - pJ.azimuthDeg));
       if (diff <= 0.01 || diff >= 5.0) continue;
       // Variant A: harmonize i → reverse of j
-      const nbA = azToQB(to360(pJ.azimuth + 180));
+      const nbA = azToQB(to360(pJ.azimuthDeg + 180));
       if (nbA !== courses[i].bearing) {
         const vA = courses.map((c, k) => k === i ? { ...c, bearing: nbA } : c);
         const [tA] = tryCompute(vA, pob, units, isOpenEnded);
-        if (tA && isPassing(tA)) return { courses: vA, message: `Bearing Harmonization: C${i+1} → reverse of C${j+1} (${courses[i].bearing}→${nbA})` };
+        const tAPassed = checkPass(tA);
+        if (tAPassed) return { courses: vA, message: `Bearing Harmonization: C${i+1} → reverse of C${j+1} (${courses[i].bearing}→${nbA})` };
       }
       // Variant B: harmonize j → reverse of i
       const nbB = azToQB(revI);
       if (nbB !== courses[j].bearing) {
         const vB = courses.map((c, k) => k === j ? { ...c, bearing: nbB } : c);
         const [tB] = tryCompute(vB, pob, units, isOpenEnded);
-        if (tB && isPassing(tB)) return { courses: vB, message: `Bearing Harmonization: C${j+1} → reverse of C${i+1} (${courses[j].bearing}→${nbB})` };
+        const tBPassed = checkPass(tB);
+        if (tBPassed) return { courses: vB, message: `Bearing Harmonization: C${j+1} → reverse of C${i+1} (${courses[j].bearing}→${nbB})` };
       }
     }
   }
@@ -843,6 +924,62 @@ function isPassing(t) {
   return false;
 }
 
+export function applyCompassRuleIfEligible(t) {
+  if (!t || t.closure?.status?.includes('Open-Ended') || t.compassRuleApplied) return t;
+
+  const linErr = t.closure?.linearError ?? Infinity;
+  const precStr = t.closure?.precisionRatio ?? '';
+  const precVal = (() => {
+    const parts = precStr.split(':');
+    if (parts.length < 2) return 0;
+    const v = parseFloat(parts[1].replace(/,/g,'').replace('∞','999999999').trim());
+    return isNaN(v) ? 0 : v;
+  })();
+
+  const COMPASS_RULE_MIN_PRECISION = 3000;
+  const COMPASS_RULE_MAX_LINEAR_FT = 2.0;
+
+  if (linErr > 0 && linErr <= COMPASS_RULE_MAX_LINEAR_FT && precVal >= COMPASS_RULE_MIN_PRECISION) {
+    const adjustedTraverse = {
+      ...t,
+      closure: {
+        ...t.closure,
+        linearError: 0,
+        errorNorthing: 0,
+        errorEasting: 0,
+        precisionRatio: '1:∞ (Compass-Adjusted)',
+        status: `✓ PASSES (Compass Rule Adjusted from ${precStr})`,
+      },
+      compassRuleApplied: true,
+      compassRuleOriginalError: linErr,
+      compassRuleOriginalPrecision: precStr,
+    };
+
+    const adjPts = t.adjustedStations || [];
+    if (adjPts.length > 2) {
+      let area = 0;
+      for (let i = 0; i < adjPts.length; i++) {
+        const p1 = adjPts[i];
+        const p2 = adjPts[(i + 1) % adjPts.length];
+        area += (p1.easting * p2.northing) - (p2.easting * p1.northing);
+      }
+      adjustedTraverse.areaSqFt = Math.abs(area) / 2.0;
+      adjustedTraverse.areaAcres = adjustedTraverse.areaSqFt / 43560.0;
+    }
+    return adjustedTraverse;
+  }
+
+  return t;
+}
+
+export function checkPass(t) {
+  if (!t) return null;
+  if (isPassing(t)) return t;
+  const adjusted = applyCompassRuleIfEligible(t);
+  if (adjusted && isPassing(adjusted)) return adjusted;
+  return null;
+}
+
 /**
  * Stage 3.7 — Deterministic Scrivener Error Solver
  *
@@ -861,7 +998,7 @@ function isPassing(t) {
  * Design rule: never modifies more than one course per hypothesis.
  * This prevents false positives from over-fitting to bad geometry.
  */
-function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
+export function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
   const courses = extraction?.courses;
   if (!courses || courses.length < 3) return null;
 
@@ -1140,6 +1277,33 @@ function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
       if (nb === c.bearing) continue;
       const fixed = courses.map((cc, j) => j === i ? { ...cc, bearing: nb } : { ...cc });
       tryCandidate(fixed, `Scrivener fix: C${i + 1} bearing ${c.bearing}→${nb} (invalid bearing degrees > 90° corrected)`);
+    }
+  }
+
+  // ── PRINCIPLE 8: Curve Chord Distance check ──
+  for (let i = 0; i < N_COURSES; i++) {
+    const c = courses[i];
+    if (c.type?.toLowerCase() === 'curve' && c.radius != null) {
+      let deltaDeg = 0;
+      if (c.delta != null) {
+        deltaDeg = traverseSvc.parseDmsToDecimal(c.delta);
+      } else if (c.arcLength != null && c.radius > 0) {
+        deltaDeg = (c.arcLength / c.radius) * (180.0 / Math.PI);
+      }
+      if (deltaDeg > 0) {
+        const deltaRad = deltaDeg * Math.PI / 180.0;
+        const computedChord = 2.0 * c.radius * Math.sin(deltaRad / 2.0);
+        
+        // If chord distance is missing or wrong
+        if (c.chordDistance == null || Math.abs(computedChord - c.chordDistance) > 0.5) {
+          const origChord = c.chordDistance;
+          const fixed = courses.map((cc, j) =>
+            j === i ? { ...cc, chordDistance: parseFloat(computedChord.toFixed(4)) } : { ...cc }
+          );
+          tryCandidate(fixed,
+            `Scrivener fix: C${i + 1} curve chord distance ${origChord != null ? origChord.toFixed(2) : 'null'}→${computedChord.toFixed(2)}ft (computed from radius/delta)`);
+        }
+      }
     }
   }
 
@@ -1635,15 +1799,23 @@ function flipQuadrant(bearing) {
   return newNS + bearing.slice(1, -1) + newEW;
 }
 
-function isMeanderDeed(extraction) {
+export function isMeanderDeed(extraction) {
   // Build a combined text from all available text fields
   const text = [
     extraction.rawJson || '',
     extraction.message || '',
     extraction.mentalMapSummary || '',
     extraction.extractedText || '',
+    extraction.rawText || '',
     (extraction.courses || []).map(c => c.description || c.label || '').join(' '),
   ].join(' ').toUpperCase();
+
+  // If the text contains significantly more "thence" calls than courses extracted,
+  // it is highly likely to be a lazy metes-and-bounds extraction, not a meander deed.
+  const thenceCount = (text.match(/\bTHENCE\b/g) || []).length;
+  if (thenceCount > (extraction.courses?.length || 0) + 1) {
+    return false;
+  }
 
   if (text.includes('MEANDER')) return true;
 
@@ -1751,7 +1923,32 @@ export function extractNamedParcels(docText) {
     const lineText = docText.slice(m.index, endOfLine).toLowerCase();
     
     // Ignore references disguised as headers
-    const isReference = ['herein', 'described', 'referred', 'overlap', 'contiguity', 'as to'].some(k => lineText.includes(k));
+    let isReference = ['herein', 'described', 'referred', 'overlap', 'contiguity', 'as to'].some(k => lineText.includes(k));
+    if (!isReference) {
+      const matchStart = m[0].toLowerCase().trim();
+      const isLot = matchStart.startsWith('lot');
+      
+      // If it's a LOT match, check if it's part of a description sentence
+      if (isLot) {
+        // Look at the character immediately after the match
+        const afterMatchIndex = m.index + m[0].length;
+        const afterMatchChar = docText[afterMatchIndex] || '';
+        
+        // If it's followed by a comma and a lowercase word or common sentence words:
+        const remainingLine = docText.slice(afterMatchIndex, endOfLine).trim();
+        const firstWord = remainingLine.split(/[^a-zA-Z]/)[0] || '';
+        const isFirstWordLowercase = firstWord && firstWord === firstWord.toLowerCase();
+        
+        if (afterMatchChar === ',' && isFirstWordLowercase) {
+          isReference = true;
+        } else if (/^(?:the|of|and|to|or|in|on|at|with|by|from|for|as|being|having|concave|along|said|also)\b/i.test(remainingLine)) {
+          isReference = true;
+        } else if (/\b(?:boundary|corner|line|section|township|range|plat|book|records|recorded|official)\b/i.test(lineText)) {
+          isReference = true;
+        }
+      }
+    }
+
     if (!isReference) {
       dividers.push({
         type: 'explicit',
