@@ -12,8 +12,16 @@ public class LegalDescriptionWriter
         var sb = new System.Text.StringBuilder();
         var courses = req.Courses;
         string units = req.Units ?? "feet";
-        string county = req.County ?? "______ County";
-        string state  = req.State  ?? "______";
+        string county = req.County;
+        if (string.IsNullOrEmpty(county) || county.Equals("Unknown", System.StringComparison.OrdinalIgnoreCase))
+        {
+            county = "Unknown County";
+        }
+        string state = req.State;
+        if (string.IsNullOrEmpty(state) || state.Equals("Unknown", System.StringComparison.OrdinalIgnoreCase))
+        {
+            state = "Unknown State";
+        }
         string parcel = req.ParcelDescription ?? "a parcel of land";
 
         // ── Header ──────────────────────────────────────────────────────────────

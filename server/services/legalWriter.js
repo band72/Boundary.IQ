@@ -9,8 +9,10 @@
 export function write(req) {
   const courses = req.courses;
   const units = req.units || 'feet';
-  const county = req.county || '______ County';
-  const state = req.state || '______';
+  let county = req.county;
+  if (!county || county === 'Unknown') county = 'Unknown County';
+  let state = req.state;
+  if (!state || state === 'Unknown') state = 'Unknown State';
   const parcel = req.parcelDescription || 'a parcel of land';
   const lines = [];
 

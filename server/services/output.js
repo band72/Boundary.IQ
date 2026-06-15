@@ -47,13 +47,6 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
   }
 
   try {
-    // 1. Corrected legal description
-    const legalDesc = writeResult?.legalDescription || result.legalDescription || result.extraction?.legalDesc || result.extraction?.legalDescription || '';
-    if (legalDesc) {
-      const correctedFile = shortFileNames ? 'Corrected.txt' : `${baseName}_corrected.txt`;
-      fs.writeFileSync(path.join(targetFolder, correctedFile), legalDesc);
-    }
-
     // 2. OCR / Original text file
     let rawOCR = result.extraction?.originalLegalDesc ||
                  result.originalExtraction?.originalLegalDesc ||
@@ -104,6 +97,20 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
       });
       fs.writeFileSync(path.join(targetFolder, ocrFile), lines.join('\n'));
     }
+
+    // 1. Corrected legal description (Stage 17: Prepend County and State metadata attributes)
+    const legalDesc = writeResult?.legalDescription || result.legalDescription || result.extraction?.legalDesc || result.extraction?.legalDescription || '';
+    if (legalDesc) {
+      const _inferred = inferCountyStateFromText(rawOCR || '');
+      let countyVal = result.finalExtraction?.county || result.extraction?.county || _inferred.county || 'Unknown County';
+      let stateVal = result.finalExtraction?.state || result.extraction?.state || _inferred.state || 'Unknown State';
+      if (countyVal === 'Unknown') countyVal = 'Unknown County';
+      if (stateVal === 'Unknown') stateVal = 'Unknown State';
+      const formattedLegalDesc = `County: ${countyVal}\nState: ${stateVal}\n${'='.repeat(80)}\n${legalDesc}`;
+      const correctedFile = shortFileNames ? 'Corrected.txt' : `${baseName}_corrected.txt`;
+      fs.writeFileSync(path.join(targetFolder, correctedFile), formattedLegalDesc);
+    }
+
 
     // 3. Full JSON report / Summary
     const report = {
@@ -163,8 +170,8 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
         const _inferred0 = inferCountyStateFromText(rawOCR || '');
         const skMeta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
-          county:          result.extraction?.county           || _inferred0.county || null,
-          state:           result.extraction?.state            || _inferred0.state  || null,
+          county:          result.finalExtraction?.county      || result.extraction?.county           || _inferred0.county || null,
+          state:           result.finalExtraction?.state       || result.extraction?.state            || _inferred0.state  || null,
           units:           result.extraction?.units            || 'Feet',
           areaAcres:       0,
           perimeter:       0,
@@ -203,8 +210,8 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
       try {
         const meta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
-          county:          result.extraction?.county           || _inferred1.county || null,
-          state:           result.extraction?.state            || _inferred1.state  || null,
+          county:          result.finalExtraction?.county      || result.extraction?.county           || _inferred1.county || null,
+          state:           result.finalExtraction?.state       || result.extraction?.state            || _inferred1.state  || null,
           units:           result.extraction?.units            || 'Feet',
           areaAcres:       result.traverse?.areaAcres          || 0,
           perimeter:       result.traverse?.perimeter          || 0,
@@ -222,8 +229,8 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
       try {
         const skMeta = {
           parcel:          result.extraction?.parcelDescription || path.parse(sourceFileName).name,
-          county:          result.extraction?.county           || _inferred1.county || null,
-          state:           result.extraction?.state            || _inferred1.state  || null,
+          county:          result.finalExtraction?.county      || result.extraction?.county           || _inferred1.county || null,
+          state:           result.finalExtraction?.state       || result.extraction?.state            || _inferred1.state  || null,
           units:           result.extraction?.units            || 'Feet',
           areaAcres:       result.traverse?.areaAcres          || 0,
           perimeter:       result.traverse?.perimeter          || 0,

@@ -167,8 +167,8 @@ function drawTitleBlock(ctx, x, y, w, h, meta, pageN, pageTotal, isBlueprint = f
       ['DATE', new Date().toISOString().slice(0, 10)]
     ],
     [
-      ['COUNTY / REGION', meta.county || 'UNINCORPORATED AREA'],
-      ['STATE', meta.state || 'GENERAL RECORD']
+      ['COUNTY / REGION', meta.county && meta.county !== 'Unknown' ? meta.county : 'Unknown County'],
+      ['STATE', meta.state && meta.state !== 'Unknown' ? meta.state : 'Unknown State']
     ],
     [
       ['AREA', meta.areaAcres ? `${parseFloat(meta.areaAcres).toFixed(4)} AC` : '—'],

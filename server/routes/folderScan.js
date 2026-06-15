@@ -28,6 +28,23 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
 
+// Helper to resolve county and state for metadata/legalWriter with caching fallback
+function getCountyVal(ex, fallback) {
+  if (ex?.county && ex.county !== 'Unknown') return ex.county;
+  if (fallback) return fallback;
+  const raw = ex?.rawText || ex?.originalLegalDesc || ex?.originalLegalDescription || '';
+  if (raw) return geminiVision.inferCountyStateFromText(raw).county || 'Unknown';
+  return 'Unknown';
+}
+
+function getStateVal(ex, fallback) {
+  if (ex?.state && ex.state !== 'Unknown') return ex.state;
+  if (fallback) return fallback;
+  const raw = ex?.rawText || ex?.originalLegalDesc || ex?.originalLegalDescription || '';
+  if (raw) return geminiVision.inferCountyStateFromText(raw).state || 'Unknown';
+  return 'Unknown';
+}
+
 // Helper to extract and cache raw text from PDF or Word doc if cache is missing
 async function ensureExtractedText(filePath, fileName, fileBytes, validPath, forceOcr = false) {
   const ext = path.extname(fileName).toLowerCase();
@@ -699,6 +716,22 @@ router.post('/process-batch', async (req, res) => {
         let mime = inferMimeType(fileName);
         fileHash = crypto.createHash('sha256').update(imageBytes).digest('hex');
 
+        let rawDocText = '';
+        let resolvedCounty = county;
+        let resolvedState = state;
+
+        // Resolve county/state early for caching/output accuracy
+        if (!resolvedCounty || !resolvedState) {
+          try {
+            rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+            const docInferred = geminiVision.inferCountyStateFromText(rawDocText || '');
+            resolvedCounty = resolvedCounty || docInferred.county || null;
+            resolvedState = resolvedState || docInferred.state || null;
+          } catch (err) {
+            console.warn('Failed early county/state inference:', err.message);
+          }
+        }
+
         // Check if getDocType returns 'SKIP'
         const docType = getDocType(filePath, fileName);
         if (docType === 'SKIP') {
@@ -720,14 +753,24 @@ router.post('/process-batch', async (req, res) => {
             console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
             const cachedEx = JSON.parse(solvedCase.extractionJson);
             const cachedTr = JSON.parse(solvedCase.traverseJson);
+
+            // Extract from solvedCase.parcelName if possible
+            const labelInferred = geminiVision.inferCountyStateFromText(solvedCase.parcelName || '');
+            const cacheCounty = resolvedCounty || labelInferred.county || null;
+            const cacheState = resolvedState || labelInferred.state || null;
+
+            cachedEx.county = getCountyVal(cachedEx, cacheCounty);
+            cachedEx.state = getStateVal(cachedEx, cacheState);
+
             let cachedWrite = null;
             if (cachedEx.courses?.length > 0) {
               try {
-                cachedWrite = { legalDescription: legalWriter.write({ courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter }), courseCount: cachedEx.courses.length };
+                cachedWrite = { legalDescription: legalWriter.write({ courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county: cachedEx.county, state: cachedEx.state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter }), courseCount: cachedEx.courses.length };
               } catch {}
             }
             results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
-            saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED', cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
+            const cachedLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : (solvedCase.parcelName || 'CACHED');
+            saveDeedLogWrapper(req, batchId, fileName, cachedLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
             return;
           }
 
@@ -764,7 +807,13 @@ router.post('/process-batch', async (req, res) => {
         const pob = { northing: pobN, easting: pobE };
 
         // ── Multi-Parcel Fan-Out ───────────────────────────────────────────────
-        let rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath, forceOcr);
+        if (!rawDocText) {
+          try {
+            rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath, forceOcr);
+          } catch (err) {
+            console.warn('Failed to ensure extracted text:', err.message);
+          }
+        }
         const namedParcels = extractNamedParcels(rawDocText);
         if (namedParcels && namedParcels.length >= 2) {
           console.log(`FolderScan: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels: ${namedParcels.map(p => p.label).join(', ')}`);
@@ -783,12 +832,21 @@ router.post('/process-batch', async (req, res) => {
                 console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
                 const cachedEx = JSON.parse(solvedCase.extractionJson);
                 const cachedTr = JSON.parse(solvedCase.traverseJson);
+
+                // Extract from solvedCase.parcelName if possible
+                const labelInferred = geminiVision.inferCountyStateFromText(solvedCase.parcelName || '');
+                const cacheCounty = resolvedCounty || labelInferred.county || null;
+                const cacheState = resolvedState || labelInferred.state || null;
+
+                cachedEx.county = getCountyVal(cachedEx, cacheCounty);
+                cachedEx.state = getStateVal(cachedEx, cacheState);
+
                 let cachedWrite = null;
                 if (cachedEx.courses?.length > 0) {
                   try {
                     cachedWrite = {
                       legalDescription: legalWriter.write({
-                        courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
+                        courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county: cachedEx.county, state: cachedEx.state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
                       }),
                       courseCount: cachedEx.courses.length
                     };
@@ -796,7 +854,7 @@ router.post('/process-batch', async (req, res) => {
                 }
                 const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
                 parcelResults.push(pRes);
-                const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+                const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${base}`;
                 saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
                 continue;
               }
@@ -817,7 +875,7 @@ router.post('/process-batch', async (req, res) => {
                   conceptualAnalysis: cachedEx.conceptualAnalysis || null
                 };
                 parcelResults.push(pRes);
-                const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+                const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
                 saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, parcelHash);
                 continue;
               }
@@ -835,7 +893,7 @@ router.post('/process-batch', async (req, res) => {
                 skipReason: 'Non-traversable (no boundary keywords)'
               };
               parcelResults.push(pRes);
-              const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+              const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
               saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(pRes.extraction), null, null, null, null, parcelHash);
               continue;
             }
@@ -849,10 +907,13 @@ router.post('/process-batch', async (req, res) => {
               console.log(`[FolderScan Intercept] Found PLSS in parcel ${label} (${parcelFileName}) - bypassing LLM.`, plssParsedObj);
               const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
               if (platResult && !platResult.needsManual && platResult.courses?.length > 0) {
+                const inferred = geminiVision.inferCountyStateFromText(parcelText);
                 const extraction = {
                   courses: platResult.courses,
                   classification: 'SECTION_BREAKDOWN',
                   rawText: parcelText,
+                  county: inferred.county || 'Unknown',
+                  state: inferred.state || 'Unknown',
                 };
                 const traverse = traverseSvc.compute({ pointOfBeginning: pob, courses: platResult.courses, units, isOpenEnded: false });
                 let writeResult = null;
@@ -862,8 +923,8 @@ router.post('/process-batch', async (req, res) => {
                       courses: platResult.courses,
                       pobNorthing: pobN,
                       pobEasting: pobE,
-                      county,
-                      state,
+                      county: getCountyVal(extraction, resolvedCounty),
+                      state: getStateVal(extraction, resolvedState),
                       units: units.toLowerCase(),
                       areaAcres: platResult.areaAcres,
                       perimeter: traverse?.perimeter
@@ -876,7 +937,7 @@ router.post('/process-batch', async (req, res) => {
                 parcelResults.push(pRes);
 
                 const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-                const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+                const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
                 saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
                 
                 continue; // successfully processed this parcel offline!
@@ -889,7 +950,7 @@ router.post('/process-batch', async (req, res) => {
               let pTr = pResult.finalTraverse;
               let pStatus = pResult.status;
               let pStage  = pResult.repairStageUsed;
-              const pLabel  = `[${label}] ${county && state ? `${county}, ${state}` : base}`;
+              const pLabel  = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
 
               const isNonTraversable = (!pEx.courses || pEx.courses.length === 0) &&
                 (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(pEx.classification) ||
@@ -907,7 +968,7 @@ router.post('/process-batch', async (req, res) => {
                 try {
                   pWrite = {
                     legalDescription: legalWriter.write({
-                      courses: pEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: pTr?.areaAcres, perimeter: pTr?.perimeter
+                      courses: pEx.courses, pobNorthing: pobN, pobEasting: pobE, county: getCountyVal(pEx, resolvedCounty), state: getStateVal(pEx, resolvedState), units: units.toLowerCase(), areaAcres: pTr?.areaAcres, perimeter: pTr?.perimeter
                     }),
                     courseCount: pEx.courses.length
                   };
@@ -976,10 +1037,13 @@ router.post('/process-batch', async (req, res) => {
           console.log(`[FolderScan Intercept] Found PLSS in ${fileName} - bypassing LLM.`, plssParsedObj);
           const platResult = await platLookup.resolvePlss(plssParsedObj, pob);
           if (platResult && !platResult.needsManual && platResult.courses?.length > 0) {
+            const inferred = geminiVision.inferCountyStateFromText(rawDocText);
             const extraction = {
               courses: platResult.courses,
               classification: 'SECTION_BREAKDOWN',
               rawText: rawDocText,
+              county: inferred.county || 'Unknown',
+              state: inferred.state || 'Unknown',
             };
             const traverse = traverseSvc.compute({ pointOfBeginning: pob, courses: platResult.courses, units, isOpenEnded: false });
             let writeResult = null;
@@ -989,8 +1053,8 @@ router.post('/process-batch', async (req, res) => {
                   courses: platResult.courses,
                   pobNorthing: pobN,
                   pobEasting: pobE,
-                  county,
-                  state,
+                  county: getCountyVal(extraction, resolvedCounty),
+                  state: getStateVal(extraction, resolvedState),
                   units: units.toLowerCase(),
                   areaAcres: platResult.areaAcres,
                   perimeter: traverse?.perimeter
@@ -1001,7 +1065,7 @@ router.post('/process-batch', async (req, res) => {
 
             results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
             const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-            saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
+            saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
             return;
           }
         }
@@ -1043,7 +1107,7 @@ router.post('/process-batch', async (req, res) => {
         let writeResult = null;
         if (extraction.courses?.length > 0) {
           try {
-            writeResult = { legalDescription: legalWriter.write({ courses: extraction.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: traverse?.areaAcres, perimeter: traverse?.perimeter }), courseCount: extraction.courses.length };
+            writeResult = { legalDescription: legalWriter.write({ courses: extraction.courses, pobNorthing: pobN, pobEasting: pobE, county: getCountyVal(extraction, resolvedCounty), state: getStateVal(extraction, resolvedState), units: units.toLowerCase(), areaAcres: traverse?.areaAcres, perimeter: traverse?.perimeter }), courseCount: extraction.courses.length };
           } catch {}
         }
 
@@ -1056,7 +1120,7 @@ router.post('/process-batch', async (req, res) => {
           try {
             let platResult = null;
             if (isLotBlock) {
-              platResult = await platLookup.resolveLotBlock(extraction, county);
+              platResult = await platLookup.resolveLotBlock(extraction, resolvedCounty);
             } else {
               const rawText = extraction.rawText || extraction.rawJson || '';
               const parsed  = plssParser.parsePlss(rawText) || plssParser.parsePlss(extraction.mentalMapSummary || '');
@@ -1068,10 +1132,10 @@ router.post('/process-batch', async (req, res) => {
               extraction.courses = platResult.courses;
               const traverse = traverseSvc.compute({ pointOfBeginning: pob, courses: platResult.courses, units, isOpenEnded: false });
               let writeResult = null;
-              try { writeResult = { legalDescription: legalWriter.write({ courses: platResult.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: platResult.areaAcres, perimeter: traverse?.perimeter }), courseCount: platResult.courses.length }; } catch {}
+              try { writeResult = { legalDescription: legalWriter.write({ courses: platResult.courses, pobNorthing: pobN, pobEasting: pobE, county: getCountyVal(extraction, resolvedCounty), state: getStateVal(extraction, resolvedState), units: units.toLowerCase(), areaAcres: platResult.areaAcres, perimeter: traverse?.perimeter }), courseCount: platResult.courses.length }; } catch {}
               const stageLabel = `Stage 3.5: PlatLookup Tier ${platResult.tier} (${isLotBlock ? 'LOT_BLOCK' : 'PLSS'})${platResult.isFallback ? ' [fallback grid]' : ''}`;
               results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
-              saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
+              saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
               return;
             } else if (platResult?.needsManual) {
               results[index] = {
@@ -1125,7 +1189,7 @@ router.post('/process-batch', async (req, res) => {
 
         results[index] = { fileName, status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error', extraction, traverse, legalDescription: writeResult, error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction, solutionSteps: repairResult.solutionSteps || null };
 
-        const parcelLabel = county && state ? `${county}, ${state}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
+        const parcelLabel = resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
         const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
         saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson, fileHash);
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
@@ -1338,6 +1402,22 @@ router.post('/process-file', async (req, res) => {
 
     // Check cache (unless forced)
     const force = req.query.force === 'true';
+    let rawDocText = '';
+    let resolvedCounty = county;
+    let resolvedState = state;
+
+    // Resolve county/state early for caching/output accuracy
+    if (!resolvedCounty || !resolvedState) {
+      try {
+        rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+        const docInferred = geminiVision.inferCountyStateFromText(rawDocText || '');
+        resolvedCounty = resolvedCounty || docInferred.county || null;
+        resolvedState = resolvedState || docInferred.state || null;
+      } catch (err) {
+        console.warn('Failed early county/state inference:', err.message);
+      }
+    }
+
     if (!force) {
       const solvedCase = db.findSolvedCase(fileName, fileHash);
       if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
@@ -1353,6 +1433,15 @@ router.post('/process-file', async (req, res) => {
           // Fall through to full processing below
         } else {
           console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
+
+          // Extract from solvedCase.parcelName if possible
+          const labelInferred = geminiVision.inferCountyStateFromText(solvedCase.parcelName || '');
+          const cacheCounty = resolvedCounty || labelInferred.county || null;
+          const cacheState = resolvedState || labelInferred.state || null;
+
+          cachedEx.county = getCountyVal(cachedEx, cacheCounty);
+          cachedEx.state = getStateVal(cachedEx, cacheState);
+
           let cachedWrite = null;
           if (courses.length > 0) {
             try {
@@ -1361,8 +1450,8 @@ router.post('/process-file', async (req, res) => {
                   courses,
                   pobNorthing: pobN,
                   pobEasting: pobE,
-                  county,
-                  state,
+                  county: cachedEx.county,
+                  state: cachedEx.state,
                   units: units.toLowerCase(),
                   areaAcres: cachedTr.areaAcres ?? cachedTr.AreaAcres ?? 0,
                   perimeter: cachedTr.perimeter ?? cachedTr.Perimeter ?? 0
@@ -1374,10 +1463,18 @@ router.post('/process-file', async (req, res) => {
           const result = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true };
           const linErr = cachedTr.closure?.linearError ?? cachedTr.Closure?.LinearError ?? 0;
           const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
-          saveDeedLogWrapper(req, batchId, fileName, solvedCase.parcelName || 'CACHED',
+          const cachedLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : (solvedCase.parcelName || 'CACHED');
+          saveDeedLogWrapper(req, batchId, fileName, cachedLabel,
             courses.length, linErr,
             parsePrecisionRatio(precRatio), solvedCase.status || 'PASS', 'Stage 5: SQLite Case Finder Solved',
             solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
+
+          if (autoOutput) {
+            try {
+              const outputFolder = getOrCreateOutputFolder(req, validPath);
+              await output.writeResultFiles(outputFolder, fileName, result, cachedWrite, shortFileNames, showConceptualDetail);
+            } catch (ex) { console.warn('Auto-output failed:', ex.message); }
+          }
 
           await sendResponse('success', result);
           return;
@@ -1428,7 +1525,13 @@ router.post('/process-file', async (req, res) => {
     }
     const pob = chainedPob;
 
-    const rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+    if (!rawDocText) {
+      try {
+        rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+      } catch (err) {
+        console.warn('Failed to ensure extracted text:', err.message);
+      }
+    }
 
     // ── Multi-Parcel Fan-Out (process-file) ──────────────────────────────────
     const namedParcels = extractNamedParcels(rawDocText);
@@ -1449,12 +1552,21 @@ router.post('/process-file', async (req, res) => {
             console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
             const cachedEx = JSON.parse(solvedCase.extractionJson);
             const cachedTr = JSON.parse(solvedCase.traverseJson);
+
+            // Extract from solvedCase.parcelName if possible
+            const labelInferred = geminiVision.inferCountyStateFromText(solvedCase.parcelName || '');
+            const cacheCounty = resolvedCounty || labelInferred.county || null;
+            const cacheState = resolvedState || labelInferred.state || null;
+
+            cachedEx.county = getCountyVal(cachedEx, cacheCounty);
+            cachedEx.state = getStateVal(cachedEx, cacheState);
+
             let cachedWrite = null;
             if (cachedEx.courses?.length > 0) {
               try {
                 cachedWrite = {
                   legalDescription: legalWriter.write({
-                    courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
+                    courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county: cachedEx.county, state: cachedEx.state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter
                   }),
                   courseCount: cachedEx.courses.length
                 };
@@ -1462,7 +1574,7 @@ router.post('/process-file', async (req, res) => {
             }
             const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
             parcelResults.push(pRes);
-            const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+            const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${baseName}`;
             saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
             continue;
           }
@@ -1482,7 +1594,7 @@ router.post('/process-file', async (req, res) => {
               conceptualAnalysis: cachedEx.conceptualAnalysis || null
             };
             parcelResults.push(pRes);
-            const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+            const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
             saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, parcelHash);
             continue;
           }
@@ -1500,7 +1612,7 @@ router.post('/process-file', async (req, res) => {
             skipReason: 'Non-traversable (no boundary keywords)'
           };
           parcelResults.push(pRes);
-          const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+          const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
           saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, 0, 0, 0, 'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(pRes.extraction), null, null, null, null, parcelHash);
           continue;
         }
@@ -1526,8 +1638,8 @@ router.post('/process-file', async (req, res) => {
                   courses: platResult.courses,
                   pobNorthing: pobN,
                   pobEasting: pobE,
-                  county,
-                  state,
+                  county: getCountyVal(extraction, resolvedCounty),
+                  state: getStateVal(extraction, resolvedState),
                   units: units.toLowerCase(),
                   areaAcres: platResult.areaAcres,
                   perimeter: traverse?.perimeter
@@ -1540,7 +1652,7 @@ router.post('/process-file', async (req, res) => {
             parcelResults.push(pRes);
 
             const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-            const pLabel = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+            const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
             saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
             
             continue;
@@ -1553,7 +1665,7 @@ router.post('/process-file', async (req, res) => {
           let pTr = pResult.finalTraverse;
           let pStatus = pResult.status;
           let pStage  = pResult.repairStageUsed;
-          const pLabel  = `[${label}] ${county && state ? `${county}, ${state}` : baseName}`;
+          const pLabel  = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
 
           const isNonTraversable = (!pEx.courses || pEx.courses.length === 0) &&
             (['PLAT', 'LOT_BLOCK', 'SECTION_BREAKDOWN'].includes(pEx.classification) ||
@@ -1571,7 +1683,7 @@ router.post('/process-file', async (req, res) => {
             try {
               pWrite = {
                 legalDescription: legalWriter.write({
-                  courses: pEx.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: pTr?.areaAcres, perimeter: pTr?.perimeter
+                  courses: pEx.courses, pobNorthing: pobN, pobEasting: pobE, county: getCountyVal(pEx, resolvedCounty), state: getStateVal(pEx, resolvedState), units: units.toLowerCase(), areaAcres: pTr?.areaAcres, perimeter: pTr?.perimeter
                 }),
                 courseCount: pEx.courses.length
               };
@@ -1661,8 +1773,8 @@ router.post('/process-file', async (req, res) => {
                 courses: platResult.courses,
                 pobNorthing: pobN,
                 pobEasting: pobE,
-                county,
-                state,
+                county: getCountyVal(extraction, resolvedCounty),
+                state: getStateVal(extraction, resolvedState),
                 units: units.toLowerCase(),
                 areaAcres: platResult.areaAcres,
                 perimeter: traverse?.perimeter
@@ -1673,7 +1785,7 @@ router.post('/process-file', async (req, res) => {
 
           const result = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, cached: false, platLookup: platResult };
           const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-          saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+          saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
           
           if (autoOutput) {
             try {
@@ -1737,7 +1849,7 @@ router.post('/process-file', async (req, res) => {
     let writeResult = null;
     if (extraction.courses?.length > 0) {
       try {
-        writeResult = { legalDescription: legalWriter.write({ courses: extraction.courses, pobNorthing: pobN, pobEasting: pobE, county, state, units: units.toLowerCase(), areaAcres: traverse?.areaAcres, perimeter: traverse?.perimeter }), courseCount: extraction.courses.length };
+        writeResult = { legalDescription: legalWriter.write({ courses: extraction.courses, pobNorthing: pobN, pobEasting: pobE, county: getCountyVal(extraction, resolvedCounty), state: getStateVal(extraction, resolvedState), units: units.toLowerCase(), areaAcres: traverse?.areaAcres, perimeter: traverse?.perimeter }), courseCount: extraction.courses.length };
       } catch {}
     }
 
@@ -1786,7 +1898,7 @@ router.post('/process-file', async (req, res) => {
       conceptualAnalysis: extraction.conceptualAnalysis || null
     };
 
-    const parcelLabel = county && state ? `${county}, ${state}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
+    const parcelLabel = resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
     const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
     saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson, fileHash);
     if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
@@ -2181,18 +2293,29 @@ router.post('/retry-failed', async (req, res) => {
         let activeMime = mime;
         let activeIsOpenEnded = isOpenEnded;
 
+        let rawDocText = '';
+        try {
+          rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
+        } catch (err) {
+          console.warn(`Retry ensureExtractedText failed for ${fileName}:`, err.message);
+        }
+        const docInferred = geminiVision.inferCountyStateFromText(rawDocText || '');
+        const resolvedCounty = county || docInferred.county || null;
+        const resolvedState = state || docInferred.state || null;
+
         if (fileName.includes('__')) {
           const parts = fileName.split('__');
           const label = parts[1].split('.')[0].toUpperCase();
-          const rawDocText = await ensureExtractedText(filePath, fileName, imageBytes, validPath);
-          const namedParcels = extractNamedParcels(rawDocText);
-          if (namedParcels) {
-            const matchedParcel = namedParcels.find(p => p.label === label);
-            if (matchedParcel) {
-              console.log(`Retry: Found matched parcel text for label "${label}" in ${fileName}`);
-              activeImageBytes = Buffer.from(matchedParcel.text, 'utf-8');
-              activeMime = 'text/plain';
-              activeIsOpenEnded = detectOpenEnded(matchedParcel.text, fileName, false);
+          if (rawDocText) {
+            const namedParcels = extractNamedParcels(rawDocText);
+            if (namedParcels) {
+              const matchedParcel = namedParcels.find(p => p.label === label);
+              if (matchedParcel) {
+                console.log(`Retry: Found matched parcel text for label "${label}" in ${fileName}`);
+                activeImageBytes = Buffer.from(matchedParcel.text, 'utf-8');
+                activeMime = 'text/plain';
+                activeIsOpenEnded = detectOpenEnded(matchedParcel.text, fileName, false);
+              }
             }
           }
         }
@@ -2225,7 +2348,7 @@ router.post('/retry-failed', async (req, res) => {
                 const extraction = repairResult.finalExtraction;
                 const traverse  = repairResult.finalTraverse;
                 const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-                saveDeedLogWrapper(req, batchId, fileName, county && state ? `${county}, ${state}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [${provider}:${model}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
+                saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [${provider}:${model}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
                 fixed++;
                 succeeded = true;
                 send('file-pass', { fileName, model, stage: repairResult.repairStageUsed, status: repairResult.status, area: traverse?.areaAcres?.toFixed(4) ?? 'n/a', fixed, total: queue.length });

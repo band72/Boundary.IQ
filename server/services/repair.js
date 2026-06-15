@@ -32,16 +32,44 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
 }
 
 function finalizeResult(result) {
-  if (result && result.finalTraverse) {
-    const stations = result.finalTraverse.adjustedStations || result.finalTraverse.stations;
-    if (stations && stations.length >= 3) {
-      const hasSelfIntersection = detectSelfIntersection(stations);
-      result.finalTraverse.hasSelfIntersection = hasSelfIntersection;
-      if (hasSelfIntersection) {
-        result.hasSelfIntersection = true;
-        result.selfIntersectionComment = 'Warning: Boundary has self-intersecting lines (bowtie).';
-        if (!result.traverseError?.includes('Self-intersecting')) {
-          result.traverseError = (result.traverseError ? result.traverseError + '; ' : '') + 'Warning: Self-intersecting boundary detected.';
+  if (result) {
+    if (!result.finalExtraction) result.finalExtraction = result.extraction || {};
+    
+    // Stage 17: Resolve county and state from raw OCR text
+    let rawText = result.finalExtraction.rawText || 
+                  result.finalExtraction.originalLegalDesc || 
+                  result.finalExtraction.originalLegalDescription || 
+                  result.originalExtraction?.rawText || 
+                  result.originalExtraction?.originalLegalDesc || 
+                  result.originalExtraction?.originalLegalDescription || 
+                  '';
+                  
+    const inferred = gemini.inferCountyStateFromText(rawText);
+    
+    if (!result.finalExtraction.county || result.finalExtraction.county === 'Unknown') {
+      result.finalExtraction.county = inferred.county || 'Unknown County';
+    }
+    if (!result.finalExtraction.state || result.finalExtraction.state === 'Unknown') {
+      result.finalExtraction.state = inferred.state || 'Unknown State';
+    }
+    
+    // Sync to extraction as well
+    if (result.extraction) {
+      result.extraction.county = result.finalExtraction.county;
+      result.extraction.state = result.finalExtraction.state;
+    }
+
+    if (result.finalTraverse) {
+      const stations = result.finalTraverse.adjustedStations || result.finalTraverse.stations;
+      if (stations && stations.length >= 3) {
+        const hasSelfIntersection = detectSelfIntersection(stations);
+        result.finalTraverse.hasSelfIntersection = hasSelfIntersection;
+        if (hasSelfIntersection) {
+          result.hasSelfIntersection = true;
+          result.selfIntersectionComment = 'Warning: Boundary has self-intersecting lines (bowtie).';
+          if (!result.traverseError?.includes('Self-intersecting')) {
+            result.traverseError = (result.traverseError ? result.traverseError + '; ' : '') + 'Warning: Self-intersecting boundary detected.';
+          }
         }
       }
     }
