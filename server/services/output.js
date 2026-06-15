@@ -111,6 +111,8 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
       processedAt: new Date().toISOString(),
       status: result.status,
       error: result.error,
+      hasSelfIntersection: result.traverse?.hasSelfIntersection || result.hasSelfIntersection || false,
+      selfIntersectionComment: result.selfIntersectionComment || (result.traverse?.hasSelfIntersection ? 'Warning: Boundary has self-intersecting lines (bowtie).' : null),
       extraction: result.extraction,
       traverse: result.traverse,
       legalDescription: legalDesc || null,
@@ -227,6 +229,7 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
           perimeter:       result.traverse?.perimeter          || 0,
           basisOfBearings: result.extraction?.basisOfBearings  || null,
           status:          result.status                       || null,
+          hasSelfIntersection: result.traverse?.hasSelfIntersection || result.hasSelfIntersection || false,
         };
         const closure          = result.traverse?.closure          || null;
         const legalDesc        = writeResult?.legalDescription     || null;
@@ -337,6 +340,7 @@ export function writeBatchSummary(outputFolder, sourcePath, results, elapsedMs) 
         courses: r.extraction?.courses?.length || 0,
         linearError: r.traverse?.closure?.linearError || null,
         precision: r.traverse?.closure?.precisionRatio || null,
+        hasSelfIntersection: r.traverse?.hasSelfIntersection || r.hasSelfIntersection || false,
         error: r.error,
       })),
     };
@@ -380,6 +384,9 @@ export function writeBatchSummary(outputFolder, sourcePath, results, elapsedMs) 
       const errorField = errVal.padEnd(12);
       
       txtLines.push(`${statusField}${coursesField}${precisionField}${errorField}${r.fileName}`);
+      if (r.traverse?.hasSelfIntersection || r.hasSelfIntersection) {
+        txtLines.push(`         [WARNING] Self-intersecting boundary (bowtie) detected.`);
+      }
       if (r.status === 'skipped' && r.skipReason) {
         txtLines.push(`         [SKIP REASON] ${r.skipReason}`);
       } else if (r.status === 'error' && r.error) {

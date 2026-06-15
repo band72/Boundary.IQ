@@ -27,6 +27,29 @@ const PASS_PRECISION_RATIO = 10000.0;
  * @returns {Promise<object>} RepairResult
  */
 export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpenEnded = false, fileName = '', maxTurns = 3) {
+  const result = await _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
+  return finalizeResult(result);
+}
+
+function finalizeResult(result) {
+  if (result && result.finalTraverse) {
+    const stations = result.finalTraverse.adjustedStations || result.finalTraverse.stations;
+    if (stations && stations.length >= 3) {
+      const hasSelfIntersection = detectSelfIntersection(stations);
+      result.finalTraverse.hasSelfIntersection = hasSelfIntersection;
+      if (hasSelfIntersection) {
+        result.hasSelfIntersection = true;
+        result.selfIntersectionComment = 'Warning: Boundary has self-intersecting lines (bowtie).';
+        if (!result.traverseError?.includes('Self-intersecting')) {
+          result.traverseError = (result.traverseError ? result.traverseError + '; ' : '') + 'Warning: Self-intersecting boundary detected.';
+        }
+      }
+    }
+  }
+  return result;
+}
+
+async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenEnded = false, fileName = '', maxTurns = 3) {
   const pipelineStart = Date.now();
   let bustCourseIdx = -1;  // Index of the most-suspected single-bust course (-1 = unknown)
 
@@ -601,24 +624,28 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
 
   if (isMeanderDeed(bestExtraction)) {
     console.log('Stage 4: Detected MEANDER deed (water boundary).');
+    const hasSelfIntersection = bestTraverse ? detectSelfIntersection(bestTraverse.adjustedStations || bestTraverse.stations) : false;
     return {
       finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'MEANDER',
       repairStageUsed: 'Stage 4: Meander Deed (Water Boundary)',
       traverseError: bestTraverse
-        ? `Closure error ${bestTraverse.closure?.linearError?.toFixed(4)} ft — deed contains meander/water boundary lines.`
+        ? `Closure error ${bestTraverse.closure?.linearError?.toFixed(4)} ft — deed contains meander/water boundary lines.` + (hasSelfIntersection ? ' Warning: Self-intersecting boundary detected.' : '')
         : (traverseError || 'Deed geometry contains calculation errors or missing meander parameters.'),
       originalExtraction,
+      hasSelfIntersection,
     };
   }
 
   console.log('Stage 4: Marking deed for adjacent-lot boundary review.');
+  const hasSelfIntersection = bestTraverse ? detectSelfIntersection(bestTraverse.adjustedStations || bestTraverse.stations) : false;
   return {
     finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'FAIL',
     repairStageUsed: 'Stage 4: Needs Adjacent Lot Review',
     traverseError: bestTraverse
-      ? `Closure error ${bestTraverse.closure?.linearError?.toFixed(4)} ft after all repair stages.`
+      ? `Closure error ${bestTraverse.closure?.linearError?.toFixed(4)} ft after all repair stages.` + (hasSelfIntersection ? ' Warning: Self-intersecting boundary detected.' : '')
       : (traverseError || 'Deed geometry contains calculation errors or missing curve parameters.'),
     originalExtraction,
+    hasSelfIntersection,
   };
 }
 

@@ -1128,7 +1128,7 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED: draw the mapcheck / closure verification box
 // ─────────────────────────────────────────────────────────────────────────────
-function drawMapcheck(ctx, x, y, w, h, closure, units, isBlueprint = false) {
+function drawMapcheck(ctx, x, y, w, h, closure, units, isBlueprint = false, hasSelfIntersection = false) {
   ctx.strokeStyle = isBlueprint ? '#38bdf8' : C_BLACK; ctx.lineWidth = 1;
   ctx.strokeRect(x, y, w, h);
   drawPanelHeader(ctx, x, y, w, 16, 'MAPCHECK / CLOSURE VERIFICATION', isBlueprint);
@@ -1175,6 +1175,15 @@ function drawMapcheck(ctx, x, y, w, h, closure, units, isBlueprint = false) {
       ctx.restore();
     }
   });
+
+  if (closure?.hasSelfIntersection || hasSelfIntersection) {
+    ctx.save();
+    ctx.font = 'bold 7.5px sans-serif';
+    ctx.fillStyle = '#ef4444';
+    ctx.textAlign = 'right';
+    ctx.fillText('⚠️ SELF-INTERSECTING (BOWTIE)', x + w - 8, y + h - 10);
+    ctx.restore();
+  }
 }
 
 function drawSheetNotes(ctx, x, y, w, h, title, lines, pageN, pageTotal, isBlueprint = false) {
@@ -1300,7 +1309,7 @@ function renderPage1(stations, adjusted, courses, meta, closure, showConceptualD
   const notesW   = W - MARGIN * 2 - TB_W - 8;
 
   // Mapcheck box
-  drawMapcheck(ctx, MARGIN, footerY, notesW, footerH, closure, meta.units, isBlueprint);
+  drawMapcheck(ctx, MARGIN, footerY, notesW, footerH, closure, meta.units, isBlueprint, meta.hasSelfIntersection);
 
   // Title block
   drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 1, 5, isBlueprint);
@@ -1651,11 +1660,15 @@ function renderPage4(legalDescription, meta, isBlueprint = false) {
   const footerY = bodyY + bodyH + 6;
   const footerH = H - footerY - MARGIN - 2;
   const notesW  = W - MARGIN * 2 - TB_W - 8;
+  const notes = [
+    '1. This legal description represents a mathematical compilation of recorded deed and plat data.',
+    '2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.',
+  ];
+  if (meta.hasSelfIntersection) {
+    notes.push('3. WARNING: Self-intersecting boundary (bowtie) detected in final geometry.');
+  }
   drawSheetNotes(ctx, MARGIN, footerY, notesW, footerH,
-    'SHEET NOTES & CERTIFICATION', [
-      '1. This legal description represents a mathematical compilation of recorded deed and plat data.',
-      '2. All coordinate geometry (COGO) calculations computed using standard traverse adjustments.',
-    ], 5, 6, isBlueprint);
+    'SHEET NOTES & CERTIFICATION', notes, 5, 6, isBlueprint);
   drawTitleBlock(ctx, MARGIN + notesW + 8, footerY, TB_W, footerH, meta, 5, 6, isBlueprint);
 
   return canvas.toBuffer('image/png');

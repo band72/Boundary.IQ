@@ -99,7 +99,7 @@ export function compute(req) {
     }
   }
 
-  const closure = { errorNorthing: errorN, errorEasting: errorE, linearError, perimeter, precisionRatio: ratio, status };
+  const closure = { errorNorthing: errorN, errorEasting: errorE, linearError, perimeter, precisionRatio: ratio, status, hasSelfIntersection };
 
   // Area via Shoelace
   const areaSqFt = shoelaceArea(adjusted);
