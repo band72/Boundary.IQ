@@ -17,7 +17,7 @@ export { init, getActiveProvider, getActiveModel, getOpenAiBaseUrl, setProvider,
 // PDF cache access (needed by extractBoundary for LOT_BLOCK fallback)
 import { pdfOcrCache, computePdfHash } from './llm/pdfProcessor.js';
 import { pruneLongText } from './llm/ocrPostProcess.js';
-import { extractRaw } from './llm/dispatcher.js';
+import { extractRaw, getActiveProvider, getActiveModel } from './llm/dispatcher.js';
 import { createChildLogger as _cl } from '../logger.js';
 
 const log = _cl('geminiVision');
@@ -87,13 +87,13 @@ Return ONLY valid JSON. No conversational text or markdown fences.`;
 }
 
 export async function extractBoundary(buffer, mimeType, feedback = null) {
-  let prompt = activeProvider === 'ollama' ? buildOllamaExtractionPrompt() : buildExtractionPrompt();
+  let prompt = getActiveProvider() === 'ollama' ? buildOllamaExtractionPrompt() : buildExtractionPrompt();
   if (feedback) {
     prompt += `\n\n=========================================\nCRITICAL RE-READ DIRECTIONS FROM THE SUPERVISOR / GEOMETRY ENGINE:\n=========================================\n${feedback}\n\nRe-read the original document and correct the segments list carefully based on this feedback.`;
   }
   const rawText = await extractRaw(buffer, mimeType, prompt);
 
-  console.log(`${activeProvider} raw extraction:`, rawText.substring(0, 200) + '...');
+  console.log(`${getActiveProvider()} raw extraction:`, rawText.substring(0, 200) + '...');
 
   let { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis, referencePointName, commencementSegments, originalLegalDesc } = parseStructuredResponse(rawText);
 
@@ -124,7 +124,7 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
   return {
     rawJson: cleanJson,
     courses,
-    message: `Extracted ${courses.length} courses using ${activeProvider}/${activeModel}. Classification: ${classification}.`,
+    message: `Extracted ${courses.length} courses using ${getActiveProvider()}/${getActiveModel()}. Classification: ${classification}.`,
     classification,
     preambleFound,
     isOpenEnded: !!isOpenEnded,
@@ -161,7 +161,7 @@ Your task:
 
 Return ONLY the corrected JSON object (same schema as original extraction).`;
 
-  if (activeProvider === 'ollama') {
+  if (getActiveProvider() === 'ollama') {
     repairPrompt += `\n\nIMPORTANT: Keep your thought process extremely brief (under 5 sentences). Do not repeat rules or explain your steps. Output the corrected JSON object immediately after your thoughts.`;
   }
 
@@ -171,7 +171,7 @@ Return ONLY the corrected JSON object (same schema as original extraction).`;
   const { courses, classification, preambleFound, isOpenEnded, cleanJson, originalLegalDesc } = parseStructuredResponse(rawText);
   return {
     rawJson: cleanJson, courses,
-    message: `Stage 3 AI Repair (${activeProvider}/${activeModel}): ${courses.length} courses. Classification: ${classification}.`,
+    message: `Stage 3 AI Repair (${getActiveProvider()}/${getActiveModel()}): ${courses.length} courses. Classification: ${classification}.`,
     classification, preambleFound, isOpenEnded: !!isOpenEnded,
     originalLegalDesc: originalLegalDesc || badExtraction.originalLegalDesc || null
   };

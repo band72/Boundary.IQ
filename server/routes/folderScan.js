@@ -746,13 +746,14 @@ router.post('/process-batch', async (req, res) => {
       const fileName = path.basename(filePath);
       console.log(`FolderScan processing: ${fileName}`);
       let fileHash = null;
+      let rawDocText = '';
 
       try {
         let imageBytes = await fs.promises.readFile(filePath);
         let mime = inferMimeType(fileName);
         fileHash = crypto.createHash('sha256').update(imageBytes).digest('hex');
 
-        let rawDocText = '';
+        rawDocText = '';
         let resolvedCounty = county;
         let resolvedState = state;
 
