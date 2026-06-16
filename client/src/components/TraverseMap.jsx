@@ -177,13 +177,16 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
     ctx.fill();
 
     // Draw boundary lines
-    ctx.beginPath();
     ctx.strokeStyle = '#3d7fff';
     ctx.lineWidth = 2.5;
     ctx.moveTo(tx(densePts[0].easting), ty(densePts[0].northing));
     for (let i = 1; i < densePts.length; i++) ctx.lineTo(tx(densePts[i].easting), ty(densePts[i].northing));
     ctx.closePath();
     ctx.stroke();
+
+    const leaderStyle = localStorage.getItem('boundaryiq_leader_style') || 'arc';
+    const labelContentMode = localStorage.getItem('boundaryiq_label_content_mode') || 'auto';
+
     // Compute resolved non-overlapping positions for labels
     const resolvedPoints = pts.map(p => ({ x: tx(p.easting), y: ty(p.northing) }));
     const resolvedLabels = resolveLabels(ctx, resolvedPoints, courses, W, H, {
@@ -195,7 +198,9 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
       vertexRadius: 4.5,
       showStations: pts.length <= 30,
       showSegments: true,
-      showConceptualDetail: false
+      showConceptualDetail: false,
+      leaderStyle,
+      labelContentMode
     });
 
     // Visual Error / Misclosure gap dashed red line
@@ -218,14 +223,15 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
       // Label the misclosure line
       ctx.fillStyle = '#ff4d6d';
       ctx.font = 'bold 9px Inter, sans-serif';
-      ctx.fillText(`Error: ${closeGap.toFixed(3)}'`, (xLast + xFirst) / 2 + 8, (yLast + yFirst) / 2 - 4);
+      ctx.textAlign = 'left';
+      ctx.fillText(`Misclosure: ${closeGap.toFixed(2)} ft`, Math.max(10, Math.min(xLast, xFirst) + 5), Math.max(10, Math.min(yLast, yFirst) - 5));
     }
 
-    // Corner pin node drawing
+    // Draw station nodes
     pts.forEach((p, i) => {
-      const x = tx(p.easting), y = ty(p.northing);
+      const px = tx(p.easting), py = ty(p.northing);
       ctx.beginPath();
-      ctx.arc(x, y, i === 0 ? 6.5 : 4.5, 0, Math.PI * 2);
+      ctx.arc(px, py, i === 0 ? 5 : 3, 0, Math.PI * 2);
       ctx.fillStyle = i === 0 ? '#00d4a8' : '#3d7fff';
       ctx.fill();
       ctx.strokeStyle = '#090e1a';
@@ -240,7 +246,20 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
           const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
           ctx.beginPath();
           ctx.moveTo(lbl.anchorX, lbl.anchorY);
-          ctx.lineTo(intersection.x, intersection.y);
+          if (lbl.leaderStyle === 'arc') {
+            const dx = intersection.x - lbl.anchorX;
+            const dy = intersection.y - lbl.anchorY;
+            const dist = Math.hypot(dx, dy) || 1e-9;
+            const midX = (lbl.anchorX + intersection.x) / 2;
+            const midY = (lbl.anchorY + intersection.y) / 2;
+            const px = -dy / dist;
+            const py = dx / dist;
+            const controlX = midX + px * dist * 0.2;
+            const controlY = midY + py * dist * 0.2;
+            ctx.quadraticCurveTo(controlX, controlY, intersection.x, intersection.y);
+          } else {
+            ctx.lineTo(intersection.x, intersection.y);
+          }
           ctx.strokeStyle = 'rgba(168, 196, 255, 0.6)';
           ctx.lineWidth = 0.8;
           ctx.stroke();
@@ -285,7 +304,20 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
           const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
           ctx.beginPath();
           ctx.moveTo(lbl.anchorX, lbl.anchorY);
-          ctx.lineTo(intersection.x, intersection.y);
+          if (lbl.leaderStyle === 'arc') {
+            const dx = intersection.x - lbl.anchorX;
+            const dy = intersection.y - lbl.anchorY;
+            const dist = Math.hypot(dx, dy) || 1e-9;
+            const midX = (lbl.anchorX + intersection.x) / 2;
+            const midY = (lbl.anchorY + intersection.y) / 2;
+            const px = -dy / dist;
+            const py = dx / dist;
+            const controlX = midX + px * dist * 0.2;
+            const controlY = midY + py * dist * 0.2;
+            ctx.quadraticCurveTo(controlX, controlY, intersection.x, intersection.y);
+          } else {
+            ctx.lineTo(intersection.x, intersection.y);
+          }
           ctx.strokeStyle = 'rgba(168, 196, 255, 0.6)';
           ctx.lineWidth = 0.8;
           ctx.stroke();

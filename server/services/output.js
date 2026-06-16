@@ -36,7 +36,7 @@ export function createOutputFolder(sourceFolder) {
  * Write output files for a single processed deed result.
  * Returns the combined PDF path if one was written, else null.
  */
-export async function writeResultFiles(outputFolder, sourceFileName, result, writeResult, shortFileNames = false, showConceptualDetail = false) {
+export async function writeResultFiles(outputFolder, sourceFileName, result, writeResult, shortFileNames = false, showConceptualDetail = false, leaderStyle = 'arc', labelContentMode = 'auto') {
   const baseName = path.parse(sourceFileName).name;
   let targetFolder = outputFolder;
   if (shortFileNames) {
@@ -270,7 +270,7 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
         const pages = sketch.renderSketchPages(
           stations, adjusted, courses, skMeta,
           closure, legalDesc, origLegalDesc, origCourses, showConceptualDetail,
-          false, rawOCR || null
+          false, rawOCR || null, leaderStyle, labelContentMode
         );
 
         const pageLabels = ['sketch_p1', 'sketch_p2_ocr', 'sketch_p3', 'sketch_p4', 'sketch_p5', 'sketch_p6'];

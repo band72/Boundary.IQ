@@ -703,6 +703,8 @@ router.post('/process-batch', async (req, res) => {
     const autoOutput = req.query.autoOutput === 'true';
     const shortFileNames = req.query.shortFileNames === 'true';
     const showConceptualDetail = req.query.showConceptualDetail === 'true';
+    const leaderStyle = req.query.leaderStyle || 'arc';
+    const labelContentMode = req.query.labelContentMode || 'auto';
 
     const allProcessable = getSupportedFiles(validPath).filter(f => {
       const stats = fs.statSync(f);
@@ -1256,10 +1258,10 @@ router.post('/process-batch', async (req, res) => {
           if (!r) continue;
           if (r.isMultiParcel && r.parcels) {
             for (const pr of r.parcels) {
-              await output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
+              await output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
             }
           } else {
-            await output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription, shortFileNames, showConceptualDetail);
+            await output.writeResultFiles(outputFolder, r.fileName, r, r.legalDescription, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
           }
         }
         output.writeBatchSummary(outputFolder, req.query.path, results, Date.now() - start);
@@ -1380,6 +1382,8 @@ router.post('/process-file', async (req, res) => {
     const autoOutput = req.query.autoOutput === 'true';
     const shortFileNames = req.query.shortFileNames === 'true';
     const showConceptualDetail = req.query.showConceptualDetail === 'true';
+    const leaderStyle = req.query.leaderStyle || 'arc';
+    const labelContentMode = req.query.labelContentMode || 'auto';
 
     // Start keepalive heartbeat immediately to prevent idle connection timeout
     res.setHeader('Content-Type', 'application/json');
@@ -1429,7 +1433,7 @@ router.post('/process-file', async (req, res) => {
       if (autoOutput) {
         try {
           const outputFolder = getOrCreateOutputFolder(req, validPath);
-          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
@@ -1509,7 +1513,7 @@ router.post('/process-file', async (req, res) => {
           if (autoOutput) {
             try {
               const outputFolder = getOrCreateOutputFolder(req, validPath);
-              await output.writeResultFiles(outputFolder, fileName, result, cachedWrite, shortFileNames, showConceptualDetail);
+              await output.writeResultFiles(outputFolder, fileName, result, cachedWrite, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
             } catch (ex) { console.warn('Auto-output failed:', ex.message); }
           }
 
@@ -1781,7 +1785,7 @@ router.post('/process-file', async (req, res) => {
           try {
             const outputFolder = getOrCreateOutputFolder(req, validPath);
             for (const pr of parcelResults) {
-              await output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail);
+              await output.writeResultFiles(outputFolder, pr.fileName, pr, pr.legalDescription, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
             }
           } catch (ex) { console.warn('Auto-output failed:', ex.message); }
         }
@@ -1827,7 +1831,7 @@ router.post('/process-file', async (req, res) => {
           if (autoOutput) {
             try {
               const outputFolder = getOrCreateOutputFolder(req, validPath);
-              await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
+              await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
             } catch (ex) { console.warn('Auto-output failed:', ex.message); }
           }
 
@@ -1854,7 +1858,7 @@ router.post('/process-file', async (req, res) => {
       if (autoOutput) {
         try {
           const outputFolder = getOrCreateOutputFolder(req, validPath);
-          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
@@ -1914,7 +1918,7 @@ router.post('/process-file', async (req, res) => {
       if (autoOutput) {
         try {
           const outputFolder = getOrCreateOutputFolder(req, validPath);
-          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail);
+          await output.writeResultFiles(outputFolder, fileName, result, null, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
         } catch (ex) { console.warn('Auto-output failed:', ex.message); }
       }
 
@@ -1954,7 +1958,7 @@ router.post('/process-file', async (req, res) => {
     if (autoOutput) {
       try {
         const outputFolder = getOrCreateOutputFolder(req, validPath);
-        await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail);
+        await output.writeResultFiles(outputFolder, fileName, result, writeResult, shortFileNames, showConceptualDetail, leaderStyle, labelContentMode);
       } catch (ex) { console.warn('Auto-output failed:', ex.message); }
     }
 

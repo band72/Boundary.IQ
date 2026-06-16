@@ -397,6 +397,14 @@ export default function PrintBlueprint({
     return localStorage.getItem('boundaryiq_blueprint_theme') === 'true';
   });
 
+  const [leaderStyle, setLeaderStyle] = useState(() => {
+    return localStorage.getItem('boundaryiq_leader_style') || 'arc';
+  });
+
+  const [labelContentMode, setLabelContentMode] = useState(() => {
+    return localStorage.getItem('boundaryiq_label_content_mode') || 'auto';
+  });
+
   useEffect(() => {
     localStorage.setItem('boundaryiq_show_conceptual_detail', showConceptualDetail);
   }, [showConceptualDetail]);
@@ -404,6 +412,14 @@ export default function PrintBlueprint({
   useEffect(() => {
     localStorage.setItem('boundaryiq_blueprint_theme', blueprintTheme);
   }, [blueprintTheme]);
+
+  useEffect(() => {
+    localStorage.setItem('boundaryiq_leader_style', leaderStyle);
+  }, [leaderStyle]);
+
+  useEffect(() => {
+    localStorage.setItem('boundaryiq_label_content_mode', labelContentMode);
+  }, [labelContentMode]);
 
 
   const isMultiPagePrint = true;
@@ -1153,7 +1169,9 @@ export default function PrintBlueprint({
         vertexRadius: 3,
         showStations: labeledPts.length <= 35,
         showSegments: showLabels,
-        showConceptualDetail: showConceptualDetail
+        showConceptualDetail: showConceptualDetail,
+        leaderStyle,
+        labelContentMode
       });
 
       // Draw all resolved labels
@@ -1167,7 +1185,20 @@ export default function PrintBlueprint({
             const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
             ctx.beginPath();
             ctx.moveTo(lbl.anchorX, lbl.anchorY);
-            ctx.lineTo(intersection.x, intersection.y);
+            if (lbl.leaderStyle === 'arc') {
+              const dx = intersection.x - lbl.anchorX;
+              const dy = intersection.y - lbl.anchorY;
+              const dist = Math.hypot(dx, dy) || 1e-9;
+              const midX = (lbl.anchorX + intersection.x) / 2;
+              const midY = (lbl.anchorY + intersection.y) / 2;
+              const px = -dy / dist;
+              const py = dx / dist;
+              const controlX = midX + px * dist * 0.2;
+              const controlY = midY + py * dist * 0.2;
+              ctx.quadraticCurveTo(controlX, controlY, intersection.x, intersection.y);
+            } else {
+              ctx.lineTo(intersection.x, intersection.y);
+            }
             ctx.strokeStyle = leaderColor;
             ctx.lineWidth = 0.8;
             ctx.stroke();
@@ -1213,7 +1244,20 @@ export default function PrintBlueprint({
             const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
             ctx.beginPath();
             ctx.moveTo(lbl.anchorX, lbl.anchorY);
-            ctx.lineTo(intersection.x, intersection.y);
+            if (lbl.leaderStyle === 'arc') {
+              const dx = intersection.x - lbl.anchorX;
+              const dy = intersection.y - lbl.anchorY;
+              const dist = Math.hypot(dx, dy) || 1e-9;
+              const midX = (lbl.anchorX + intersection.x) / 2;
+              const midY = (lbl.anchorY + intersection.y) / 2;
+              const px = -dy / dist;
+              const py = dx / dist;
+              const controlX = midX + px * dist * 0.2;
+              const controlY = midY + py * dist * 0.2;
+              ctx.quadraticCurveTo(controlX, controlY, intersection.x, intersection.y);
+            } else {
+              ctx.lineTo(intersection.x, intersection.y);
+            }
             ctx.strokeStyle = leaderColor;
             ctx.lineWidth = 0.8;
             ctx.stroke();
@@ -1615,6 +1659,48 @@ export default function PrintBlueprint({
               <input type="checkbox" checked={blueprintTheme} onChange={e => setBlueprintTheme(e.target.checked)} />
               Blueprint Style (Dark Mode)
             </label>
+            <div style={{ marginTop: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Leader Style</label>
+                <select
+                  value={leaderStyle}
+                  onChange={e => setLeaderStyle(e.target.value)}
+                  style={{
+                    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="arc">Arc (Curved)</option>
+                  <option value="straight">Straight</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)' }}>Label Mode</label>
+                <select
+                  value={labelContentMode}
+                  onChange={e => setLabelContentMode(e.target.value)}
+                  style={{
+                    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="auto">Auto-Table (Full Labels)</option>
+                  <option value="tags">Tags Only</option>
+                </select>
+              </div>
+            </div>
           </div>
 
 

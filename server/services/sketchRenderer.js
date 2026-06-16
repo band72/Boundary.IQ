@@ -374,7 +374,17 @@ function drawTreeSymbol(ctx, cx, cy, r, isBlueprint = false) {
 // ─────────────────────────────────────────────────────────────────────────────
 function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, meta = {}) {
   const { x: rx, y: ry, w: rw, h: rh } = region;
-  const { showRaw = true, showAdj = true, showGrid = true, showLabels = true, uncorrected = false, showConceptualDetail = false, isBlueprint = false } = opts;
+  const {
+    showRaw = true,
+    showAdj = true,
+    showGrid = true,
+    showLabels = true,
+    uncorrected = false,
+    showConceptualDetail = false,
+    isBlueprint = false,
+    leaderStyle = 'arc',
+    labelContentMode = 'auto'
+  } = opts;
 
   const isOpenEnded = opts.isOpenEnded || meta.isOpenEnded || false;
 
@@ -1006,7 +1016,9 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
     vertexRadius: 3,
     showStations: labelPts.length <= 35,
     showSegments: showLabels,
-    showConceptualDetail: showConceptualDetail
+    showConceptualDetail: showConceptualDetail,
+    leaderStyle,
+    labelContentMode
   });
 
   // Draw all resolved labels
@@ -1020,7 +1032,20 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
         const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
         ctx.beginPath();
         ctx.moveTo(lbl.anchorX, lbl.anchorY);
-        ctx.lineTo(intersection.x, intersection.y);
+        if (lbl.leaderStyle === 'arc') {
+          const dx = intersection.x - lbl.anchorX;
+          const dy = intersection.y - lbl.anchorY;
+          const dist = Math.hypot(dx, dy) || 1e-9;
+          const midX = (lbl.anchorX + intersection.x) / 2;
+          const midY = (lbl.anchorY + intersection.y) / 2;
+          const px = -dy / dist;
+          const py = dx / dist;
+          const controlX = midX + px * dist * 0.2;
+          const controlY = midY + py * dist * 0.2;
+          ctx.quadraticCurveTo(controlX, controlY, intersection.x, intersection.y);
+        } else {
+          ctx.lineTo(intersection.x, intersection.y);
+        }
         ctx.strokeStyle = leaderColor;
         ctx.lineWidth = 0.8;
         ctx.stroke();
@@ -1065,7 +1090,20 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
         const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
         ctx.beginPath();
         ctx.moveTo(lbl.anchorX, lbl.anchorY);
-        ctx.lineTo(intersection.x, intersection.y);
+        if (lbl.leaderStyle === 'arc') {
+          const dx = intersection.x - lbl.anchorX;
+          const dy = intersection.y - lbl.anchorY;
+          const dist = Math.hypot(dx, dy) || 1e-9;
+          const midX = (lbl.anchorX + intersection.x) / 2;
+          const midY = (lbl.anchorY + intersection.y) / 2;
+          const px = -dy / dist;
+          const py = dx / dist;
+          const controlX = midX + px * dist * 0.2;
+          const controlY = midY + py * dist * 0.2;
+          ctx.quadraticCurveTo(controlX, controlY, intersection.x, intersection.y);
+        } else {
+          ctx.lineTo(intersection.x, intersection.y);
+        }
         ctx.strokeStyle = leaderColor;
         ctx.lineWidth = 0.8;
         ctx.stroke();
@@ -1300,7 +1338,7 @@ function drawLegalDescBox(ctx, x, y, w, h, text, headerText, isBlueprint = false
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 1 — Main boundary sketch + Mapcheck footer + Title block
 // ─────────────────────────────────────────────────────────────────────────────
-function renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail = false, isBlueprint = false) {
+function renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail = false, isBlueprint = false, leaderStyle = 'arc', labelContentMode = 'auto') {
   const { canvas, ctx } = newCanvas();
   drawPageFrame(ctx, isBlueprint);
 
@@ -1333,7 +1371,7 @@ function renderPage1(stations, adjusted, courses, meta, closure, showConceptualD
 
   if (rawPts.length >= 2) {
     drawBoundaryGeometry(ctx, rawPts, adjPts, courses,
-      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH }, { showConceptualDetail, isBlueprint, isOpenEnded: meta.isOpenEnded || false }, meta);
+      { x: MARGIN, y: mapY, w: W - MARGIN * 2, h: mapH }, { showConceptualDetail, isBlueprint, isOpenEnded: meta.isOpenEnded || false, leaderStyle, labelContentMode }, meta);
   } else {
     ctx.fillStyle = isBlueprint ? '#94a3b8' : '#888888'; ctx.font = 'italic 16px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1809,14 +1847,14 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
  * @returns {{ page1, page2, page3, page4, page5, page6 }}  Each value is a PNG Buffer
  */
 export function renderSketchPages(stations, adjusted, courses, meta = {},
-  closure, legalDescription, originalLegalDesc, originalCourses, showConceptualDetail = false, blueprintTheme = false, rawOcrText = null) {
+  closure, legalDescription, originalLegalDesc, originalCourses, showConceptualDetail = false, blueprintTheme = false, rawOcrText = null, leaderStyle = 'arc', labelContentMode = 'auto') {
   const isBlueprint = blueprintTheme || meta.blueprintTheme || meta.theme === 'blueprint' || process.env.BLUEPRINT_THEME === 'true';
 
   if (meta) {
     meta.legalDescription = legalDescription || originalLegalDesc || '';
   }
   return {
-    page1: renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail, isBlueprint),
+    page1: renderPage1(stations, adjusted, courses, meta, closure, showConceptualDetail, isBlueprint, leaderStyle, labelContentMode),
     page2: renderOcrPage(rawOcrText || null, meta, 2, 6, isBlueprint),
     page3: renderPage2(originalLegalDesc || legalDescription || null, meta, isBlueprint),
     page4: renderPage3(courses, meta, isBlueprint),

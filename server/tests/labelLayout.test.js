@@ -56,7 +56,8 @@ describe('labelLayout Utility Tests', () => {
     it('successfully places station and segment labels in non-overlapping positions', () => {
       const resolved = resolveLabels(ctx, points, courses, W, H, {
         showStations: true,
-        showSegments: true
+        showSegments: true,
+        labelContentMode: 'tags'
       });
 
       // We expect 4 station labels (POB, 1, 2, 3) and 4 segment labels (L1, L2, L3, L4)
@@ -146,6 +147,64 @@ describe('labelLayout Utility Tests', () => {
           showSegments: true
         });
       }).not.toThrow();
+    });
+
+    it('formats segments as full labels in auto mode if segment is long enough', () => {
+      const longPoints = [
+        { x: 100, y: 100 },
+        { x: 400, y: 100 }
+      ];
+      const longCourses = [
+        { type: 'Line', bearing: 'N 45°00\'00" E', distance: 300 }
+      ];
+
+      const resolved = resolveLabels(ctx, longPoints, longCourses, W, H, {
+        showStations: false,
+        showSegments: true,
+        labelContentMode: 'auto'
+      });
+
+      expect(resolved).toHaveLength(1);
+      const lbl = resolved[0];
+      expect(lbl.type).toBe('segment');
+      expect(lbl.text).toContain('45');
+      expect(lbl.text).toContain('300');
+      expect(lbl.useTable).toBe(false);
+    });
+
+    it('falls back to tags in auto mode if segment is too short', () => {
+      const shortPoints = [
+        { x: 100, y: 100 },
+        { x: 105, y: 100 }
+      ];
+      const shortCourses = [
+        { type: 'Line', bearing: 'N 45°00\'00" E', distance: 5 }
+      ];
+
+      const resolved = resolveLabels(ctx, shortPoints, shortCourses, W, H, {
+        showStations: false,
+        showSegments: true,
+        labelContentMode: 'auto'
+      });
+
+      expect(resolved).toHaveLength(1);
+      const lbl = resolved[0];
+      expect(lbl.type).toBe('segment');
+      expect(lbl.text).toBe('L1');
+      expect(lbl.useTable).toBe(true);
+    });
+
+    it('propagates the leaderStyle configuration', () => {
+      const resolved = resolveLabels(ctx, points, courses, W, H, {
+        showStations: true,
+        showSegments: true,
+        leaderStyle: 'arc'
+      });
+
+      expect(resolved.length).toBeGreaterThan(0);
+      resolved.forEach(lbl => {
+        expect(lbl.leaderStyle).toBe('arc');
+      });
     });
   });
 });

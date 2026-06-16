@@ -15,6 +15,8 @@ export function resolveLabels(ctx, pts, courses, W, H, options = {}) {
     showStations = true,
     showSegments = true,
     showConceptualDetail = false,
+    leaderStyle = 'arc',
+    labelContentMode = 'auto',
   } = options;
 
   const placedBoxes = [];
@@ -99,6 +101,7 @@ export function resolveLabels(ctx, pts, courses, W, H, options = {}) {
               rotated: false,
               angle: 0,
               needsLeader: d > 12,
+              leaderStyle,
             });
             placedBoxes.push(box);
             placed = true;
@@ -124,6 +127,7 @@ export function resolveLabels(ctx, pts, courses, W, H, options = {}) {
           rotated: false,
           angle: 0,
           needsLeader: false,
+          leaderStyle,
         });
       }
     });
@@ -146,11 +150,22 @@ export function resolveLabels(ctx, pts, courses, W, H, options = {}) {
       if (!p1 || !p2) return;
 
       const isCurve = (c.type || '').toLowerCase() === 'curve';
-      const text = isCurve ? `C${curveIndex++}` : `L${lineIndex++}`;
+      const tagText = isCurve ? `C${curveIndex++}` : `L${lineIndex++}`;
 
-      const textWidth = ctx.measureText(text).width;
-      const w = textWidth + segmentPaddingX * 2;
-      const h = 12 + segmentPaddingY * 2;
+      // Format full label text (bearing + distance / radius + arcLength)
+      let fullLabelText = '';
+      if (isCurve) {
+        const r = c.radius ? `R=${c.radius}'` : '';
+        const l = (c.arcLength || c.distance) ? `L=${c.arcLength || c.distance}'` : '';
+        fullLabelText = [r, l].filter(Boolean).join(' ');
+      } else {
+        const brg = c.bearing ? c.bearing.trim() : '';
+        const dist = c.distance ? `${c.distance}'` : '';
+        fullLabelText = [brg, dist].filter(Boolean).join(' ');
+      }
+      if (!fullLabelText) {
+        fullLabelText = tagText;
+      }
 
       // Midpoint & segment angle
       const dx = p2.x - p1.x;
@@ -177,119 +192,183 @@ export function resolveLabels(ctx, pts, courses, W, H, options = {}) {
         oy = -py;
       }
 
-      let placed = false;
-
-      // Offset direction based on showConceptualDetail (inwards vs outwards)
+      // Side multiplier based on showConceptualDetail (inwards vs outwards)
       const sideMultiplier = showConceptualDetail ? -1 : 1;
 
-      // Try 1: Parallel rotated label close to segment (outward / inward based on config)
-      const testDistances = [11 * sideMultiplier, -11 * sideMultiplier];
+      let placed = false;
 
-      for (const distVal of testDistances) {
-        const cx = midX + distVal * ox;
-        const cy = midY + distVal * oy;
+      // Try placing full label if mode is 'auto' and segment is long enough
+      if (labelContentMode === 'auto' && fullLabelText !== tagText) {
+        const textWidth = ctx.measureText(fullLabelText).width;
+        const w_full = textWidth + segmentPaddingX * 2;
+        const h_full = 12 + segmentPaddingY * 2;
 
-        // Rotated bounding box calculation (AABB)
-        const ex = Math.abs(w/2 * Math.cos(theta)) + Math.abs(h/2 * Math.sin(theta));
-        const fillY = Math.abs(w/2 * Math.sin(theta)) + Math.abs(h/2 * Math.cos(theta));
+        // Try parallel close placement only if line is long enough to fit text
+        if (len >= w_full + 15) {
+          const testDistances = [11 * sideMultiplier, -11 * sideMultiplier];
+          for (const distVal of testDistances) {
+            const cx = midX + distVal * ox;
+            const cy = midY + distVal * oy;
 
-        const box = {
-          minX: cx - ex,
-          maxX: cx + ex,
-          minY: cy - fillY,
-          maxY: cy + fillY
-        };
-
-        if (!hasCollision(box) && !isOutOfBounds(box)) {
-          resolvedLabels.push({
-            type: 'segment',
-            text,
-            isCurve,
-            anchorX: midX,
-            anchorY: midY,
-            x: cx,
-            y: cy,
-            width: w,
-            height: h,
-            rotated: true,
-            angle: theta,
-            needsLeader: false
-          });
-          placedBoxes.push(box);
-          placed = true;
-          break;
-        }
-      }
-
-      // Try 2: Horizontal placement with leaders
-      if (!placed) {
-        const distances = [20, 30, 40, 50];
-        const perpAngle = Math.atan2(oy, ox);
-        
-        // Try perp outward, perp inward, then oblique angles
-        const candidateAngles = [
-          perpAngle,
-          perpAngle + Math.PI,
-          perpAngle + Math.PI / 4,
-          perpAngle - Math.PI / 4,
-          perpAngle + 3 * Math.PI / 4,
-          perpAngle - 3 * Math.PI / 4,
-        ];
-
-        for (const d of distances) {
-          for (const angle of candidateAngles) {
-            const cx = midX + d * Math.cos(angle);
-            const cy = midY + d * Math.sin(angle);
+            // Rotated bounding box calculation (AABB)
+            const ex = Math.abs(w_full / 2 * Math.cos(theta)) + Math.abs(h_full / 2 * Math.sin(theta));
+            const fillY = Math.abs(w_full / 2 * Math.sin(theta)) + Math.abs(h_full / 2 * Math.cos(theta));
 
             const box = {
-              minX: cx - w/2,
-              maxX: cx + w/2,
-              minY: cy - h/2,
-              maxY: cy + h/2
+              minX: cx - ex,
+              maxX: cx + ex,
+              minY: cy - fillY,
+              maxY: cy + fillY
             };
 
             if (!hasCollision(box) && !isOutOfBounds(box)) {
               resolvedLabels.push({
                 type: 'segment',
-                text,
+                text: fullLabelText,
                 isCurve,
+                courseIndex: i,
+                useTable: false,
+                leaderStyle,
                 anchorX: midX,
                 anchorY: midY,
                 x: cx,
                 y: cy,
-                width: w,
-                height: h,
-                rotated: false,
-                angle: 0,
-                needsLeader: true
+                width: w_full,
+                height: h_full,
+                rotated: true,
+                angle: theta,
+                needsLeader: false
               });
               placedBoxes.push(box);
               placed = true;
               break;
             }
           }
-          if (placed) break;
         }
       }
 
-      // Fallback
+      // If full text did not fit or mode is 'tags', use the tag (L1, C1...)
       if (!placed) {
-        const cx = midX + 11 * ox * sideMultiplier;
-        const cy = midY + 11 * oy * sideMultiplier;
-        resolvedLabels.push({
-          type: 'segment',
-          text,
-          isCurve,
-          anchorX: midX,
-          anchorY: midY,
-          x: cx,
-          y: cy,
-          width: w,
-          height: h,
-          rotated: true,
-          angle: theta,
-          needsLeader: false
-        });
+        const textWidth = ctx.measureText(tagText).width;
+        const w_tag = textWidth + segmentPaddingX * 2;
+        const h_tag = 12 + segmentPaddingY * 2;
+
+        // Try 1: Parallel rotated tag close to segment
+        const testDistances = [11 * sideMultiplier, -11 * sideMultiplier];
+        for (const distVal of testDistances) {
+          const cx = midX + distVal * ox;
+          const cy = midY + distVal * oy;
+
+          const ex = Math.abs(w_tag / 2 * Math.cos(theta)) + Math.abs(h_tag / 2 * Math.sin(theta));
+          const fillY = Math.abs(w_tag / 2 * Math.sin(theta)) + Math.abs(h_tag / 2 * Math.cos(theta));
+
+          const box = {
+            minX: cx - ex,
+            maxX: cx + ex,
+            minY: cy - fillY,
+            maxY: cy + fillY
+          };
+
+          if (!hasCollision(box) && !isOutOfBounds(box)) {
+            resolvedLabels.push({
+              type: 'segment',
+              text: tagText,
+              isCurve,
+              courseIndex: i,
+              useTable: true,
+              leaderStyle,
+              anchorX: midX,
+              anchorY: midY,
+              x: cx,
+              y: cy,
+              width: w_tag,
+              height: h_tag,
+              rotated: true,
+              angle: theta,
+              needsLeader: false
+            });
+            placedBoxes.push(box);
+            placed = true;
+            break;
+          }
+        }
+
+        // Try 2: Horizontal placement with leaders
+        if (!placed) {
+          const distances = [20, 30, 40, 50];
+          const perpAngle = Math.atan2(oy, ox);
+          
+          // Try perp outward, perp inward, then oblique angles
+          const candidateAngles = [
+            perpAngle,
+            perpAngle + Math.PI,
+            perpAngle + Math.PI / 4,
+            perpAngle - Math.PI / 4,
+            perpAngle + 3 * Math.PI / 4,
+            perpAngle - 3 * Math.PI / 4,
+          ];
+
+          for (const d of distances) {
+            for (const angle of candidateAngles) {
+              const cx = midX + d * Math.cos(angle);
+              const cy = midY + d * Math.sin(angle);
+
+              const box = {
+                minX: cx - w_tag / 2,
+                maxX: cx + w_tag / 2,
+                minY: cy - h_tag / 2,
+                maxY: cy + h_tag / 2
+              };
+
+              if (!hasCollision(box) && !isOutOfBounds(box)) {
+                resolvedLabels.push({
+                  type: 'segment',
+                  text: tagText,
+                  isCurve,
+                  courseIndex: i,
+                  useTable: true,
+                  leaderStyle,
+                  anchorX: midX,
+                  anchorY: midY,
+                  x: cx,
+                  y: cy,
+                  width: w_tag,
+                  height: h_tag,
+                  rotated: false,
+                  angle: 0,
+                  needsLeader: true
+                });
+                placedBoxes.push(box);
+                placed = true;
+                break;
+              }
+            }
+            if (placed) break;
+          }
+        }
+
+        // Fallback parallel placement
+        if (!placed) {
+          const cx = midX + 11 * ox * sideMultiplier;
+          const cy = midY + 11 * oy * sideMultiplier;
+          resolvedLabels.push({
+            type: 'segment',
+            text: tagText,
+            isCurve,
+            courseIndex: i,
+            useTable: true,
+            leaderStyle,
+            anchorX: midX,
+            anchorY: midY,
+            x: cx,
+            y: cy,
+            width: w_tag,
+            height: h_tag,
+            rotated: true,
+            angle: theta,
+            needsLeader: false
+          });
+        }
       }
     });
   }

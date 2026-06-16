@@ -437,6 +437,8 @@ export default function BatchDeedTab() {
         try { return localStorage.getItem('boundaryiq_show_conceptual_detail') !== 'false'; }
         catch { return true; }
       })();
+      const leaderStyleVal = localStorage.getItem('boundaryiq_leader_style') || 'arc';
+      const labelContentModeVal = localStorage.getItem('boundaryiq_label_content_mode') || 'auto';
 
       const params = new URLSearchParams({
         path: folderPath.trim(),
@@ -445,6 +447,8 @@ export default function BatchDeedTab() {
         pobE: activePobE,
         units: 'Feet',
         force: 'true',
+        leaderStyle: leaderStyleVal,
+        labelContentMode: labelContentModeVal,
         ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
         ...(shortFileNamesEnabled ? { shortFileNames: 'true' } : {}),
         ...(showConceptualDetailEnabled ? { showConceptualDetail: 'true' } : {}),
@@ -560,6 +564,8 @@ export default function BatchDeedTab() {
         try { return localStorage.getItem('boundaryiq_show_conceptual_detail') !== 'false'; }
         catch { return true; }
       })();
+      const leaderStyleVal = localStorage.getItem('boundaryiq_leader_style') || 'arc';
+      const labelContentModeVal = localStorage.getItem('boundaryiq_label_content_mode') || 'auto';
 
       const params = new URLSearchParams({
         path: folderDir,
@@ -568,6 +574,8 @@ export default function BatchDeedTab() {
         pobE: activePobE,
         units: 'Feet',
         force: 'true',
+        leaderStyle: leaderStyleVal,
+        labelContentMode: labelContentModeVal,
         ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
         ...(shortFileNamesEnabled ? { shortFileNames: 'true' } : {}),
         ...(showConceptualDetailEnabled ? { showConceptualDetail: 'true' } : {}),
@@ -887,6 +895,8 @@ export default function BatchDeedTab() {
       try { return localStorage.getItem('boundaryiq_show_conceptual_detail') !== 'false'; }
       catch { return true; }
     })();
+    const leaderStyleVal = localStorage.getItem('boundaryiq_leader_style') || 'arc';
+    const labelContentModeVal = localStorage.getItem('boundaryiq_label_content_mode') || 'auto';
 
     const baseParams = (() => {
       const { n: activePobN, e: activePobE } = getPobCoordinates();
@@ -896,6 +906,8 @@ export default function BatchDeedTab() {
         pobE: activePobE,
         units: 'Feet',
         concurrency: concurrentAgents,
+        leaderStyle: leaderStyleVal,
+        labelContentMode: labelContentModeVal,
         ...(autoOutputEnabled ? { autoOutput: 'true' } : {}),
         ...(shortFileNamesEnabled ? { shortFileNames: 'true' } : {}),
         ...(showConceptualDetailEnabled ? { showConceptualDetail: 'true' } : {}),
