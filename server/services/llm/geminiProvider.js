@@ -17,11 +17,11 @@ export function setGeminiKey(key) { _geminiApiKey = key; }
 export function getGeminiKey()    { return _geminiApiKey; }
 
 // ── Retry-aware POST ──────────────────────────────────────────────────────────
-async function postWithRetry(url, payload) {
+async function postWithRetry(url, payload, customHeaders = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...customHeaders },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -52,8 +52,17 @@ export async function extractViaGemini(buffer, mimeType, prompt, model) {
     generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${_geminiApiKey}`;
-  const { status, body } = await postWithRetry(url, payload);
+  let url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const customHeaders = {};
+
+  const isAccessToken = !_geminiApiKey.startsWith('AIzaSy');
+  if (isAccessToken) {
+    customHeaders['Authorization'] = `Bearer ${_geminiApiKey}`;
+  } else {
+    url += `?key=${_geminiApiKey}`;
+  }
+
+  const { status, body } = await postWithRetry(url, payload, customHeaders);
 
   if (status < 200 || status >= 300) {
     log.error({ status, body: body.slice(0, 200) }, 'Gemini API error');
