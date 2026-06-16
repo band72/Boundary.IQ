@@ -36,6 +36,89 @@ export function compute(req) {
 
   let perimeter = 0;
   let prevAzimuthDeg = null; // Track incoming azimuth for curve chord synthesis (Fix #7)
+  const computedCenters = [];
+
+  // Initialize prevAzimuthDeg and computedCenters from commencement segments if available
+  if (req.commencementSegments && req.commencementSegments.length > 0) {
+    let tempAz = null;
+    let POC_N = 5000;
+    let POC_E = 5000;
+    let currN = POC_N;
+    let currE = POC_E;
+    
+    const commCoords = [];
+    for (const comm of req.commencementSegments) {
+      commCoords.push({ startN: currN, startE: currE });
+      let dn = 0, de = 0;
+      if (comm.type?.toLowerCase() === 'line' && comm.bearing && comm.distance != null) {
+        try {
+          const parsed = bp.parse(comm.bearing);
+          tempAz = parsed.azimuthDeg;
+          dn = comm.distance * uf * Math.cos(parsed.azimuthRad);
+          de = comm.distance * uf * Math.sin(parsed.azimuthRad);
+        } catch {}
+      } else if (comm.type?.toLowerCase() === 'curve' && comm.radius) {
+        let deltaDeg = parseDmsToDecimal(comm.delta);
+        if ((comm.delta == null || comm.delta === 0) && comm.radius && comm.arcLength) {
+          const deltaRad = comm.arcLength / comm.radius;
+          deltaDeg = deltaRad * 180.0 / Math.PI;
+        }
+        if (tempAz !== null && deltaDeg) {
+          const deflectionSign = (comm.curveDirection || comm.direction || '').toLowerCase() === 'left' ? -1 : 1;
+          const halfDelta = deltaDeg / 2;
+          const chordAzDeg = (tempAz + deflectionSign * halfDelta + 360) % 360;
+          const chordAzRad = chordAzDeg * Math.PI / 180;
+          const chordDist = 2 * comm.radius * Math.sin((deltaDeg * Math.PI / 180) / 2) * uf;
+          dn = chordDist * Math.cos(chordAzRad);
+          de = chordDist * Math.sin(chordAzRad);
+          tempAz = (tempAz + deflectionSign * deltaDeg + 360) % 360;
+        }
+      }
+      currN += dn;
+      currE += de;
+    }
+    
+    const shiftN = pobN - currN;
+    const shiftE = pobE - currE;
+    
+    tempAz = null;
+    for (let idx = 0; idx < req.commencementSegments.length; idx++) {
+      const comm = req.commencementSegments[idx];
+      const startN = commCoords[idx].startN + shiftN;
+      const startE = commCoords[idx].startE + shiftE;
+      
+      if (comm.type?.toLowerCase() === 'line' && comm.bearing) {
+        try { tempAz = bp.parse(comm.bearing).azimuthDeg; } catch {}
+      } else if (comm.type?.toLowerCase() === 'curve' && comm.radius) {
+        let deltaDeg = parseDmsToDecimal(comm.delta);
+        if ((comm.delta == null || comm.delta === 0) && comm.radius && comm.arcLength) {
+          const deltaRad = comm.arcLength / comm.radius;
+          deltaDeg = deltaRad * 180.0 / Math.PI;
+        }
+        if (tempAz !== null && deltaDeg) {
+          const deflectionSign = (comm.curveDirection || comm.direction || '').toLowerCase() === 'left' ? -1 : 1;
+          
+          const radialDirDeg = (tempAz + deflectionSign * 90 + 360) % 360;
+          const radialDirRad = radialDirDeg * Math.PI / 180;
+          const centerN = startN + comm.radius * uf * Math.cos(radialDirRad);
+          const centerE = startE + comm.radius * uf * Math.sin(radialDirRad);
+          const outgoingTangent = (tempAz + deflectionSign * deltaDeg + 360) % 360;
+          computedCenters.push({
+            name: `Commencement Curve ${idx + 1}`,
+            centerN,
+            centerE,
+            radius: comm.radius * uf,
+            outgoingTangent
+          });
+          
+          tempAz = outgoingTangent;
+        }
+      }
+    }
+    if (tempAz !== null) {
+      prevAzimuthDeg = tempAz;
+    }
+  }
 
   for (const course of courses) {
     let dn, de, label;
@@ -53,9 +136,18 @@ export function compute(req) {
       prevAzimuthDeg = azimuthDeg;
 
     } else if (course.type?.toLowerCase() === 'curve') {
-      ({ dn, de, perimeter, label } = computeCurve(course, perimeter, uf, prevAzimuthDeg));
-      // Compute synthetic azimuth for subsequent courses — use chord bearing if available
-      if (course.chordBearing) {
+      let centerN = null, centerE = null, outgoingTangent = null;
+      ({ dn, de, perimeter, label, centerN, centerE, outgoingTangent } = computeCurve(
+        course, perimeter, uf, prevAzimuthDeg, curN, curE, computedCenters
+      ));
+
+      if (centerN !== null && centerE !== null) {
+        computedCenters.push({ name: label, centerN, centerE, radius: course.radius * uf, outgoingTangent });
+      }
+
+      if (outgoingTangent !== null) {
+        prevAzimuthDeg = outgoingTangent;
+      } else if (course.chordBearing) {
         try { prevAzimuthDeg = bp.parse(course.chordBearing).azimuthDeg; } catch {}
       }
     } else {
@@ -140,8 +232,15 @@ export function parseDmsToDecimal(dms) {
   return 0;
 }
 
-function computeCurve(c, perim, uf, prevAzimuthDeg) {
-  const deltaDeg = parseDmsToDecimal(c.delta);
+function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCenters) {
+  let deltaDeg = parseDmsToDecimal(c.delta);
+
+  // Synthesize missing delta from Radius & Arc Length
+  if ((c.delta == null || c.delta === 0) && c.radius && c.arcLength) {
+    const deltaRad = c.arcLength / c.radius;
+    deltaDeg = deltaRad * 180.0 / Math.PI;
+    c.delta = deltaDeg;
+  }
 
   // Arc length: prefer given, else compute from R × Δ
   let arcLen = c.arcLength;
@@ -152,6 +251,52 @@ function computeCurve(c, perim, uf, prevAzimuthDeg) {
   if (arcLen == null) arcLen = 0;
   perim += (arcLen * uf);
 
+  let incTangent = prevAzimuthDeg;
+  let concentricMatch = null;
+
+  if (c.radius && startN != null && startE != null && computedCenters) {
+    for (const cc of computedCenters) {
+      const distToCenter = Math.sqrt((cc.centerN - startN)**2 + (cc.centerE - startE)**2);
+      if (Math.abs(distToCenter - c.radius * uf) < 5.0) {
+        concentricMatch = cc;
+        break;
+      }
+    }
+  }
+
+  if (concentricMatch) {
+    const radToCenterRad = Math.atan2(concentricMatch.centerE - startE, concentricMatch.centerN - startN);
+    let radToCenterDeg = radToCenterRad * 180 / Math.PI;
+    if (radToCenterDeg < 0) radToCenterDeg += 360;
+
+    const t1 = (radToCenterDeg - 90 + 360) % 360;
+    const t2 = (radToCenterDeg + 90 + 360) % 360;
+
+    const referenceAngle = concentricMatch.outgoingTangent ?? prevAzimuthDeg;
+    if (referenceAngle !== null) {
+      const diff1 = Math.min(Math.abs(t1 - referenceAngle), 360 - Math.abs(t1 - referenceAngle));
+      const diff2 = Math.min(Math.abs(t2 - referenceAngle), 360 - Math.abs(t2 - referenceAngle));
+      incTangent = diff1 < diff2 ? t1 : t2;
+    } else {
+      incTangent = t1;
+    }
+    console.log(`[traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
+  }
+
+  let outgoingTangent = null;
+  let centerN = null;
+  let centerE = null;
+
+  if (incTangent !== null && deltaDeg !== null && c.radius) {
+    const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
+    outgoingTangent = (incTangent + deflectionSign * deltaDeg + 360) % 360;
+
+    const radialDirDeg = (incTangent + deflectionSign * 90 + 360) % 360;
+    const radialDirRad = radialDirDeg * Math.PI / 180;
+    centerN = startN + c.radius * uf * Math.cos(radialDirRad);
+    centerE = startE + c.radius * uf * Math.sin(radialDirRad);
+  }
+
   // Use chord bearing + chord distance
   if (c.chordBearing && c.chordDistance != null) {
     const { azimuthDeg, azimuthRad } = bp.parse(c.chordBearing);
@@ -159,17 +304,16 @@ function computeCurve(c, perim, uf, prevAzimuthDeg) {
     const dn = dist * Math.cos(azimuthRad);
     const de = dist * Math.sin(azimuthRad);
     const label = `Curve R=${(c.radius || 0).toFixed(2)} Δ=${deltaDeg.toFixed(4)}°`;
-    return { dn, de, perimeter: perim, label };
+    return { dn, de, perimeter: perim, label, centerN, centerE, outgoingTangent };
   }
 
-  // Fix #7: Synthesize chord bearing from incoming azimuth + delta/2 (deflection angle formula)
-  if (c.radius != null && c.delta != null && prevAzimuthDeg != null) {
+  // Synthesize chord bearing from incoming azimuth + delta/2
+  if (c.radius != null && c.delta != null && incTangent != null) {
     const halfDelta = deltaDeg / 2.0;
-    const deflectionSign = (c.curveDirection || '').toLowerCase() === 'left' ? -1 : 1;
-    const synthAzDeg = (prevAzimuthDeg + deflectionSign * halfDelta + 360) % 360;
+    const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
+    const synthAzDeg = (incTangent + deflectionSign * halfDelta + 360) % 360;
     const synthAzRad = synthAzDeg * Math.PI / 180.0;
 
-    // Chord distance from chord = 2R * sin(Δ/2)
     const deltaRad = deltaDeg * Math.PI / 180.0;
     const chordDist = 2.0 * c.radius * Math.sin(deltaRad / 2.0) * uf;
 
@@ -177,7 +321,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg) {
     const de = chordDist * Math.sin(synthAzRad);
     const label = `Curve R=${(c.radius).toFixed(2)} Δ=${deltaDeg.toFixed(4)}° [CHORD-SYNTH]`;
     console.log(`Curve chord synthesized: bearing=${bp.toDisplayString(synthAzDeg)} dist=${chordDist.toFixed(3)}'`);
-    return { dn, de, perimeter: perim, label };
+    return { dn, de, perimeter: perim, label, centerN, centerE, outgoingTangent };
   }
 
   throw new Error('Curve requires ChordBearing+ChordDistance, or Radius+Delta+incoming bearing for synthesis.');
@@ -295,6 +439,9 @@ export function autoFixUnknownRuns(courses, pob) {
       return !c.bearing || c.distance == null || isNaN(c.distance) || c.distance === 0;
     }
     if (c.type?.toLowerCase() === 'curve') {
+      if (c.radius != null && (c.arcLength != null || c.delta != null)) {
+        return false;
+      }
       return !c.chordBearing || c.chordDistance == null || isNaN(c.chordDistance) || c.chordDistance === 0;
     }
     return true;

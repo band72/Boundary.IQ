@@ -517,9 +517,9 @@ function parseExtractionJson(raw, deedText) {
 // ── Deterministic COGO repair ─────────────────────────────────────────────────
 // All error detection and fixing is done here in pure math — NOT by the LLM.
 
-function tryCompute(courses, pob, units, isOpenEnded = false) {
+function tryCompute(courses, pob, units, isOpenEnded = false, commencementSegments = []) {
   try {
-    const result = traverseSvc.compute({ pointOfBeginning: pob, courses, units, isOpenEnded });
+    const result = traverseSvc.compute({ pointOfBeginning: pob, courses, units, isOpenEnded, commencementSegments });
     return { result, error: null };
   } catch (ex) {
     return { result: null, error: ex.message };
@@ -554,7 +554,7 @@ function flipNS(bearing) {
 }
 
 
-function repairCourses(rawCourses, pob, units, isOpenEnded = false) {
+function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencementSegments = []) {
   const courses = traverseSvc.resolveDeflectionAngles(rawCourses);
   const steps = [];
 
@@ -584,7 +584,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false) {
 
   // ── Step 2: Pure gap solver (no backtrack) ───────────────────────────────
   const withGapSolved = traverseSvc.autoFixUnknownRuns(courses, pob);
-  const { result: r0 } = tryCompute(withGapSolved, pob, units, isOpenEnded);
+  const { result: r0 } = tryCompute(withGapSolved, pob, units, isOpenEnded, commencementSegments);
   const r0Bowtie = r0 && (r0.areaAcres == null || r0.areaAcres < 0.0001) && !isOpenEnded;
   if (r0 && isPassing(r0) && !r0Bowtie) {
     const solvedIndices = courses.reduce((acc, c, i) => {
@@ -622,7 +622,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false) {
         j === i ? { ...x, bearing: flipped } : { ...x }
       );
       const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-      const { result: r1 } = tryCompute(testSolved, pob, units, isOpenEnded);
+      const { result: r1 } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
       const r1Bowtie = r1 && (r1.areaAcres == null || r1.areaAcres < 0.0001) && !isOpenEnded;
       if (r1 && isPassing(r1) && !r1Bowtie && isSensible(testSolved)) {
         steps.push({ hypothesis: `SINGLE_${label}`, courseIndex: i, originalBearing: c.bearing, correctedBearing: flipped });
@@ -641,7 +641,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false) {
         return { ...x };
       });
       const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-      const { result: r2 } = tryCompute(testSolved, pob, units, isOpenEnded);
+      const { result: r2 } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
       const r2Bowtie = r2 && (r2.areaAcres == null || r2.areaAcres < 0.0001) && !isOpenEnded;
       if (r2 && isPassing(r2) && !r2Bowtie && isSensible(testSolved)) {
         steps.push({ hypothesis: 'DOUBLE_QUADRANT_FLIP', courseIndices: [i, j] });
@@ -651,7 +651,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false) {
   }
 
   // ── Step 5: Return best-effort even if not closed ─────────────────────────
-  const { result: rFinal } = tryCompute(withGapSolved, pob, units, isOpenEnded);
+  const { result: rFinal } = tryCompute(withGapSolved, pob, units, isOpenEnded, commencementSegments);
   steps.push({ hypothesis: 'UNCLOSED', note: 'No repair hypothesis achieved passing closure.' });
   return { courses: withGapSolved, result: rFinal, steps };
 }
@@ -1072,12 +1072,13 @@ export function solveFromCourses(courses, options = {}) {
   const pob = { northing: options.pobNorthing ?? 5000, easting: options.pobEasting ?? 5000 };
   const units = options.units || 'Feet';
   const isOpenEnded = options.isOpenEnded ?? false;
+  const commencementSegments = options.commencementSegments || [];
 
   const processedCourses = preprocessZeroLengthCourses(courses);
   const hasZeroLength = processedCourses.some(c => c.assumedZeroLength);
 
   const originalCourses = courses.map(c => ({ ...c }));
-  const { courses: repairedCourses, result, steps } = repairCourses(processedCourses, pob, units, isOpenEnded);
+  const { courses: repairedCourses, result, steps } = repairCourses(processedCourses, pob, units, isOpenEnded, commencementSegments);
 
   const passed = result && isPassing(result);
   const correctionTable = buildCorrectionTable(originalCourses, repairedCourses, steps);
@@ -1111,6 +1112,7 @@ export function solveFromCourses(courses, options = {}) {
     } : null,
     trustScore, trustLevel,
     legalDescription,
+    commencementSegments,
   };
 }
 
@@ -1208,36 +1210,120 @@ export function solveFromText(deedText, options = {}) {
     if (!raw || raw.trim().length < 2) return true;
     if (/[/?]/.test(raw)) return true;
     if (/unknown|unclear|\?\?/i.test(raw)) return true;
-    // Normalized bearing must start with N or S followed by a digit OR be NE/NW/SE/SW
     if (!/^[NS]\d/.test(normalized || '') && !/^[NS][EW]$/.test(normalized || '')) return true;
     return false;
   }
 
+  // Normalize spaces and strip breaks
+  const normalizedText = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+
+  // Split into tokens based on COMMENCE or THENCE
+  const rawSegments = normalizedText.split(/\b(THENCE|COMMENCE)\b/i);
+
   const courses = [];
-  const lines = text.split(/\n/).map(l => l.trim()).filter(l => /^THENCE/i.test(l));
+  const commencementSegments = [];
+  let reachedPob = false;
+  let lastMentionedRadius = null;
 
-  for (const line of lines) {
-    const distMatch = line.match(/THENCE\s+(.+?),?\s+a\s+distance\s+of\s+([\d,]+\.?\d*)/i)
-      || line.match(/THENCE\s+(.+?)\s+([\d,]+\.\d+)/i);
+  for (let i = 1; i < rawSegments.length; i += 2) {
+    const keyword = rawSegments[i].toUpperCase();
+    const content = rawSegments[i + 1] || '';
+    const cleanContent = content.replace(/\(.*?\)/g, ' ').trim();
 
-    if (distMatch) {
-      const rawBearing = distMatch[1].replace(/,/g, '').trim();
-      const dist       = parseFloat(distMatch[2].replace(/,/g, ''));
-      const normalized = normalizeBearing(rawBearing);
-      const unknownB   = isUnknownBearing(rawBearing, normalized);
-      const unknownD   = isNaN(dist);
+    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+BEGINNING|TO\s+(?:THE\s+)?P\.?\s*O\.?\s*B\.?)\b/i.test(cleanContent);
 
-      courses.push({
-        type: 'Line',
-        bearing:   unknownB ? null : normalized,
-        distance:  dist,
-        isUnknown: unknownB || unknownD,
-      });
+    // Classification of Segment Type
+    const hasToPointOfCurve = /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+(?:CURVE|CURVATURE))\b/i.test(cleanContent);
+    let type = 'Line';
+    if (!hasToPointOfCurve) {
+      if (/\b(ALONG\s+THE\s+ARC|ALONG\s+A\s+CURVE|CONTINUE\s+ALONG|ALONG\s+SAID\s+CURVE|WESTERLY\s+ALONG\s+THE\s+ARC|ALONG\s+THE\s+NORTHERLY\s+RIGHT|ALONG\s+SAID\s+NORTHERLY\s+RIGHT)\b/i.test(cleanContent) && /\b(CURVE|ARC)\b/i.test(cleanContent)) {
+        type = 'Curve';
+      } else if (/\b(CURVE|ARC|RADIUS)\b/i.test(cleanContent) && !/\b(TO\s+AN?\s+INTERSECTION|INTERSECTING)\b/i.test(cleanContent)) {
+        type = 'Curve';
+      }
+    }
+
+    // Distance parsing
+    const distMatch = cleanContent.match(/\b([\d,]+\.?\d*)\s*(?:FEET|FT|METERS|M)\b/i);
+    const distance = distMatch ? parseFloat(distMatch[1].replace(/,/g, '')) : null;
+
+    // Bearing parsing
+    let bearing = null;
+    let isUnknown = false;
+    const bearingMatch = cleanContent.match(/\b(N|S|NORTH|SOUTH)\s*(\d{1,3}(?:\s*DEGREES?|\s*°|\s*\-)?\s*(?:\d{1,2}\s*(?:MINUTES?|'|\s*\-))?\s*(?:\d{1,2}(?:\.\d+)?\s*(?:SECONDS?|"|\s*\-))?)\s*(E|W|EAST|WEST)\b/i);
+
+    if (bearingMatch) {
+      try {
+        const parsedBrg = bp.parse(bearingMatch[0]);
+        bearing = bp.toDisplayString(parsedBrg.azimuthDeg);
+      } catch {
+        isUnknown = true;
+      }
+    } else {
+      const cardMatch = cleanContent.match(/\b(NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b/i);
+      if (cardMatch) {
+        const az = bp.parseCardinalAzimuth(cardMatch[1]);
+        if (az !== null) {
+          bearing = bp.toDisplayString(az);
+        } else {
+          isUnknown = true;
+        }
+      } else {
+        isUnknown = true;
+      }
+    }
+
+    // Radius tracking
+    const radiusMatch = cleanContent.match(/RADIUS\s+OF\s+([\d,]+\.?\d*)/i);
+    if (radiusMatch) {
+      lastMentionedRadius = parseFloat(radiusMatch[1].replace(/,/g, ''));
+    }
+
+    const segmentObj = {
+      type,
+      description: keyword + ' ' + content.trim(),
+    };
+
+    if (type === 'Line') {
+      segmentObj.bearing = bearing;
+      segmentObj.distance = distance;
+      segmentObj.isUnknown = isUnknown || distance === null;
+    } else {
+      const arcMatch = cleanContent.match(/(?:ARC\s+DISTANCE|ARC\s+LENGTH|ARC)\s+OF\s+([\d,]+\.?\d*)/i);
+      const arcLength = arcMatch ? parseFloat(arcMatch[1].replace(/,/g, '')) : distance;
+
+      const dirMatch = cleanContent.match(/CURVE\s+TO\s+THE\s+(RIGHT|LEFT)/i);
+      const curveDirection = dirMatch ? (dirMatch[1].toUpperCase() === 'RIGHT' ? 'Right' : 'Left') : 'Right';
+
+      segmentObj.radius = lastMentionedRadius;
+      segmentObj.arcLength = arcLength;
+      segmentObj.curveDirection = curveDirection;
+      segmentObj.isUnknown = !segmentObj.radius || !segmentObj.arcLength;
+    }
+
+    if (reachedPob) {
+      courses.push(segmentObj);
+    } else {
+      commencementSegments.push(segmentObj);
+      if (isPobDest) {
+        reachedPob = true;
+      }
     }
   }
 
+  if (courses.length === 0 && commencementSegments.length > 0) {
+    courses.push(...commencementSegments);
+    commencementSegments.length = 0;
+  }
+
   if (courses.length === 0) throw new Error('No THENCE courses found in deed text. Verify format.');
-  return solveFromCourses(courses, { pobNorthing, pobEasting, units: options.units || 'Feet' });
+  return solveFromCourses(courses, {
+    pobNorthing,
+    pobEasting,
+    units: options.units || 'Feet',
+    isOpenEnded: options.isOpenEnded || false,
+    commencementSegments
+  });
 }
 
 

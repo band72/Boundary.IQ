@@ -527,6 +527,7 @@ export default function TraverseTab() {
               key={`${result.stations?.length || 0}_${result.closure?.linearError || 0}`}
               stations={result.stations}
               adjusted={result.adjustedStations}
+              courses={courses}
             />
           </div>
 

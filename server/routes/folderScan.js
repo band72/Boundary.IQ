@@ -1,5 +1,6 @@
 // ─── Folder Scan Route ──────────────────────────────────────────────────────
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import * as lockService from '../services/lockService.js';
 import crypto from 'crypto';
 import { execSync } from 'child_process';
@@ -24,9 +25,21 @@ import * as traverseSvc from '../services/traverse.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
 import pdfParse from 'pdf-parse';
 import { requireAuth } from '../middleware/auth.js';
+import { SCAN_RATE_LIMIT } from '../config.js';
 
 const router = Router();
 router.use(requireAuth);
+
+// ── Per-user rate limiter for scan endpoints ───────────────────────────────
+const scanLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: SCAN_RATE_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id ? String(req.user.id) : ipKeyGenerator(req),
+  skip: (req) => req.user?.role === 'admin',
+  message: { error: `Too many scan requests. Maximum ${SCAN_RATE_LIMIT} per minute per user.` },
+});
 
 // Helper to resolve county and state for metadata/legalWriter with caching fallback
 function getCountyVal(ex, fallback) {
@@ -167,30 +180,52 @@ function getAllowedRoots() {
   return [os.homedir()];
 }
 
+/**
+ * Normalize a client-supplied path for server-side validation.
+ *
+ * Two remapping strategies (applied in order):
+ *   1. BOUNDARY_PATH_USER_MAP env var: "bando=/mnt/data;artwalk=/srv/data" style key-value pairs
+ *      for explicit per-username redirects without touching source code.
+ *   2. Generic /home/<any-username> → current user's home (covers dev→prod drift automatically).
+ *
+ * Then the resolved path is validated against the allowed roots.
+ */
 function validatePath(p) {
   if (!p) return null;
   if (p.includes('..')) return null;
 
   let normalized = p;
-  // Translate developer's home folder to current user's home folder
-  if (normalized.includes('/home/bando')) {
-    normalized = normalized.replace('/home/bando', os.homedir());
-  }
-  if (normalized.includes('/home/artwalk')) {
-    normalized = normalized.replace('/home/artwalk', os.homedir());
+
+  // Strategy 1: explicit env-driven user map (format: "username1=/new/path;username2=/other")
+  const userMapEnv = process.env.BOUNDARY_PATH_USER_MAP;
+  if (userMapEnv) {
+    for (const entry of userMapEnv.split(';').filter(Boolean)) {
+      const eqIdx = entry.indexOf('=');
+      if (eqIdx < 1) continue;
+      const fromUser = entry.slice(0, eqIdx).trim();
+      const toPath   = entry.slice(eqIdx + 1).trim();
+      const fromPrefix = `/home/${fromUser}`;
+      if (normalized.startsWith(fromPrefix)) {
+        normalized = toPath + normalized.slice(fromPrefix.length);
+        break;
+      }
+    }
   }
 
-  // Normalize slashes
+  // Strategy 2: remap any /home/<username> prefix to the current user's home directory.
+  // This lets paths stored/shared from a different developer machine resolve correctly
+  // without hardcoding specific usernames.
+  normalized = normalized.replace(/^\/home\/[^/]+/, os.homedir());
+
+  // Normalize backslashes (Windows paths from the client)
   normalized = normalized.replace(/\\/g, '/');
 
   // Translate to actual location under the extracted training folder if the directly requested ones don't exist
   if (!fs.existsSync(normalized)) {
-    const trainingPattern = /\/Downloads\/training-[^\/]+\/training/i;
+    const trainingPattern = /\/Downloads\/training-[^/]+\/training/i;
     if (trainingPattern.test(normalized)) {
       const candidate = normalized.replace(trainingPattern, '/Downloads/FILES/training');
-      if (fs.existsSync(candidate)) {
-        normalized = candidate;
-      }
+      if (fs.existsSync(candidate)) normalized = candidate;
     } else if (normalized.includes('/Downloads/TrainPDF')) {
       const candidate = normalized.replace('/Downloads/TrainPDF', '/Downloads/FILES/training/TrainPDF');
       if (fs.existsSync(candidate)) normalized = candidate;
@@ -198,7 +233,7 @@ function validatePath(p) {
       const candidate = normalized.replace('/Downloads/Legal Descriptions', '/Downloads/FILES/training/Legal Descriptions');
       if (fs.existsSync(candidate)) normalized = candidate;
     }
-    
+
     // Fallback standard structure
     if (!fs.existsSync(normalized)) {
       if (normalized.includes('/Downloads/TrainPDF')) {
@@ -218,6 +253,7 @@ function validatePath(p) {
   }
   return null;
 }
+
 
 // Helper to convert Word document with pre-extracted text fallback
 async function readWordDocWithFallback(filePath, fileName, docBytes) {
@@ -413,7 +449,7 @@ function _getPartFamily(fileName) {
 }
 
 // GET /api/folderscan/scan
-router.get('/scan', (req, res) => {
+router.get('/scan', scanLimiter, (req, res) => {
   const validPath = validatePath(req.query.path);
   if (!validPath) return res.status(403).json({ error: 'Path is not allowed. Set BOUNDARY_SCAN_ROOTS env var to configure.' });
   if (!fs.existsSync(validPath)) return res.status(404).json({ error: `Directory not found: ${validPath}` });

@@ -12,9 +12,10 @@ import AdminPanel from './components/AdminPanel';
 import BillingTab from './components/BillingTab';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { API } from './config';
+import { AuthProvider, useAuthContext } from './context/AuthContext';
+import { API } from './config.js';
 
-// ─── Tab Error Boundary ────────────────────────────────────────────────────────────
+// ─── Tab Error Boundary ────────────────────────────────────────────────────────
 class TabErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -63,172 +64,143 @@ class TabErrorBoundary extends Component {
   }
 }
 
-// ── Tab & access definitions ─────────────────────────────────────────────────
+// ── Tab & access definitions ──────────────────────────────────────────────────
 // minRole: 'user' = all logged-in users | 'admin' = admins only
 // minPlan: plan gate (only relevant when user already has minRole access)
 // status:  'live' | 'testing' — 'testing' shows a chip in the sidebar for admin
 const TABS = [
-  { id: 'traverse',  icon: '📐', label: 'Deed Reader',   minRole: 'user',  minPlan: 'free', status: 'live'    },
-  { id: 'plat',      icon: '🛰',  label: 'Plat Extraction', minRole: 'user',  minPlan: 'free', status: 'testing' },
-  { id: 'writer',    icon: '✍️',  label: 'Writer',          minRole: 'user',  minPlan: 'free', status: 'testing' },
-  { id: 'batch',     icon: '📦',  label: 'Batch Deed',      minRole: 'user',  minPlan: 'free', status: 'testing' },
-  { id: 'dashboard', icon: '📊',  label: 'Dashboard',       minRole: 'user',  minPlan: 'free', status: 'testing' },
-  { id: 'settings',  icon: '⚙️',  label: 'Settings',        minRole: 'user',  minPlan: 'free', status: 'live'    },
+  { id: 'traverse',  icon: '📐', label: 'Deed Reader',      minRole: 'user',  minPlan: 'free', status: 'live'    },
+  { id: 'plat',      icon: '🛰',  label: 'Plat Extraction',  minRole: 'user',  minPlan: 'free', status: 'testing' },
+  { id: 'writer',    icon: '✍️',  label: 'Deed Writer',      minRole: 'user',  minPlan: 'free', status: 'live'    },
+  { id: 'batch',     icon: '📦',  label: 'Batch Deed',       minRole: 'user',  minPlan: 'free', status: 'testing' },
+  { id: 'dashboard', icon: '📊',  label: 'Dashboard',        minRole: 'user',  minPlan: 'free', status: 'testing' },
+  { id: 'settings',  icon: '⚙️',  label: 'Settings',         minRole: 'user',  minPlan: 'free', status: 'live'    },
 ];
 
-const PLAN_RANK  = { free: 0, pro: 1, enterprise: 2, admin: 99 };
-const ROLE_RANK  = { user: 0, admin: 99 };
+const PLAN_RANK   = { free: 0, pro: 1, enterprise: 2, admin: 99 };
+const ROLE_RANK   = { user: 0, admin: 99 };
 const userRoleRank = (user) => user?.role === 'admin' ? 99 : 0;
 const userPlanRank = (user) => user?.role === 'admin' ? 99 : (PLAN_RANK[user?.plan] ?? 0);
-/** true if the user has the required role AND plan for a tab */
 const hasRoleAccess = (user, minRole) => userRoleRank(user) >= (ROLE_RANK[minRole] ?? 0);
 const hasAccess = (user, tab) =>
   hasRoleAccess(user, tab.minRole) &&
   (user?.role === 'admin' || userPlanRank(user) >= (PLAN_RANK[tab.minPlan] ?? 0));
 
+// ── Root export — wraps everything in AuthProvider ────────────────────────────
 export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  );
+}
+
+// ── Inner shell — consumes AuthContext ────────────────────────────────────────
+function AppShell() {
+  const { user, authLoading, login, logout } = useAuthContext();
+
   const [hideTraverse, setHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
   const [hidePlat, setHidePlat]         = useLocalStorage('boundaryiq_hide_plat', false);
   const [hideWriter, setHideWriter]     = useLocalStorage('boundaryiq_hide_writer', false);
-
-  // Panel access policy set by admin — controls which tabs non-admin users see
-  const [panelPolicy] = useLocalStorage('boundaryiq_panel_policy', {});
-
-  const [tab, setTab] = useState('traverse');
-  const [helpOpen, setHelpOpen] = useState(false);
-
-  // Authentication State
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  // Verify active session on load
-  useEffect(() => {
-    const token = localStorage.getItem('boundaryiq_auth_token');
-    if (token) {
-      fetch(`${API}/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      .then(res => {
-        if (!res.ok) throw new Error('Session invalid');
-        return res.json();
-      })
-      .then(data => {
-        setUser(data);
-      })
-      .catch(() => {
-        localStorage.removeItem('boundaryiq_auth_token');
-      })
-      .finally(() => {
-        setAuthLoading(false);
-      });
-    } else {
-      setAuthLoading(false);
-    }
-  }, []);
-
-  const handleAuthSuccess = (payload) => {
-    try {
-      if (!payload) throw new Error('Authentication payload is null or undefined');
-      if (!payload.token) throw new Error('Authentication token is missing from response');
-      if (!payload.username) throw new Error('Authentication username is missing from response');
-
-      localStorage.setItem('boundaryiq_auth_token', payload.token);
-      setUser({ username: payload.username, role: payload.role, plan: payload.plan || 'free' });
-    } catch (err) {
-      console.error('handleAuthSuccess error:', err);
-      alert('Authentication transition failed: ' + err.message);
-    }
-  };
-
-  const handleLogout = async () => {
-    const token = localStorage.getItem('boundaryiq_auth_token');
-    localStorage.removeItem('boundaryiq_auth_token');
-    setUser(null);
-
-    if (token) {
-      try {
-        await fetch(`${API}/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-      } catch (err) {
-        console.error('Revoke session failed:', err.message);
-      }
-    }
-  };
+  const [panelPolicy]                   = useLocalStorage('boundaryiq_panel_policy', {});
+  const [tab, setTab]                   = useState('writer');
+  const [helpOpen, setHelpOpen]         = useState(false);
+  const [healthStatus, setHealthStatus] = useState(null); // null | 'ok' | 'error'
 
   const isAdmin = user?.role === 'admin';
 
-  // Helper: is a panel allowed for this user?
-  const isPanelAllowed = (panelId) => {
-    if (isAdmin) return true; // admins always see everything
-    return panelPolicy[panelId] !== false; // default true if unset
+  // ── Health Status button handler ───────────────────────────────────────────
+  const checkHealth = async () => {
+    setHealthStatus(null);
+    try {
+      const token = localStorage.getItem('boundaryiq_token');
+      const res = await fetch(`${API.replace(/\/api$/, '')}/api/health`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      setHealthStatus(res.ok ? 'ok' : 'error');
+      setTimeout(() => setHealthStatus(null), 4000);
+    } catch {
+      setHealthStatus('error');
+      setTimeout(() => setHealthStatus(null), 4000);
+    }
   };
 
-  // Build visible tab list FIRST — used by the redirect effect below.
-  // Only show tabs whose minRole the user satisfies.
-  // Admins always see ALL tabs (including testing ones).
+  // Listen for 401 → session expired events from api/index.js
+  useEffect(() => {
+    const onExpired = () => logout();
+    window.addEventListener('auth:expired', onExpired);
+    return () => window.removeEventListener('auth:expired', onExpired);
+  }, [logout]);
+
+  const isPanelAllowed = (panelId) => {
+    if (isAdmin) return true;
+    return panelPolicy[panelId] !== false;
+  };
+
   const visibleTabs = TABS.filter(t => {
-    if (!hasRoleAccess(user, t.minRole)) return false; // role gate — hard hide for non-admins
-    if (!isPanelAllowed(t.id)) return false;            // admin policy override
-    if (t.id === 'traverse' && hideTraverse) return false;
-    if (t.id === 'plat'     && hidePlat)     return false;
-    if (t.id === 'writer'   && hideWriter)   return false;
-    return true;
+    if (isAdmin) {
+      if (!hasRoleAccess(user, t.minRole)) return false;
+      if (!isPanelAllowed(t.id)) return false;
+      if (t.id === 'traverse' && hideTraverse) return false;
+      if (t.id === 'plat'     && hidePlat)     return false;
+      if (t.id === 'writer'   && hideWriter)   return false;
+      return true;
+    }
+    // Non-admin users: only show Writer until other tabs graduate from 'testing' status.
+    // When a tab's status changes to 'live', add it here or replace this with a
+    // data-driven check: t.status === 'live' && hasAccess(user, t).
+    return t.id === 'writer';
   });
 
-  // Use a ref so the effect dep array never changes size
   const visibleTabsRef = useRef(visibleTabs);
   visibleTabsRef.current = visibleTabs;
 
   // Auto-redirect to first visible tab if the active tab disappears
   useEffect(() => {
-    const vt = visibleTabsRef.current;
-    const firstId = vt[0]?.id || 'settings';
-    const currentDef = TABS.find(t => t.id === tab);
-    const roleBlocked = currentDef && !hasRoleAccess(user, currentDef.minRole);
-    if (
-      (hideTraverse && tab === 'traverse') ||
-      (hidePlat     && tab === 'plat')     ||
-      (hideWriter   && tab === 'writer')   ||
-      (!isPanelAllowed(tab) && tab !== 'settings') ||
-      (roleBlocked          && tab !== 'settings')
-    ) {
-      setTimeout(() => setTab(firstId), 0);
+    if (!isAdmin) {
+      if (tab !== 'writer') setTimeout(() => setTab('writer'), 0);
+    } else {
+      const vt = visibleTabsRef.current;
+      const firstId = vt[0]?.id || 'settings';
+      const currentDef = TABS.find(t => t.id === tab);
+      const roleBlocked = currentDef && !hasRoleAccess(user, currentDef.minRole);
+      if (
+        (hideTraverse && tab === 'traverse') ||
+        (hidePlat     && tab === 'plat')     ||
+        (hideWriter   && tab === 'writer')   ||
+        (!isPanelAllowed(tab) && tab !== 'settings') ||
+        (roleBlocked          && tab !== 'settings')
+      ) {
+        setTimeout(() => setTab(firstId), 0);
+      }
     }
-  }, [hideTraverse, hidePlat, hideWriter, tab, panelPolicy, user?.role]); // stable size — no derived values
+  }, [hideTraverse, hidePlat, hideWriter, tab, panelPolicy, user?.role, isAdmin]);
 
-  const extraTabs = [
-    ...(true ? [{ id: 'billing', icon: '💳', label: 'Billing' }] : []),
-    ...(isAdmin ? [{ id: 'admin', icon: '👥', label: 'Users' }] : []),
-  ];
+  const extraTabs = isAdmin ? [
+    { id: 'billing', icon: '💳', label: 'Billing' },
+    { id: 'admin',   icon: '👥', label: 'Users'   },
+  ] : [];
 
+  // ── Loading screen ──────────────────────────────────────────────────────────
   if (authLoading) {
     return (
       <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: '#090e1a',
-        gap: '1rem',
-        color: 'var(--text-secondary)'
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', height: '100vh', background: '#090e1a',
+        gap: '1rem', color: 'var(--text-secondary)',
       }}>
-        <span className="spinner" style={{ width: 40, height: 40, borderWidth: 3 }}></span>
+        <span className="spinner" style={{ width: 40, height: 40, borderWidth: 3 }} />
         <span style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>Verifying Engine Authorization...</span>
       </div>
     );
   }
 
+  // ── Login screen ────────────────────────────────────────────────────────────
   if (!user) {
-    return <LoginScreen onAuthSuccess={handleAuthSuccess} />;
+    return <LoginScreen onAuthSuccess={login} />;
   }
 
+  // ── Main application shell ──────────────────────────────────────────────────
   return (
     <StatsRefreshProvider>
       <div className="app-shell">
@@ -258,7 +230,7 @@ export default function App() {
             }}>
               {isAdmin ? '🔑 Admin' : user?.plan === 'pro' ? '⭐ Pro' : user?.plan === 'enterprise' ? '🏢 Enterprise' : '👤 Free'}
             </span>
-            <button className="logout-icon-btn" onClick={handleLogout} title="Sign Out">
+            <button className="logout-icon-btn" onClick={logout} title="Sign Out">
               🚪
             </button>
           </div>
@@ -318,43 +290,33 @@ export default function App() {
             <div className="divider" style={{ margin: '1rem 1.25rem' }} />
             <div className="nav-section">Resources</div>
 
-            {/* Help / Docs button */}
-            <button
-              className="nav-item"
-              onClick={() => setHelpOpen(true)}
-              style={{ position: 'relative' }}
-            >
+            <button className="nav-item" onClick={() => setHelpOpen(true)} style={{ position: 'relative' }}>
               <span className="nav-icon">📖</span>
               Help &amp; Docs
               <span style={{
-                marginLeft: 'auto',
-                fontSize: '0.58rem',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                background: 'rgba(61,127,255,0.15)',
-                border: '1px solid rgba(61,127,255,0.35)',
-                color: 'var(--accent)',
-                padding: '1px 5px',
-                borderRadius: 3,
-                flexShrink: 0,
+                marginLeft: 'auto', fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.06em',
+                background: 'rgba(61,127,255,0.15)', border: '1px solid rgba(61,127,255,0.35)',
+                color: 'var(--accent)', padding: '1px 5px', borderRadius: 3, flexShrink: 0,
               }}>README</span>
             </button>
 
-            <button className="nav-item">
+            <button className="nav-item" onClick={checkHealth} style={{ position: 'relative' }}>
               <span className="nav-icon">⚡</span>
               Health Status
+              {healthStatus === 'ok' && (
+                <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: 'var(--success)', fontWeight: 700 }}>● Online</span>
+              )}
+              {healthStatus === 'error' && (
+                <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: 'var(--danger)', fontWeight: 700 }}>● Error</span>
+              )}
             </button>
 
             {/* Engine badge */}
             <div style={{ marginTop: 'auto', padding: '1rem 1.25rem' }}>
               <div style={{
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                padding: '0.75rem',
-                fontSize: '0.72rem',
-                color: 'var(--text-muted)',
-                lineHeight: 1.7
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)', padding: '0.75rem',
+                fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.7,
               }}>
                 <div style={{ color: 'var(--accent)', fontWeight: 600, marginBottom: '0.3rem' }}>COGO Engine</div>
                 <div>GeometryEngine · Forward</div>
@@ -370,22 +332,22 @@ export default function App() {
             <main className="workspace">
               {tab === 'traverse'  && <TraverseTab />}
               {tab === 'plat'      && (
-                hasAccess(user, TABS.find(t=>t.id==='plat'))
+                hasAccess(user, TABS.find(t => t.id === 'plat'))
                   ? <PlatTab />
                   : <TestingWall feature="Plat Extraction" icon="🛰" />
               )}
               {tab === 'writer'    && (
-                hasAccess(user, TABS.find(t=>t.id==='writer'))
+                hasAccess(user, TABS.find(t => t.id === 'writer'))
                   ? <WriterTab />
                   : <TestingWall feature="Legal Description Writer" icon="✍️" />
               )}
               {tab === 'batch'     && (
-                hasAccess(user, TABS.find(t=>t.id==='batch'))
+                hasAccess(user, TABS.find(t => t.id === 'batch'))
                   ? <BatchDeedTab />
                   : <TestingWall feature="Batch Deed Processing" icon="📦" />
               )}
               {tab === 'dashboard' && (
-                hasAccess(user, TABS.find(t=>t.id==='dashboard'))
+                hasAccess(user, TABS.find(t => t.id === 'dashboard'))
                   ? <DashboardTab />
                   : <TestingWall feature="Dashboard" icon="📊" />
               )}
@@ -411,7 +373,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Help Modal — rendered outside the app-shell so it overlays everything */}
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </StatsRefreshProvider>
   );

@@ -7,9 +7,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node test_headless_riddle.js && node test_server_headless.js",
-    "test:riddle": "node test_headless_riddle.js",
-    "test:server": "node test_server_headless.js"
+    "lint": "eslint . --ext .js --max-warnings 0",
+    "test": "node tests/test_headless_riddle.js && node tests/test_server_headless.js",
+    "test:riddle": "node tests/test_headless_riddle.js",
+    "test:server": "node tests/test_server_headless.js",
+    "test:all": "node tests/test_headless_riddle.js && node tests/test_server_headless.js",
+    "test:unit": "vitest run --config vitest.config.js",
+    "test:unit:watch": "vitest --config vitest.config.js"
   },
   "dependencies": {
     "archiver": "^8.0.0",
@@ -31,5 +35,8 @@
     "stripe": "^22.2.1",
     "undici": "^6.26.0",
     "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.9"
   }
 }

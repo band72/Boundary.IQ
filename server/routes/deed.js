@@ -5,116 +5,97 @@
 // POST /api/deed/solve-direct   — solve pre-parsed courses with COGO only (no LLM)
 
 import { Router } from 'express';
-import { solveDeedText, listAvailableModels, solveFromText, solveFromCourses } from '../services/deedTextSolver.js';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { solveDeedText, listAvailableModels, solveFromText } from '../services/deedTextSolver.js';
 import * as traverseSvc from '../services/traverse.js';
 import { requireAuth, trackDeedUsage } from '../middleware/auth.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+import logger from '../logger.js';
+import { DEED_SOLVE_RATE_LIMIT, DEFAULT_LOCAL_MODEL, OLLAMA_URL } from '../config.js';
+
 const router = Router();
 router.use(requireAuth);
 
+// ── Per-user rate limiter for LLM-backed solve routes ─────────────────────────
+const solveLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: DEED_SOLVE_RATE_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id ? String(req.user.id) : ipKeyGenerator(req),
+  skip: (req) => req.user?.role === 'admin',
+  message: { error: `Too many solve requests. Maximum ${DEED_SOLVE_RATE_LIMIT} per minute per user.` },
+});
+
 // ── GET /api/deed/models ─────────────────────────────────────────────────────
 // Returns all available Ollama models with suitability ratings for deed extraction.
-router.get('/models', async (req, res) => {
-  try {
-    const models = await listAvailableModels();
-    res.json({ models, ollamaUrl: process.env.OLLAMA_URL || 'http://127.0.0.1:11434' });
-  } catch (ex) {
-    res.status(503).json({
-      error: `Ollama not reachable: ${ex.message}`,
-      suggestion: 'Start Ollama with: ollama serve'
-    });
-  }
-});
+router.get('/models', asyncHandler(async (req, res) => {
+  const models = await listAvailableModels();
+  res.json({ models, ollamaUrl: OLLAMA_URL });
+}));
 
 // ── POST /api/deed/solve ──────────────────────────────────────────────────────
 // Body: { deedText: string, model?: string, pobNorthing?: number, pobEasting?: number, units?: string }
-// Uses a local LLM to extract courses, then COGO engine to repair and verify closure.
-// trackDeedUsage: enforces free-tier daily limit (5 solves/day) before running the LLM.
-router.post('/solve', trackDeedUsage, async (req, res) => {
-  try {
-    const { deedText, model, pobNorthing, pobEasting, units, isOpenEnded } = req.body;
+router.post('/solve', trackDeedUsage, solveLimiter, asyncHandler(async (req, res) => {
+  const { deedText, model, pobNorthing, pobEasting, units, isOpenEnded } = req.body;
 
-    if (!deedText || typeof deedText !== 'string' || deedText.trim().length < 20) {
-      return res.status(400).json({ error: 'deedText is required (minimum 20 characters).' });
-    }
-
-    const selectedModel = model || process.env.DEFAULT_LOCAL_MODEL || 'llama3.2';
-
-    console.log(`[POST /api/deed/solve] model=${selectedModel}, textLength=${deedText.length}`);
-
-    const result = await solveDeedText(deedText, selectedModel, {
-      pobNorthing: parseFloat(pobNorthing) || 5000,
-      pobEasting:  parseFloat(pobEasting)  || 5000,
-      units:       units || 'Feet',
-      isOpenEnded: isOpenEnded === true || isOpenEnded === 'true',
-    });
-
-    res.json(result);
-  } catch (ex) {
-    console.error('[POST /api/deed/solve] Error:', ex.message);
-
-    // Specific user-friendly errors
-    if (ex.message.includes('not found')) {
-      return res.status(404).json({ error: ex.message, suggestion: 'Run: ollama pull <model-name>' });
-    }
-    if (ex.message.includes('not reachable') || ex.message.includes('ECONNREFUSED')) {
-      return res.status(503).json({ error: 'Ollama is not running.', suggestion: 'Start Ollama with: ollama serve' });
-    }
-
-    res.status(500).json({ error: ex.message });
+  if (!deedText || typeof deedText !== 'string' || deedText.trim().length < 20) {
+    return res.status(400).json({ error: 'deedText is required (minimum 20 characters).' });
   }
-});
+
+  const selectedModel = model || DEFAULT_LOCAL_MODEL;
+  logger.info({ model: selectedModel, textLength: deedText.length }, '[deed/solve]');
+
+  const result = await solveDeedText(deedText, selectedModel, {
+    pobNorthing: parseFloat(pobNorthing) || 5000,
+    pobEasting:  parseFloat(pobEasting)  || 5000,
+    units:       units || 'Feet',
+    isOpenEnded: isOpenEnded === true || isOpenEnded === 'true',
+  });
+
+  res.json(result);
+}));
 
 // ── POST /api/deed/solve-text ─────────────────────────────────────────────────
 // No LLM, no Ollama. Parses deed text with regex + full COGO repair.
-// trackDeedUsage: still counts against the daily limit (uses the solve pipeline).
-// Body: { deedText: string, pobNorthing?: number, pobEasting?: number, units?: string }
-router.post('/solve-text', trackDeedUsage, (req, res) => {
-  try {
-    const { deedText, pobNorthing, pobEasting, units } = req.body;
-    if (!deedText || typeof deedText !== 'string' || deedText.trim().length < 20) {
-      return res.status(400).json({ error: 'deedText is required (minimum 20 characters).' });
-    }
-    const result = solveFromText(deedText, {
-      pobNorthing: parseFloat(pobNorthing) || 5000,
-      pobEasting:  parseFloat(pobEasting)  || 5000,
-      units: units || 'Feet',
-    });
-    res.json(result);
-  } catch (ex) {
-    res.status(400).json({ error: ex.message });
+router.post('/solve-text', trackDeedUsage, solveLimiter, asyncHandler(async (req, res) => {
+  const { deedText, pobNorthing, pobEasting, units } = req.body;
+  if (!deedText || typeof deedText !== 'string' || deedText.trim().length < 20) {
+    return res.status(400).json({ error: 'deedText is required (minimum 20 characters).' });
   }
-});
+  const result = solveFromText(deedText, {
+    pobNorthing: parseFloat(pobNorthing) || 5000,
+    pobEasting:  parseFloat(pobEasting)  || 5000,
+    units: units || 'Feet',
+  });
+  res.json(result);
+}));
 
 // ── POST /api/deed/solve-direct ───────────────────────────────────────────────
 // Accepts pre-parsed courses (no LLM needed) and runs only the COGO repair engine.
 // Useful for UI-driven manual correction or testing.
 // Body: { courses: [...], pobNorthing, pobEasting, units }
-router.post('/solve-direct', (req, res) => {
-  try {
-    const { courses, pobNorthing, pobEasting, units, isOpenEnded } = req.body;
+router.post('/solve-direct', asyncHandler(async (req, res) => {
+  const { courses, pobNorthing, pobEasting, units, isOpenEnded } = req.body;
 
-    if (!courses || !Array.isArray(courses) || courses.length === 0) {
-      return res.status(400).json({ error: 'courses array is required.' });
-    }
-
-    const pob = {
-      northing: parseFloat(pobNorthing) || 5000,
-      easting:  parseFloat(pobEasting)  || 5000,
-    };
-
-    // Run the full traverse computation including gap solver
-    const result = traverseSvc.compute({
-      pointOfBeginning: pob,
-      courses: normalizeCourses(courses),
-      units: units || 'Feet',
-      isOpenEnded: isOpenEnded === true || isOpenEnded === 'true',
-    });
-
-    res.json({ status: 'computed', traverse: result, pob, units: units || 'Feet' });
-  } catch (ex) {
-    res.status(400).json({ error: ex.message });
+  if (!courses || !Array.isArray(courses) || courses.length === 0) {
+    return res.status(400).json({ error: 'courses array is required.' });
   }
-});
+
+  const pob = {
+    northing: parseFloat(pobNorthing) || 5000,
+    easting:  parseFloat(pobEasting)  || 5000,
+  };
+
+  const result = traverseSvc.compute({
+    pointOfBeginning: pob,
+    courses: normalizeCourses(courses),
+    units: units || 'Feet',
+    isOpenEnded: isOpenEnded === true || isOpenEnded === 'true',
+  });
+
+  res.json({ status: 'computed', traverse: result, pob, units: units || 'Feet' });
+}));
 
 function normalizeCourses(arr) {
   return arr.map(c => ({

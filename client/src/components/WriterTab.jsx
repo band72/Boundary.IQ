@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { API } from '../config';
+import { useToast } from '../hooks/useToast';
+import TraverseMap from './TraverseMap';
 
-const BLANK = { type: 'Line', bearing: '', distance: '', chordBearing: '', chordDistance: '', arcLength: '', delta: '', radius: '', curveDirection: 'Right' };
+const BLANK = { type: 'Line', bearing: '', distance: '', chordBearing: '', chordDistance: '', arcLength: '', delta: '', radius: '', curveDirection: 'Right', description: '', subConnector: '', subFeature: '', subDirection: '' };
 const EXAMPLE = [
   { ...BLANK, bearing: 'N89-50-00E', distance: '669.80' },
   { ...BLANK, bearing: 'S00-35-00E', distance: '669.80' },
@@ -22,12 +24,66 @@ export default function WriterTab() {
   const [areaAcres, setAreaAcres] = useLocalStorage('boundaryiq_writer_area', '');
   const [perimeter, setPerimeter] = useLocalStorage('boundaryiq_writer_perimeter', '');
   const [pasteJson, setPasteJson] = useLocalStorage('boundaryiq_writer_paste', '');
+  const [pasteText, setPasteText] = useLocalStorage('boundaryiq_writer_paste_text', '');
   const [inputMode, setInputMode] = useLocalStorage('boundaryiq_writer_mode', 'form');
 
   const [result, setResult]   = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [copied, setCopied]   = useState(false);
+
+  const { showToast, ToastPortal } = useToast();
+
+  const handleExtractText = async () => {
+    if (!pasteText.trim()) { setError('Paste some legal description text first.'); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/deed/solve-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deedText: pasteText,
+          pobNorthing: parseFloat(pobN) || 5000,
+          pobEasting:  parseFloat(pobE)  || 5000,
+          units,
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+      
+      if (data.repairedCourses) {
+        const newCourses = data.repairedCourses.map(c => ({
+          ...BLANK,
+          type: c.type || 'Line',
+          bearing: c.bearing || '',
+          distance: c.distance != null ? String(c.distance) : '',
+          chordBearing: c.chordBearing || '',
+          chordDistance: c.chordDistance != null ? String(c.chordDistance) : '',
+          arcLength: c.arcLength != null ? String(c.arcLength) : '',
+          delta: c.delta != null ? String(c.delta) : '',
+          radius: c.radius != null ? String(c.radius) : '',
+          curveDirection: c.curveDirection || 'Right',
+          description: c.description || '',
+          subConnector: c.subConnector || '',
+          subFeature: c.subFeature || '',
+          subDirection: c.subDirection || '',
+        }));
+        setCourses(newCourses);
+        if (data.pob) {
+          setPobN(String(data.pob.northing));
+          setPobE(String(data.pob.easting));
+        }
+        setInputMode('form');
+        showToast(`Successfully extracted ${newCourses.length} courses from text!`);
+      } else {
+        throw new Error('No courses could be extracted from this text.');
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ── Course editor helpers ────────────────────────────────────────────────────
   const addCourse = () => setCourses(c => [...c, { ...BLANK }]);
@@ -57,6 +113,10 @@ export default function WriterTab() {
           delta: c.delta ? parseFloat(c.delta) : null,
           radius: c.radius ? parseFloat(c.radius) : null,
           curveDirection: c.curveDirection || null,
+          description: c.description || null,
+          subConnector: c.subConnector || null,
+          subFeature: c.subFeature || null,
+          subDirection: c.subDirection || null,
         })),
         pobNorthing: parseFloat(pobN) || 5000,
         pobEasting:  parseFloat(pobE) || 5000,
@@ -87,11 +147,15 @@ export default function WriterTab() {
 
   const copy = () => { navigator.clipboard.writeText(result); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   const download = () => {
-    const a = Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(new Blob([result], { type: 'text/plain' })),
-      download: 'legal-description.txt',
-    });
-    a.click();
+    const blob = new Blob([result], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'legal-description.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -103,7 +167,7 @@ export default function WriterTab() {
           <div className="card-title">✍️ Legal Description Writer</div>
           <div className="flex-row">
             <div style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 2 }}>
-              {[['form', '📋 Form Input'], ['paste', '📌 Paste JSON']].map(([v, label]) => (
+              {[['form', '📋 Form Input'], ['text', '📝 Paste Text'], ['paste', '📌 Paste JSON']].map(([v, label]) => (
                 <button key={v} onClick={() => setInputMode(v)} style={{
                   padding: '0.35rem 0.9rem', border: 'none', fontFamily: 'inherit', fontSize: '0.8rem',
                   fontWeight: 500, cursor: 'pointer', borderRadius: 'calc(var(--radius-sm) - 2px)',
@@ -146,8 +210,8 @@ export default function WriterTab() {
             </div>
 
             {/* Column headers */}
-            <div style={{ display: 'grid', gridTemplateColumns: '28px 80px 1fr 120px 32px', gap: '0.5rem', padding: '0 0.5rem 0.4rem', fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              <span>#</span><span>Type</span><span>Bearing / Chord Bearing</span><span>Distance / Arc Len</span><span></span>
+            <div style={{ display: 'grid', gridTemplateColumns: '28px 150px 1fr 120px 32px', gap: '0.5rem', padding: '0 0.5rem 0.4rem', fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <span>#</span><span>Type</span><span>Details / Bearing</span><span>Distance / Coordinates</span><span></span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -157,31 +221,117 @@ export default function WriterTab() {
                 </div>
               )}
               {courses.map((c, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '28px 80px 1fr 120px 32px', gap: '0.5rem', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.45rem 0.6rem' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>{i + 1}</span>
-                  <select value={c.type} onChange={e => update(i, 'type', e.target.value)}>
-                    <option>Line</option><option>Curve</option>
-                  </select>
-                  {c.type === 'Line' ? (
-                    <>
-                      <input type="text" placeholder="N45°30'00&quot;E" value={c.bearing} onChange={e => update(i, 'bearing', e.target.value)} />
-                      <input type="number" placeholder="Distance" value={c.distance} onChange={e => update(i, 'distance', e.target.value)} />
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
-                        <input type="text" placeholder="Chord Bearing" value={c.chordBearing} onChange={e => update(i, 'chordBearing', e.target.value)} />
-                        <input type="number" placeholder="Delta (DMS)" value={c.delta} onChange={e => update(i, 'delta', e.target.value)} />
-                        <input type="number" placeholder="Radius" value={c.radius} onChange={e => update(i, 'radius', e.target.value)} />
-                      </div>
-                      <input type="number" placeholder="Chord Dist" value={c.chordDistance} onChange={e => update(i, 'chordDistance', e.target.value)} />
-                    </>
-                  )}
-                  <button onClick={() => removeCourse(i)} style={{ background: 'rgba(255,77,109,0.15)', border: '1px solid rgba(255,77,109,0.3)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.75rem' }}>✕</button>
+                <div key={i} style={{
+                  display: 'flex', flexDirection: 'column', gap: '0.5rem',
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.75rem'
+                }}>
+                  {/* Main Input Row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '28px 150px 1fr 120px 32px', gap: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>{i + 1}</span>
+                    <select value={c.type || 'Line'} onChange={e => update(i, 'type', e.target.value)} style={{ fontSize: '0.8rem' }}>
+                      <option value="Line">Line</option>
+                      <option value="Curve">Curve</option>
+                      <option value="Point of Beginning">Point of Beginning</option>
+                      <option value="Point of Reference">Point of Reference</option>
+                      <option value="Point">Point</option>
+                      <option value="Meandering Line">Meandering Line</option>
+                      <option value="Point of Terminus">Point of Terminus</option>
+                    </select>
+
+                    {c.type === 'Line' && (
+                      <>
+                        <input type="text" placeholder="Bearing (e.g. N45°30'00&quot;E)" value={c.bearing} onChange={e => update(i, 'bearing', e.target.value)} />
+                        <input type="number" placeholder="Distance" value={c.distance} onChange={e => update(i, 'distance', e.target.value)} />
+                      </>
+                    )}
+
+                    {c.type === 'Curve' && (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
+                          <input type="text" placeholder="Chord Bearing" value={c.chordBearing} onChange={e => update(i, 'chordBearing', e.target.value)} />
+                          <input type="number" placeholder="Delta (DMS)" value={c.delta} onChange={e => update(i, 'delta', e.target.value)} />
+                          <input type="number" placeholder="Radius" value={c.radius} onChange={e => update(i, 'radius', e.target.value)} />
+                        </div>
+                        <input type="number" placeholder="Chord Dist" value={c.chordDistance} onChange={e => update(i, 'chordDistance', e.target.value)} />
+                      </>
+                    )}
+
+                    {['Point of Beginning', 'Point of Reference', 'Point', 'Meandering Line', 'Point of Terminus'].includes(c.type) && (
+                      <>
+                        <input type="text" placeholder="Description / Details (Optional)" value={c.description || ''} style={{ gridColumn: 'span 2' }} onChange={e => update(i, 'description', e.target.value)} />
+                      </>
+                    )}
+
+                    <button onClick={() => removeCourse(i)} style={{ background: 'rgba(255,77,109,0.15)', border: '1px solid rgba(255,77,109,0.3)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.75rem', height: '100%' }}>✕</button>
+                  </div>
+
+                  {/* Sub-item Row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '33px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.4rem' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>Support Call:</span>
+                    
+                    <select value={c.subConnector || ''} onChange={e => update(i, 'subConnector', e.target.value)} style={{ width: '130px', fontSize: '0.75rem', padding: '0.2rem' }}>
+                      <option value="">(None)</option>
+                      <option value="To:">To:</option>
+                      <option value="Along:">Along:</option>
+                      <option value="Intersection with:">Intersection with:</option>
+                    </select>
+
+                    <select value={c.subDirection || ''} onChange={e => update(i, 'subDirection', e.target.value)} style={{ width: '110px', fontSize: '0.75rem', padding: '0.2rem' }}>
+                      <option value="">(None)</option>
+                      <option value="NE">NE</option>
+                      <option value="NW">NW</option>
+                      <option value="SE">SE</option>
+                      <option value="SW">SW</option>
+                      <option value="S'ly">S'ly</option>
+                      <option value="N'ly">N'ly</option>
+                    </select>
+
+                    <select value={c.subFeature || ''} onChange={e => update(i, 'subFeature', e.target.value)} style={{ width: '170px', fontSize: '0.75rem', padding: '0.2rem' }}>
+                      <option value="">(None)</option>
+                      <option value="Right of Way">Right of Way</option>
+                      <option value="Road">Road</option>
+                      <option value="Edge of Water">Edge of Water</option>
+                      <option value="Meandering Line">Meandering Line</option>
+                      <option value="Easement">Easement</option>
+                      <option value="Traverse Line">Traverse Line</option>
+                    </select>
+                  </div>
                 </div>
               ))}
             </div>
           </>
+        )}
+
+        {/* ── PASTE TEXT MODE ────────────────────────────────────────────────── */}
+        {inputMode === 'text' && (
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label className="form-label">Paste Legal Description Text</label>
+            <textarea
+              value={pasteText}
+              onChange={e => setPasteText(e.target.value)}
+              placeholder={`BEGINNING at a point... thence North 45°22'10" East, 150.25 feet...`}
+              style={{
+                width: '100%', minHeight: 140, resize: 'vertical',
+                fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: 1.6,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)', padding: '0.75rem',
+                color: 'var(--text-primary)', boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+              <button
+                className="btn btn-primary"
+                onClick={handleExtractText}
+                disabled={loading || !pasteText.trim()}
+              >
+                {loading ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Extracting...</> : '⚡ Extract Courses from Text'}
+              </button>
+            </div>
+            <div className="alert alert-info" style={{ fontSize: '0.78rem', marginTop: '0.75rem' }}>
+              💡 Paste a raw legal description text here. The system will parse it and load the courses directly into the form.
+            </div>
+          </div>
         )}
 
         {/* ── PASTE JSON MODE ────────────────────────────────────────────────── */}
@@ -252,25 +402,41 @@ export default function WriterTab() {
 
       {/* ── Output ────────────────────────────────────────────────────────────── */}
       {result && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">📄 Legal Description</div>
-            <div className="flex-row">
-              <button className="btn btn-ghost btn-sm" onClick={copy}>{copied ? '✅ Copied!' : '📋 Copy'}</button>
-              <button className="btn btn-success btn-sm" onClick={download}>⬇ Download .txt</button>
+        <>
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">📄 Legal Description</div>
+              <div className="flex-row">
+                <button className="btn btn-ghost btn-sm" onClick={copy}>{copied ? '✅ Copied!' : '📋 Copy'}</button>
+                <button className="btn btn-success btn-sm" onClick={download}>⬇ Download .txt</button>
+              </div>
             </div>
+            <pre style={{
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', padding: '1.25rem',
+              fontFamily: 'Georgia, "Times New Roman", serif',
+              fontSize: '0.9rem', lineHeight: 2.0, color: 'var(--text-primary)',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            }}>
+              {result}
+            </pre>
           </div>
-          <pre style={{
-            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)', padding: '1.25rem',
-            fontFamily: 'Georgia, "Times New Roman", serif',
-            fontSize: '0.9rem', lineHeight: 2.0, color: 'var(--text-primary)',
-            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          }}>
-            {result}
-          </pre>
-        </div>
+
+          <div className="card mt-3">
+            <div className="card-header">
+              <div className="card-title">🗺️ Boundary Map (Draft)</div>
+            </div>
+            <TraverseMap
+              courses={courses}
+              pob={{
+                northing: parseFloat(pobN) || 5000,
+                easting: parseFloat(pobE) || 5000
+              }}
+            />
+          </div>
+        </>
       )}
+      <ToastPortal />
     </div>
   );
 }

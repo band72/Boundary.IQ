@@ -121,13 +121,13 @@ function getDensePoints(pts, coursesList) {
   return dense;
 }
 
-export default function TraverseMap({ stations, adjusted, courses }) {
+export default function TraverseMap({ stations, adjusted, courses, pob }) {
   const [canvasElement, setCanvasElement] = useState(null);
   
   const getPts = () => {
     if (adjusted?.length) return adjusted;
     if (stations?.length) return stations.map(s => ({ northing: s.northing, easting: s.easting }));
-    if (courses?.length) return computePointsFromCourses(courses);
+    if (courses?.length) return computePointsFromCourses(courses, pob);
     return [];
   };
 
@@ -183,14 +183,18 @@ export default function TraverseMap({ stations, adjusted, courses }) {
     for (let i = 1; i < densePts.length; i++) ctx.lineTo(tx(densePts[i].easting), ty(densePts[i].northing));
     ctx.closePath();
     ctx.stroke();
-
-    // Draw visual midpoint labels aligned parallel to segments
+    // Draw visual midpoint labels aligned parallel to segments as tags (L1, L2, C1...)
     if (courses && courses.length > 0 && pts.length >= 2) {
+      let lineIndex = 1;
+      let curveIndex = 1;
       for (let i = 0; i < courses.length; i++) {
         const course = courses[i];
         const p1 = pts[i];
         const p2 = pts[i + 1] || pts[0];
         if (!p1 || !p2) continue;
+
+        let dist = parseFloat(course.distance ?? course.chordDistance ?? course.arcLength ?? 0);
+        if (dist <= 0) continue;
 
         const x1 = tx(p1.easting), y1 = ty(p1.northing);
         const x2 = tx(p2.easting), y2 = ty(p2.northing);
@@ -199,11 +203,7 @@ export default function TraverseMap({ stations, adjusted, courses }) {
         const midY = (y1 + y2) / 2;
 
         const isCurve = (course.type || '').toLowerCase() === 'curve';
-        const distVal = course.distance ?? course.arcLength ?? course.chordDistance;
-        const distStr = distVal != null ? `${distVal.toFixed(1)}'` : '';
-        const rawBrg = course.bearing || course.chordBearing || '';
-        const brgStr = rawBrg ? rawBrg.replace(/\s+/g, '') : '';
-        const label = isCurve ? `C${i + 1} R=${course.radius || 0} L=${distStr}` : `${brgStr} ${distStr}`;
+        const label = isCurve ? `C${curveIndex++}` : `L${lineIndex++}`;
 
         // Compute angle of segment in canvas space
         const dx = x2 - x1;
@@ -218,12 +218,31 @@ export default function TraverseMap({ stations, adjusted, courses }) {
         ctx.translate(midX, midY);
         ctx.rotate(angRad);
         
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        const textWidth = ctx.measureText(label).width;
+        const paddingX = 4;
+        const paddingY = 2;
+        
+        // Draw background pill
+        ctx.fillStyle = 'rgba(9, 14, 26, 0.85)';
+        ctx.strokeStyle = isCurve ? 'rgba(255, 159, 67, 0.7)' : 'rgba(168, 196, 255, 0.7)';
+        ctx.lineWidth = 1;
+        
+        const rectW = textWidth + paddingX * 2;
+        const rectH = 12 + paddingY * 2;
+        const rectX = -rectW / 2;
+        const rectY = -rectH / 2;
+        
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(rectX, rectY, rectW, rectH, 3);
+        else ctx.rect(rectX, rectY, rectW, rectH);
+        ctx.fill();
+        ctx.stroke();
+
         ctx.fillStyle = isCurve ? '#ff9f43' : '#a8c4ff';
-        ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        // Draw with small 4px perpendicular offset
-        ctx.fillText(label, 0, -4);
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, 0, 0);
         ctx.restore();
       }
     }
@@ -289,16 +308,118 @@ export default function TraverseMap({ stations, adjusted, courses }) {
 
   }, [canvasElement, pts, courses]);
 
+  const getTablesData = () => {
+    const linesList = [];
+    const curvesList = [];
+    if (!courses) return { lines: linesList, curves: curvesList };
+
+    let lineIndex = 1;
+    let curveIndex = 1;
+
+    courses.forEach(c => {
+      let dist = parseFloat(c.distance ?? c.chordDistance ?? c.arcLength ?? 0);
+      if (dist <= 0) return;
+
+      const isCurve = (c.type || '').toLowerCase() === 'curve';
+      if (isCurve) {
+        curvesList.push({
+          tag: `C${curveIndex++}`,
+          radius: c.radius != null && c.radius !== '' ? `${parseFloat(c.radius).toFixed(2)}'` : '-',
+          arcLength: c.arcLength != null && c.arcLength !== '' ? `${parseFloat(c.arcLength).toFixed(2)}'` : (c.distance != null && c.distance !== '' ? `${parseFloat(c.distance).toFixed(2)}'` : '-'),
+          chordBearing: c.chordBearing || c.bearing || '-',
+          chordDistance: c.chordDistance != null && c.chordDistance !== '' ? `${parseFloat(c.chordDistance).toFixed(2)}'` : '-',
+          delta: c.delta || '-'
+        });
+      } else {
+        linesList.push({
+          tag: `L${lineIndex++}`,
+          bearing: c.bearing || '-',
+          distance: c.distance != null && c.distance !== '' ? `${parseFloat(c.distance).toFixed(2)}'` : '-'
+        });
+      }
+    });
+
+    return { lines: linesList, curves: curvesList };
+  };
+
+  const { lines, curves } = getTablesData();
+
   return (
-    <div className="map-container" style={{ height: 340 }}>
-      <canvas ref={setCanvasElement} className="map-canvas" width={700} height={340} />
-      <div className="map-legend">
-        <span style={{ color: 'var(--success)', fontWeight: 600 }}>● POB</span>
-        {'  '}
-        <span style={{ color: 'var(--accent)', fontWeight: 600 }}>● Station</span>
-        {'  '}
-        <span style={{ color: 'var(--danger)', fontWeight: 600 }}>- - Misclosure Error</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div className="map-container" style={{ height: 340 }}>
+        <canvas ref={setCanvasElement} className="map-canvas" width={700} height={340} />
+        <div className="map-legend">
+          <span style={{ color: 'var(--success)', fontWeight: 600 }}>● POB</span>
+          {'  '}
+          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>● Station</span>
+          {'  '}
+          <span style={{ color: 'var(--danger)', fontWeight: 600 }}>- - Misclosure Error</span>
+        </div>
       </div>
+
+      {(lines.length > 0 || curves.length > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+          {lines.length > 0 && (
+            <div className="card" style={{ padding: '1.25rem', border: '1px solid var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.75rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                📐 Line Table
+              </div>
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '50px' }}>Tag</th>
+                      <th>Bearing</th>
+                      <th>Distance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((l, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>{l.tag}</td>
+                        <td>{l.bearing}</td>
+                        <td>{l.distance}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {curves.length > 0 && (
+            <div className="card" style={{ padding: '1.25rem', border: '1px solid var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.75rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🍊 Curve Table
+              </div>
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '50px' }}>Tag</th>
+                      <th>Radius</th>
+                      <th>Length</th>
+                      <th>Chord Brg</th>
+                      <th>Chord Dist</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {curves.map((c, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 'bold', color: 'var(--warning)' }}>{c.tag}</td>
+                        <td>{c.radius}</td>
+                        <td>{c.arcLength}</td>
+                        <td>{c.chordBearing}</td>
+                        <td>{c.chordDistance}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,7 @@
 import { getSession } from '../services/diagnosticsDb.js';
+import { createChildLogger } from '../logger.js';
+
+const log = createChildLogger('auth');
 
 // Plan hierarchy: free < pro < enterprise < admin
 const PLAN_RANK = { free: 0, pro: 1, enterprise: 2, admin: 99 };
@@ -37,7 +40,7 @@ export function requireAuth(req, res, next) {
 
     next();
   } catch (err) {
-    console.error('Authentication middleware error:', err.message);
+    log.error({ err: err.message }, 'Authentication middleware error');
     return res.status(500).json({ error: 'Internal server error during authentication.' });
   }
 }
@@ -116,7 +119,7 @@ export function trackDeedUsage(req, res, next) {
     incrementDailyUsage(req.user.id);
     next();
   }).catch(err => {
-    console.error('trackDeedUsage error:', err.message);
+    log.error({ err: err.message }, 'trackDeedUsage error');
     next(); // Don't block if tracking fails
   });
 }

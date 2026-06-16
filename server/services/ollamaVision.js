@@ -8,8 +8,11 @@
 import { Agent } from 'undici';
 import { httpFetch } from './httpFetch.js';
 import { spawn } from 'child_process';
+import { OLLAMA_URL, OLLAMA_PATH, OLLAMA_RUNS_ON_WSL } from '../config.js';
+import { createChildLogger } from '../logger.js';
 
-const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+const log = createChildLogger('ollamaVision');
+const OLLAMA_BASE = OLLAMA_URL;
 const MAX_RETRIES = 1;   // Reduced from 2 — failing fast is better than hanging SSE for 30+ min
 
 // Per-model inference timeout — 30 minutes to support slow CPU hardware
@@ -74,11 +77,19 @@ export function isVisionCapable(model) { return isVisionModel(model); }
 
 // ── Status helpers ────────────────────────────────────────────────────────────
 
+/** 60-second model list cache to avoid hammering /api/tags on every inference */
+let _modelListCache = null;
+let _modelListExpiresAt = 0;
+
 /**
  * Check if Ollama is reachable and return available models.
+ * Result is cached for 60 seconds.
  * @returns {Promise<{ online: boolean, models: string[], error?: string }>}
  */
-export async function getStatus() {
+export async function getStatus(bypassCache = false) {
+  if (!bypassCache && _modelListCache && Date.now() < _modelListExpiresAt) {
+    return _modelListCache;
+  }
   try {
     const res = await httpFetch(`${OLLAMA_BASE}/api/tags`, {
       signal: AbortSignal.timeout(3000),
@@ -87,7 +98,9 @@ export async function getStatus() {
     if (!res.ok) return { online: false, models: [], error: `HTTP ${res.status}` };
     const data = await res.json();
     const models = (data.models || []).map(m => m.name);
-    return { online: true, models };
+    _modelListCache = { online: true, models };
+    _modelListExpiresAt = Date.now() + 60_000;
+    return _modelListCache;
   } catch (ex) {
     return { online: false, models: [], error: ex.message };
   }
@@ -97,42 +110,36 @@ export async function getStatus() {
  * Ensures local Ollama is online, spawning a recovery auto-start if connection refused.
  */
 export async function ensureOllamaServiceOnline() {
-  const status = await getStatus();
+  const status = await getStatus(true); // bypass cache — we know it's offline
   if (status.online) return true;
 
-  console.log('⏳ Ollama service is offline — attempting recovery auto-start (ollama serve)…');
+  log.warn('Ollama service is offline — attempting recovery auto-start (ollama serve)…');
   try {
-    const ollamaPath = process.env.OLLAMA_PATH || 'ollama';
-    let cmd = ollamaPath;
+    let cmd = OLLAMA_PATH;
     let args = ['serve'];
-    if (process.platform === 'win32' && (ollamaPath.startsWith('/') || ollamaPath.includes('wsl') || process.env.OLLAMA_RUNS_ON_WSL === 'true' || ollamaPath === '/home/friend/.local/bin/ollama')) {
+    if (process.platform === 'win32' && (OLLAMA_PATH.startsWith('/') || OLLAMA_PATH.includes('wsl') || OLLAMA_RUNS_ON_WSL)) {
       cmd = 'wsl';
-      const actualOllama = ollamaPath === 'ollama' ? 'ollama' : ollamaPath;
+      const actualOllama = OLLAMA_PATH === 'ollama' ? 'ollama' : OLLAMA_PATH;
       args = ['sh', '-c', `OLLAMA_HOST=0.0.0.0 ${actualOllama} serve`];
     }
-    const child = spawn(cmd, args, { 
-      detached: true, 
+    const child = spawn(cmd, args, {
+      detached: true,
       stdio: 'ignore',
-      env: { ...process.env, OLLAMA_HOST: '0.0.0.0' }
+      env: { ...process.env, OLLAMA_HOST: '0.0.0.0' },
     });
-    child.on('error', (err) => {
-      console.warn('⚠️ Ollama recovery spawn error:', err.message);
-    });
+    child.on('error', (err) => log.warn({ err: err.message }, 'Ollama recovery spawn error'));
     child.unref();
 
-    // Poll for up to 15s to wait for it to come online
+    // Poll for up to 15s
     let waited = 0;
     while (waited < 15000) {
       await new Promise(r => setTimeout(r, 2000));
       waited += 2000;
-      const s = await getStatus();
-      if (s.online) {
-        console.log(`✓ Ollama service recovered successfully!`);
-        return true;
-      }
+      const s = await getStatus(true);
+      if (s.online) { log.info('Ollama service recovered successfully'); return true; }
     }
   } catch (err) {
-    console.warn('⚠️ Ollama recovery auto-start failed:', err.message);
+    log.warn({ err: err.message }, 'Ollama recovery auto-start failed');
   }
   return false;
 }

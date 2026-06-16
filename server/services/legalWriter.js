@@ -26,23 +26,52 @@ export function write(req) {
   for (let i = 0; i < courses.length; i++) {
     const c = courses[i];
     const isLast = i === courses.length - 1;
-    const term = isLast ? 'to the Point of Beginning.' : ';';
+    const type = (c.type || 'Line').toLowerCase();
 
-    if ((c.type || '').toLowerCase() === 'line') {
+    let term = ';';
+    if (isLast) {
+      if (type === 'point of beginning' || type === 'point of terminus') {
+        term = '.';
+      } else {
+        term = ' to the Point of Beginning.';
+      }
+    }
+
+    const subPhrase = formatSubItemPhrase(c);
+    let phrase = '';
+
+    if (type === 'line') {
       const brg = formatBearing(c.bearing || '');
       const dist = (c.distance || 0).toFixed(2);
-      lines.push(`THENCE ${brg}, a distance of ${dist} ${units}${term}`);
-    } else {
-      // Curve
+      phrase = `THENCE ${brg}, a distance of ${dist} ${units}${subPhrase}`;
+    } else if (type === 'curve') {
       const dir = c.curveDirection || 'Right';
       const delta = formatDMS(c.delta || 0);
       const radius = (c.radius || 0).toFixed(2);
       const arc = (c.arcLength || 0).toFixed(2);
       const chord = (c.chordDistance || 0).toFixed(2);
       const chBrg = formatBearing(c.chordBearing || '');
-      lines.push(`THENCE along a curve to the ${dir}, having a radius of ${radius} ${units}, a central angle of ${delta}, an arc length of ${arc} ${units}, a chord bearing of ${chBrg}, and a chord distance of ${chord} ${units}${term}`);
+      phrase = `THENCE along a curve to the ${dir}, having a radius of ${radius} ${units}, a central angle of ${delta}, an arc length of ${arc} ${units}, a chord bearing of ${chBrg}, and a chord distance of ${chord} ${units}${subPhrase}`;
+    } else if (type === 'point of beginning') {
+      const desc = c.description ? ` (${c.description})` : '';
+      phrase = `THENCE to the Point of Beginning (POB)${desc}${subPhrase}`;
+    } else if (type === 'point of reference') {
+      const desc = c.description ? ` (${c.description})` : '';
+      phrase = `THENCE to the Point of Reference (POR)${desc}${subPhrase}`;
+    } else if (type === 'point') {
+      const desc = c.description ? ` (${c.description})` : '';
+      phrase = `THENCE to a point${desc}${subPhrase}`;
+    } else if (type === 'meandering line') {
+      const desc = c.description ? ` (${c.description})` : '';
+      phrase = `THENCE along a meandering line${desc}${subPhrase}`;
+    } else if (type === 'point of terminus') {
+      const desc = c.description ? ` (${c.description})` : '';
+      phrase = `THENCE to the Point of Terminus (POT)${desc}${subPhrase}`;
+    } else {
+      phrase = `THENCE ${type}${subPhrase}`;
     }
 
+    lines.push(`${phrase}${term}`);
     if (!isLast) lines.push('');
   }
 
@@ -60,6 +89,37 @@ export function write(req) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatSubItemPhrase(c) {
+  const conn = (c.subConnector || '').trim();
+  const feat = (c.subFeature || '').trim();
+  const dir = (c.subDirection || '').trim();
+
+  if (!conn && !feat && !dir) return '';
+
+  let connWord = '';
+  const cl = conn.toLowerCase();
+  if (cl.startsWith('to')) connWord = 'to the';
+  else if (cl.startsWith('along')) connWord = 'along the';
+  else if (cl.startsWith('inter')) connWord = 'to the intersection with the';
+  else connWord = conn.toLowerCase();
+
+  let dirWord = '';
+  if (dir) {
+    dirWord = dir + ' line';
+  }
+
+  let parts = [];
+  if (connWord) parts.push(connWord);
+  if (dirWord) parts.push(dirWord);
+  if (feat) {
+    if (dirWord) parts.push('of the');
+    else parts.push('the');
+    parts.push(feat);
+  }
+
+  return ' ' + parts.join(' ');
+}
 
 function formatBearing(raw) {
   if (!raw || raw.length < 3) return raw;

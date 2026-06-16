@@ -49,3 +49,11 @@ server/render_*.js
 server/scripts/test_*.js
 server/scripts/export_*.mjs
 agent.py
+
+# ── Local databases / cache ───────────────────────────────────────────────────
+*.db
+
+# ── Local scripts in scripts folder ───────────────────────────────────────────
+server/scripts/inspect_*.js
+server/scripts/query_*.js
+

@@ -12,7 +12,10 @@ import { isWordDocument, convertToPdf } from '../services/docConversion.js';
 import * as geminiVision from '../services/geminiVision.js';
 import crypto from 'crypto';
 import * as lockService from '../services/lockService.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, trackDeedUsage } from '../middleware/auth.js';
+import { createChildLogger } from '../logger.js';
+
+const log = createChildLogger('batchDeed');
 const router = Router();
 router.use(requireAuth);
 
@@ -47,7 +50,11 @@ function parsePrecisionRatio(precisionStr) {
   return 0;
 }
 
-router.post('/process', upload.array('images', 20), async (req, res) => {
+// NOTE: This endpoint uses a process-global mutex (lockService) intentionally.
+// Batch processing is CPU/memory intensive and running two batches concurrently
+// on the same server risks OOM and LLM timeout collisions. Multi-user queuing
+// would require a proper job queue (e.g. BullMQ) — tracked as a future enhancement.
+router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, res) => {
   let keepAlive = null;
   let hasLock = false;
   try {
@@ -78,7 +85,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     const concurrency = isLocalLLM ? 1 : (parseInt(req.query.concurrency) || 5);
 
     if (isLocalLLM && parseInt(req.query.concurrency) > 1) {
-      console.log(`⚠️ Local provider "${activeProvider}" is active. Capping BatchDeed concurrency limit from ${req.query.concurrency} to 1 to prevent OOM/timeouts.`);
+      log.warn({ provider: activeProvider, requested: req.query.concurrency }, 'Local provider active — capping BatchDeed concurrency to 1 to prevent OOM/timeouts');
     }
 
     const batchId = uuidv4();
@@ -110,7 +117,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     let active = 0;
     const queue = files.map((file, index) => async () => {
       const fileName = file.originalname;
-      console.log(`Batch processing: ${fileName}`);
+      log.info({ fileName, index }, 'Batch item started');
       let fileHash = null;
 
       try {
@@ -122,7 +129,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
         // Check cache
         const solvedCase = db.findSolvedCase(fileName, fileHash);
         if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-          console.log(`SQLite Case Finder: Found PASS for ${fileName} (hash=${fileHash})`);
+          log.info({ fileName, hash: fileHash.slice(0, 8) }, 'SQLite Case Finder: cache hit — reusing solved case');
           const cachedExtraction = JSON.parse(solvedCase.extractionJson);
           const cachedTraverse = JSON.parse(solvedCase.traverseJson);
 
@@ -158,19 +165,19 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
 
         // Word doc conversion
         if (isWordDocument(fileName)) {
-          console.log(`Converting Word doc ${fileName} to PDF...`);
+          log.info({ fileName }, 'Converting Word doc to PDF via LibreOffice');
           try {
             imageBytes = await convertToPdf(imageBytes, fileName);
             mime = 'application/pdf';
           } catch (err) {
-                      console.warn(`LibreOffice conversion failed for ${fileName}, checking for pre-extracted text fallback...`, err.message);
+            log.warn({ fileName, err: err.message }, 'LibreOffice conversion failed — checking for pre-extracted text fallback');
             const base = path.parse(fileName).name;
             const wordDocTrainingDir = process.env.WORD_DOC_TRAINING_DIR || '';
             const trainingBase = wordDocTrainingDir
               ? path.join(wordDocTrainingDir, '_extracted', base + '.txt')
               : '';
             if (trainingBase && fs.existsSync(trainingBase)) {
-              console.log(`Found pre-extracted text fallback at ${trainingBase}`);
+              log.info({ fileName, fallback: trainingBase }, 'Using pre-extracted text fallback');
               imageBytes = fs.readFileSync(trainingBase);
               mime = 'text/plain';
             } else {
@@ -248,7 +255,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
 
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'Auto-repair pipeline');
       } catch (ex) {
-        console.error(`Batch item failed: ${fileName}`, ex.message);
+        log.error({ fileName, err: ex.message }, 'Batch item failed');
         results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message };
         db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE, fileHash);
       }
@@ -268,7 +275,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
       } catch (timeoutErr) {
         // Timeout or unhandled throw — log and mark failed so batch continues
         const fileName = files[idx]?.originalname || `file[${idx}]`;
-        console.error(`⏱ Deed timed out or failed: ${fileName} —`, timeoutErr.message);
+        log.error({ fileName, err: timeoutErr.message }, 'Deed timed out or failed');
         if (!results[idx]) {
           results[idx] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: timeoutErr.message };
         }
@@ -286,7 +293,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     res.end();
   } catch (ex) {
     if (keepAlive) clearInterval(keepAlive);
-    console.error('Batch process error:', ex);
+    log.error({ err: ex.message }, 'Batch process top-level error');
     if (res.headersSent) {
       res.write(JSON.stringify({ error: ex.message }));
       res.end();

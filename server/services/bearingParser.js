@@ -82,6 +82,10 @@ export function parse(bearing) {
     // Word document smart-quote / special character cleanup
     .replace(/[\u2018\u2019\u201A\u02BC\u00B4]/g, "'") // smart-left/right single quotes → '
     .replace(/[\u201C\u201D\u201E]/g, '"')              // smart-left/right double quotes → "
+    .replace(/\bNORTH\b/gi, 'N')
+    .replace(/\bSOUTH\b/gi, 'S')
+    .replace(/\bEAST\b/gi, 'E')
+    .replace(/\bWEST\b/gi, 'W')
     .replace(/DEGREES|DEG/gi, '°')
     .replace(/MINUTES|MIN/gi, "'")
     .replace(/SECONDS|SEC/gi, '"')
@@ -145,7 +149,7 @@ export function parse(bearing) {
   clean = clean.replace(/([NSns]\s*\d{1,3})\s*([^0-9NSEWns\s])\s*(\d{1,2}\s*['])/gi, '$1°$3');
 
   // Handle OCR/scrivener errors where the degree symbol is misread as a digit (e.g. S00955'38"E -> S00°55'38"E)
-  clean = clean.replace(/([NSns]\s*\d{1,2})([0-9])(\d{2}\s*['])/gi, '$1°$3');
+  clean = clean.replace(/([NSns]\s*\d{2,3})([0-9])(\d{2}\s*['])/gi, '$1°$3');
 
   // Handle double degree symbol OCR errors or LLM translation duplicate degree digit errors (e.g. S72°912'02"W -> S72°12'02"W, S17°047'58"E -> S17°47'58"E)
   clean = clean.replace(/(\d+)\s*°\s*[0-9]\s*(\d{2}\s*['])/gi, '$1°$2');
@@ -303,10 +307,11 @@ export function toDisplayString(azDeg) {
   else if (azDeg <= 270) { ns = 'S'; ew = 'W'; brg = azDeg - 180; }
   else                   { ns = 'N'; ew = 'W'; brg = 360 - azDeg; }
 
-  const d = Math.floor(brg);
-  const rem = (brg - d) * 60;
-  const mn = Math.floor(rem);
-  const sec = (rem - mn) * 60;
+  let totalSec = Math.round(brg * 3600 * 100) / 100;
+  let d = Math.floor(totalSec / 3600);
+  let remSec = totalSec - d * 3600;
+  let mn = Math.floor(remSec / 60);
+  let sec = remSec - mn * 60;
 
   const dd = String(d).padStart(2, '0');
   const mm = String(mn).padStart(2, '0');

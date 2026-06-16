@@ -12,6 +12,9 @@ import * as gemini from './geminiVision.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
 import { SupervisorAgent } from './agentSystem.js';
+import { createChildLogger } from '../logger.js';
+
+const log = createChildLogger('repair');
 
 const PASS_LINEAR_ERROR_FT = 0.30;
 const PASS_PRECISION_RATIO = 10000.0;
@@ -27,8 +30,16 @@ const PASS_PRECISION_RATIO = 10000.0;
  * @returns {Promise<object>} RepairResult
  */
 export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpenEnded = false, fileName = '', maxTurns = 3) {
+  const t0 = Date.now();
+  log.info({ file: fileName, mimeType, maxTurns }, 'Pipeline started');
   const result = await _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
-  return finalizeResult(result);
+  const final = finalizeResult(result);
+  const elapsed = Date.now() - t0;
+  log.info(
+    { file: fileName, status: final?.status, stage: final?.repairStageUsed, elapsedMs: elapsed },
+    'Pipeline complete',
+  );
+  return final;
 }
 
 function finalizeResult(result) {
@@ -81,9 +92,8 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   const pipelineStart = Date.now();
   let bustCourseIdx = -1;  // Index of the most-suspected single-bust course (-1 = unknown)
 
-
   // ── Stage 5: Hierarchical Multi-Agent Deed Resolution System ────────────────────
-  console.log('Repair Pipeline Stage 5: Executing Hierarchical Multi-Agent System...');
+  log.info({ stage: 'stage5_agent', file: fileName }, 'Executing Hierarchical Multi-Agent System');
   let cachedExtraction = null; // Fix #2: cache Stage 5 extraction to avoid redundant Gemini call
   try {
     const supervisor = new SupervisorAgent();

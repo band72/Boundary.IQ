@@ -1,4 +1,24 @@
 #!/usr/bin/env python3
+# ─────────────────────────────────────────────────────────────────────────────
+# STANDALONE EXPERIMENTAL TOOL — NOT PART OF THE MAIN NODE.JS PIPELINE
+# ─────────────────────────────────────────────────────────────────────────────
+# This script is an independent Python agent that uses the Google Antigravity
+# (AGY) SDK for high-level LLM orchestration. It calls the Boundary.IQ
+# Node.js server via REST for deed processing, but does NOT share any code
+# with the Node.js server or the React client.
+#
+# It is useful for:
+#   • Ad-hoc CLI deed processing experiments
+#   • Testing Antigravity SDK multi-agent workflows
+#   • Debugging/comparing cloud vs. local model output
+#
+# The production deed processing path is:
+#   React client → POST /api/batchdeed → Node.js server → repair pipeline
+#
+# Prerequisites (separate from Node.js deps):
+#   pip install -r requirements.txt   (includes httpx, python-dotenv)
+#   pip install google-antigravity    (optional — only needed for run_agent())
+# ─────────────────────────────────────────────────────────────────────────────
 """
 Boundary.IQ — Antigravity Agent
 ────────────────────────────────

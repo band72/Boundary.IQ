@@ -40,6 +40,10 @@ function normalizeCourses(arr) {
     chordBearing: c.chordBearing ?? c.ChordBearing ?? null,
     chordDistance: c.chordDistance ?? c.ChordDistance ?? null,
     isUnknown: c.isUnknown ?? c.IsUnknown ?? false,
+    description: c.description ?? c.Description ?? null,
+    subConnector: c.subConnector ?? c.SubConnector ?? null,
+    subFeature: c.subFeature ?? c.SubFeature ?? null,
+    subDirection: c.subDirection ?? c.SubDirection ?? null,
   }));
 }
 
