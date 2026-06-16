@@ -11,6 +11,7 @@
 // Each page is letter-landscape (1056 × 816 px logical, 2× DPR = 2112 × 1632).
 
 import { createCanvas } from 'canvas';
+import { resolveLabels, getLeaderIntersection } from './labelLayout.js';
 
 // ── Page dimensions ───────────────────────────────────────────────────────────
 const W   = 1056;   // logical width  (11″ × 96 dpi)
@@ -992,78 +993,114 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
     ctx.lineWidth   = 1.5;
     ctx.fill();
     ctx.stroke();
-    if (labelPts.length <= 35) {
-      ctx.fillStyle    = themeText;
-      ctx.font         = 'bold 9px monospace';
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillText(i === 0 ? 'POB' : `${i}`, px + 6, py - 4);
-    }
   });
 
-  // Course midpoint labels (L1, C1…)
-  if (showLabels && courses?.length > 0) {
-    const centerX = labelPts.reduce((sum, p) => sum + tx(p.easting), 0) / labelPts.length;
-    const centerY = labelPts.reduce((sum, p) => sum + ty(p.northing), 0) / labelPts.length;
+  // Compute resolved positions for all labels in logical canvas space
+  const resolvedPoints = labelPts.map(p => ({ x: tx(p.easting), y: ty(p.northing) }));
+  const resolvedLabels = resolveLabels(ctx, resolvedPoints, courses, W, H, {
+    stationFont: 'bold 9px monospace',
+    segmentFont: 'bold 9px sans-serif',
+    stationPadding: 3,
+    segmentPaddingX: 4,
+    segmentPaddingY: 2,
+    vertexRadius: 3,
+    showStations: labelPts.length <= 35,
+    showSegments: showLabels,
+    showConceptualDetail: showConceptualDetail
+  });
 
-    ctx.fillStyle    = themeText;
-    ctx.font         = 'bold 9px sans-serif';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    courses.forEach((c, i) => {
-      const p1 = labelPts[i];
-      const p2 = labelPts[i + 1] || labelPts[0];
-      if (!p1 || !p2) return;
-      const x1 = tx(p1.easting), y1 = ty(p1.northing);
-      const x2 = tx(p2.easting), y2 = ty(p2.northing);
-      const mx = (x1 + x2) / 2;
-      const my = (y1 + y2) / 2;
+  // Draw all resolved labels
+  const leaderColor = isBlueprint ? 'rgba(56, 189, 248, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+  const labelBorderColor = isBlueprint ? 'rgba(56, 189, 248, 0.6)' : 'rgba(0, 0, 0, 0.4)';
+  const segmentCurveBorder = isBlueprint ? 'rgba(251, 113, 133, 0.6)' : 'rgba(230, 57, 70, 0.6)';
 
-      let theta = Math.atan2(y2 - y1, x2 - x1);
-      if (theta < -Math.PI / 2 || theta > Math.PI / 2) {
-        theta += Math.PI;
-      }
+  resolvedLabels.forEach(lbl => {
+    if (lbl.type === 'station') {
+      if (lbl.needsLeader) {
+        const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
+        ctx.beginPath();
+        ctx.moveTo(lbl.anchorX, lbl.anchorY);
+        ctx.lineTo(intersection.x, intersection.y);
+        ctx.strokeStyle = leaderColor;
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
 
-      // Calculate outward normal vector
-      const dx = x2 - x1, dy = y2 - y1;
-      const len = Math.hypot(dx, dy) || 1;
-      const px = -dy / len, py = dx / len;
-      let ox = px, oy = py;
-      const d1 = Math.hypot(mx + px * 5 - centerX, my + py * 5 - centerY);
-      const d2 = Math.hypot(mx - px * 5 - centerX, my - py * 5 - centerY);
-      if (d1 < d2) {
-        ox = -px; oy = -py;
-      }
-
-      let labelId = '';
-      if ((c.type || '').toLowerCase() === 'curve') {
-        const m = curvesList.find(x => x.idx === i); labelId = m ? m.id : '';
-      } else {
-        const m = linesList.find(x  => x.idx === i); labelId = m ? m.id : '';
-      }
-
-      if (labelId) {
-        // Offset inwards if showConceptualDetail is true (so it doesn't overlap with bearing/distance on the outside)
-        // Otherwise offset outwards
-        const sideMultiplier = showConceptualDetail ? -1 : 1;
-        const lx = mx + ox * 10 * sideMultiplier;
-        const ly = my + oy * 10 * sideMultiplier;
+        ctx.beginPath();
+        ctx.arc(lbl.anchorX, lbl.anchorY, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = leaderColor;
+        ctx.fill();
 
         ctx.save();
-        ctx.translate(lx, ly);
-        ctx.rotate(theta);
-
-        // Background box for legibility
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
         ctx.fillStyle = themeLabelBox;
-        const tw = ctx.measureText(labelId).width;
-        ctx.fillRect(-tw / 2 - 2, -5, tw + 4, 10);
+        ctx.strokeStyle = labelBorderColor;
+        ctx.lineWidth = 0.8;
+        const rxBox = lbl.x - lbl.width / 2;
+        const ryBox = lbl.y - lbl.height / 2;
+        ctx.beginPath();
+        ctx.rect(rxBox, ryBox, lbl.width, lbl.height);
+        ctx.fill();
+        ctx.stroke();
 
         ctx.fillStyle = themeText;
-        ctx.fillText(labelId, 0, 0);
+        ctx.fillText(lbl.text, lbl.x, lbl.y);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.fillStyle = themeText;
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Subtle text stroke shadow for contrast
+        ctx.strokeStyle = themeLabelBox;
+        ctx.lineWidth = 2.5;
+        ctx.strokeText(lbl.text, lbl.x, lbl.y);
+        ctx.fillText(lbl.text, lbl.x, lbl.y);
         ctx.restore();
       }
-    });
-  }
+    } else if (lbl.type === 'segment') {
+      if (lbl.needsLeader) {
+        const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
+        ctx.beginPath();
+        ctx.moveTo(lbl.anchorX, lbl.anchorY);
+        ctx.lineTo(intersection.x, intersection.y);
+        ctx.strokeStyle = leaderColor;
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(lbl.anchorX, lbl.anchorY, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = leaderColor;
+        ctx.fill();
+      }
+
+      ctx.save();
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.translate(lbl.x, lbl.y);
+      if (lbl.rotated) {
+        ctx.rotate(lbl.angle);
+      }
+
+      ctx.fillStyle = themeLabelBox;
+      ctx.strokeStyle = lbl.isCurve ? segmentCurveBorder : labelBorderColor;
+      ctx.lineWidth = 0.8;
+
+      const rxBox = -lbl.width / 2;
+      const ryBox = -lbl.height / 2;
+      ctx.beginPath();
+      ctx.rect(rxBox, ryBox, lbl.width, lbl.height);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = themeText;
+      ctx.fillText(lbl.text, 0, 0);
+      ctx.restore();
+    }
+  });
 
   // UNCORRECTED watermark
   if (uncorrected) {

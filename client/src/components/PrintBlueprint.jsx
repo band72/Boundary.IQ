@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { API } from '../config';
+import { resolveLabels, getLeaderIntersection } from '../utils/labelLayout';
 const PAD = 50;
 
 function drawConceptualMap(ctx, W, H, conceptualAnalysis, legalDesc = '') {
@@ -1139,76 +1140,117 @@ export default function PrintBlueprint({
         ctx.lineWidth = 1.5;
         ctx.fill();
         ctx.stroke();
+      });
 
-        if (labeledPts.length <= 35) {
+      // Compute resolved positions for all labels in logical canvas space
+      const resolvedPoints = labeledPts.map(p => ({ x: tx(p.easting), y: ty(p.northing) }));
+      const resolvedLabels = resolveLabels(ctx, resolvedPoints, courses, W, H, {
+        stationFont: 'bold 9px "JetBrains Mono", monospace',
+        segmentFont: 'bold 9px "Inter", sans-serif',
+        stationPadding: 3,
+        segmentPaddingX: 4,
+        segmentPaddingY: 2,
+        vertexRadius: 3,
+        showStations: labeledPts.length <= 35,
+        showSegments: showLabels,
+        showConceptualDetail: showConceptualDetail
+      });
+
+      // Draw all resolved labels
+      const leaderColor = blueprintTheme ? 'rgba(56, 189, 248, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+      const labelBorderColor = blueprintTheme ? 'rgba(56, 189, 248, 0.6)' : 'rgba(0, 0, 0, 0.4)';
+      const segmentCurveBorder = blueprintTheme ? 'rgba(251, 113, 133, 0.6)' : 'rgba(230, 57, 70, 0.6)';
+
+      resolvedLabels.forEach(lbl => {
+        if (lbl.type === 'station') {
+          if (lbl.needsLeader) {
+            const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
+            ctx.beginPath();
+            ctx.moveTo(lbl.anchorX, lbl.anchorY);
+            ctx.lineTo(intersection.x, intersection.y);
+            ctx.strokeStyle = leaderColor;
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(lbl.anchorX, lbl.anchorY, 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = leaderColor;
+            ctx.fill();
+
+            ctx.save();
+            ctx.font = 'bold 9px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = themeLabelBox;
+            ctx.strokeStyle = labelBorderColor;
+            ctx.lineWidth = 0.8;
+            const rx = lbl.x - lbl.width / 2;
+            const ry = lbl.y - lbl.height / 2;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(rx, ry, lbl.width, lbl.height, 2);
+            else ctx.rect(rx, ry, lbl.width, lbl.height);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = themeText;
+            ctx.fillText(lbl.text, lbl.x, lbl.y);
+            ctx.restore();
+          } else {
+            ctx.save();
+            ctx.fillStyle = themeText;
+            ctx.font = 'bold 9px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // Subtle text stroke shadow for contrast
+            ctx.strokeStyle = themeLabelBox;
+            ctx.lineWidth = 2.5;
+            ctx.strokeText(lbl.text, lbl.x, lbl.y);
+            ctx.fillText(lbl.text, lbl.x, lbl.y);
+            ctx.restore();
+          }
+        } else if (lbl.type === 'segment') {
+          if (lbl.needsLeader) {
+            const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
+            ctx.beginPath();
+            ctx.moveTo(lbl.anchorX, lbl.anchorY);
+            ctx.lineTo(intersection.x, intersection.y);
+            ctx.strokeStyle = leaderColor;
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(lbl.anchorX, lbl.anchorY, 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = leaderColor;
+            ctx.fill();
+          }
+
+          ctx.save();
+          ctx.font = 'bold 9px "Inter", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.translate(lbl.x, lbl.y);
+          if (lbl.rotated) {
+            ctx.rotate(lbl.angle);
+          }
+
+          ctx.fillStyle = themeLabelBox;
+          ctx.strokeStyle = lbl.isCurve ? segmentCurveBorder : labelBorderColor;
+          ctx.lineWidth = 0.8;
+          
+          const rx = -lbl.width / 2;
+          const ry = -lbl.height / 2;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(rx, ry, lbl.width, lbl.height, 3);
+          else ctx.rect(rx, ry, lbl.width, lbl.height);
+          ctx.fill();
+          ctx.stroke();
+
           ctx.fillStyle = themeText;
-          ctx.font = 'bold 9px "JetBrains Mono", monospace';
-          ctx.fillText(i === 0 ? 'POB' : `${i}`, x + 6, y - 4);
+          ctx.fillText(lbl.text, 0, 0);
+          ctx.restore();
         }
       });
 
-      // 5. Draw Segment Labels next to lines (L1, L2, C1...)
-      if (showLabels && courses.length > 0) {
-        const centerX = labeledPts.reduce((sum, p) => sum + tx(p.easting), 0) / labeledPts.length;
-        const centerY = labeledPts.reduce((sum, p) => sum + ty(p.northing), 0) / labeledPts.length;
-
-        ctx.fillStyle = themeText;
-        ctx.font = 'bold 9px "Inter", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        courses.forEach((c, i) => {
-          const p1 = labeledPts[i];
-          const p2 = labeledPts[i + 1] || labeledPts[0];
-          if (!p1 || !p2) return;
-
-          const x1 = tx(p1.easting), y1 = ty(p1.northing);
-          const x2 = tx(p2.easting), y2 = ty(p2.northing);
-          const mx = (x1 + x2) / 2;
-          const my = (y1 + y2) / 2;
-
-          let theta = Math.atan2(y2 - y1, x2 - x1);
-          if (theta < -Math.PI / 2 || theta > Math.PI / 2) {
-            theta += Math.PI;
-          }
-
-          // Calculate outward normal vector
-          const dx = x2 - x1, dy = y2 - y1;
-          const len = Math.hypot(dx, dy) || 1;
-          const px = -dy / len, py = dx / len;
-          let ox = px, oy = py;
-          const d1 = Math.hypot(mx + px * 5 - centerX, my + py * 5 - centerY);
-          const d2 = Math.hypot(mx - px * 5 - centerX, my - py * 5 - centerY);
-          if (d1 < d2) {
-            ox = -px; oy = -py;
-          }
-
-          const matchedId = c.type === 'Curve'
-            ? (curvesList.find(item => item.idx === i)?.id ?? '')
-            : (linesList.find(item => item.idx === i)?.id ?? '');
-
-          if (matchedId) {
-            // Offset inwards if showConceptualDetail is true (so it doesn't overlap with bearing/distance on the outside)
-            // Otherwise offset outwards
-            const sideMultiplier = showConceptualDetail ? -1 : 1;
-            const lx = mx + ox * 10 * sideMultiplier;
-            const ly = my + oy * 10 * sideMultiplier;
-
-            ctx.save();
-            ctx.translate(lx, ly);
-            ctx.rotate(theta);
-
-            // Background box for legibility
-            ctx.fillStyle = themeLabelBox;
-            const txtWidth = ctx.measureText(matchedId).width;
-            ctx.fillRect(-txtWidth / 2 - 2, -5, txtWidth + 4, 10);
-
-            ctx.fillStyle = themeText;
-            ctx.fillText(matchedId, 0, 0);
-            ctx.restore();
-          }
-        });
-      }
 
       // 6. Draw North Arrow
       ctx.save();

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { resolveLabels, getLeaderIntersection } from '../utils/labelLayout';
 
 const PAD = 50;
 
@@ -183,69 +184,19 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
     for (let i = 1; i < densePts.length; i++) ctx.lineTo(tx(densePts[i].easting), ty(densePts[i].northing));
     ctx.closePath();
     ctx.stroke();
-    // Draw visual midpoint labels aligned parallel to segments as tags (L1, L2, C1...)
-    if (courses && courses.length > 0 && pts.length >= 2) {
-      let lineIndex = 1;
-      let curveIndex = 1;
-      for (let i = 0; i < courses.length; i++) {
-        const course = courses[i];
-        const p1 = pts[i];
-        const p2 = pts[i + 1] || pts[0];
-        if (!p1 || !p2) continue;
-
-        let dist = parseFloat(course.distance ?? course.chordDistance ?? course.arcLength ?? 0);
-        if (dist <= 0) continue;
-
-        const x1 = tx(p1.easting), y1 = ty(p1.northing);
-        const x2 = tx(p2.easting), y2 = ty(p2.northing);
-
-        const midX = (x1 + x2) / 2;
-        const midY = (y1 + y2) / 2;
-
-        const isCurve = (course.type || '').toLowerCase() === 'curve';
-        const label = isCurve ? `C${curveIndex++}` : `L${lineIndex++}`;
-
-        // Compute angle of segment in canvas space
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        let angRad = Math.atan2(dy, dx);
-
-        // Normalize text rotation so it is never upside down
-        if (angRad > Math.PI / 2) angRad -= Math.PI;
-        else if (angRad < -Math.PI / 2) angRad += Math.PI;
-
-        ctx.save();
-        ctx.translate(midX, midY);
-        ctx.rotate(angRad);
-        
-        ctx.font = 'bold 9px "JetBrains Mono", monospace';
-        const textWidth = ctx.measureText(label).width;
-        const paddingX = 4;
-        const paddingY = 2;
-        
-        // Draw background pill
-        ctx.fillStyle = 'rgba(9, 14, 26, 0.85)';
-        ctx.strokeStyle = isCurve ? 'rgba(255, 159, 67, 0.7)' : 'rgba(168, 196, 255, 0.7)';
-        ctx.lineWidth = 1;
-        
-        const rectW = textWidth + paddingX * 2;
-        const rectH = 12 + paddingY * 2;
-        const rectX = -rectW / 2;
-        const rectY = -rectH / 2;
-        
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(rectX, rectY, rectW, rectH, 3);
-        else ctx.rect(rectX, rectY, rectW, rectH);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = isCurve ? '#ff9f43' : '#a8c4ff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, 0, 0);
-        ctx.restore();
-      }
-    }
+    // Compute resolved non-overlapping positions for labels
+    const resolvedPoints = pts.map(p => ({ x: tx(p.easting), y: ty(p.northing) }));
+    const resolvedLabels = resolveLabels(ctx, resolvedPoints, courses, W, H, {
+      stationFont: 'bold 10px Inter, sans-serif',
+      segmentFont: 'bold 9px "JetBrains Mono", monospace',
+      stationPadding: 3,
+      segmentPaddingX: 4,
+      segmentPaddingY: 2,
+      vertexRadius: 4.5,
+      showStations: pts.length <= 30,
+      showSegments: true,
+      showConceptualDetail: false
+    });
 
     // Visual Error / Misclosure gap dashed red line
     const last = pts[pts.length - 1];
@@ -280,15 +231,98 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
       ctx.strokeStyle = '#090e1a';
       ctx.lineWidth = 1.8;
       ctx.stroke();
+    });
 
-      // Corner point labels
-      if (pts.length <= 30) {
-        ctx.fillStyle = i === 0 ? '#00d4a8' : '#fff';
-        ctx.font = 'bold 10px Inter, sans-serif';
-        // Offset label from the node center so it doesn't clash
-        ctx.fillText(i === 0 ? 'POB' : `${i}`, x + 7, y - 6);
+    // Draw all resolved labels (both stations and segments resolved without overlaps)
+    resolvedLabels.forEach(lbl => {
+      if (lbl.type === 'station') {
+        if (lbl.needsLeader) {
+          const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
+          ctx.beginPath();
+          ctx.moveTo(lbl.anchorX, lbl.anchorY);
+          ctx.lineTo(intersection.x, intersection.y);
+          ctx.strokeStyle = 'rgba(168, 196, 255, 0.6)';
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(lbl.anchorX, lbl.anchorY, 1.8, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(168, 196, 255, 0.6)';
+          ctx.fill();
+
+          ctx.save();
+          ctx.font = 'bold 10px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = 'rgba(9, 14, 26, 0.85)';
+          ctx.strokeStyle = 'rgba(168, 196, 255, 0.4)';
+          ctx.lineWidth = 0.8;
+          const rx = lbl.x - lbl.width / 2;
+          const ry = lbl.y - lbl.height / 2;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(rx, ry, lbl.width, lbl.height, 2);
+          else ctx.rect(rx, ry, lbl.width, lbl.height);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = lbl.text === 'POB' ? '#00d4a8' : '#ffffff';
+          ctx.fillText(lbl.text, lbl.x, lbl.y);
+          ctx.restore();
+        } else {
+          ctx.save();
+          ctx.font = 'bold 10px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.strokeStyle = 'rgba(9, 14, 26, 0.85)';
+          ctx.lineWidth = 2.5;
+          ctx.strokeText(lbl.text, lbl.x, lbl.y);
+          ctx.fillStyle = lbl.text === 'POB' ? '#00d4a8' : '#ffffff';
+          ctx.fillText(lbl.text, lbl.x, lbl.y);
+          ctx.restore();
+        }
+      } else if (lbl.type === 'segment') {
+        if (lbl.needsLeader) {
+          const intersection = getLeaderIntersection(lbl.anchorX, lbl.anchorY, lbl.x, lbl.y, lbl.width, lbl.height);
+          ctx.beginPath();
+          ctx.moveTo(lbl.anchorX, lbl.anchorY);
+          ctx.lineTo(intersection.x, intersection.y);
+          ctx.strokeStyle = 'rgba(168, 196, 255, 0.6)';
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(lbl.anchorX, lbl.anchorY, 1.8, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(168, 196, 255, 0.6)';
+          ctx.fill();
+        }
+
+        ctx.save();
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.translate(lbl.x, lbl.y);
+        if (lbl.rotated) {
+          ctx.rotate(lbl.angle);
+        }
+
+        ctx.fillStyle = 'rgba(9, 14, 26, 0.85)';
+        ctx.strokeStyle = lbl.isCurve ? 'rgba(255, 159, 67, 0.7)' : 'rgba(168, 196, 255, 0.7)';
+        ctx.lineWidth = 1;
+
+        const rx = -lbl.width / 2;
+        const ry = -lbl.height / 2;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(rx, ry, lbl.width, lbl.height, 3);
+        else ctx.rect(rx, ry, lbl.width, lbl.height);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = lbl.isCurve ? '#ff9f43' : '#a8c4ff';
+        ctx.fillText(lbl.text, 0, 0);
+        ctx.restore();
       }
     });
+
 
     // North arrow graphic
     ctx.save();
