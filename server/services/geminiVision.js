@@ -29,7 +29,7 @@ async function generateConceptualAnalysisFallback(docText) {
   const { getActiveProvider, getActiveModel } = await import('./llm/dispatcher.js');
   const { extractViaOpenAI } = await import('./llm/openaiProvider.js');
   const { extractViaGemini, isGeminiQuotaError } = await import('./llm/geminiProvider.js');
-  const { ALLOW_API_FALLBACK, OLLAMA_FALLBACK_MODEL } = await import('../config.js');
+
 
   const provider = getActiveProvider();
   const model    = getActiveModel();
@@ -63,9 +63,11 @@ Return ONLY valid JSON. No conversational text or markdown fences.`;
       try {
         rawText = await extractViaGemini(Buffer.alloc(0), 'text/plain', fallbackPrompt, model);
       } catch (err) {
-        if (ALLOW_API_FALLBACK && isGeminiQuotaError(err)) {
-          log.warn({ err: err.message.slice(0, 80), fallback: OLLAMA_FALLBACK_MODEL }, 'Gemini quota — routing conceptual fallback to Ollama');
-          const { rawText: ot } = await ollama.generate(Buffer.alloc(0), 'text/plain', OLLAMA_FALLBACK_MODEL, fallbackPrompt);
+        const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
+        if (allowFallback && isGeminiQuotaError(err)) {
+          const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL || 'gemma4:26b';
+          log.warn({ err: err.message.slice(0, 80), fallback: fallbackModel }, 'Gemini quota — routing conceptual fallback to Ollama');
+          const { rawText: ot } = await ollama.generate(Buffer.alloc(0), 'text/plain', fallbackModel, fallbackPrompt);
           rawText = ot;
         } else throw err;
       }

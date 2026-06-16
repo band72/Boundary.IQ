@@ -77,6 +77,8 @@ export async function extractViaGemini(buffer, mimeType, prompt, model) {
 
 // ── Quota / error classifier ──────────────────────────────────────────────────
 export function isGeminiQuotaError(err) {
-  return err.message.includes('429') || err.message.includes('403') ||
-         err.message.includes('RESOURCE_EXHAUSTED') || err.message.includes('PERMISSION_DENIED');
+  return err.message.includes('429') || err.message.includes('403') || err.message.includes('401') ||
+         err.message.includes('RESOURCE_EXHAUSTED') || err.message.includes('PERMISSION_DENIED') ||
+         err.message.includes('UNAUTHENTICATED') || err.message.includes('API_KEY_SERVICE_BLOCKED') ||
+         err.message.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED');
 }

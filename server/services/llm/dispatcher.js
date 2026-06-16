@@ -13,7 +13,7 @@ import {
 import { hasBoundaryKeywords, pruneLongText } from './ocrPostProcess.js';
 import {
   ACTIVE_PROVIDER, ACTIVE_MODEL, OPENAI_BASE_URL,
-  OLLAMA_FALLBACK_MODEL, ALLOW_API_FALLBACK, GEMINI_API_KEY,
+  GEMINI_API_KEY,
 } from '../../config.js';
 import { createChildLogger } from '../../logger.js';
 
@@ -146,9 +146,11 @@ export async function extractRaw(buffer, mimeType, prompt) {
   try {
     return await extractViaGemini(buffer, mimeType, activePrompt, model);
   } catch (err) {
-    if (ALLOW_API_FALLBACK && isGeminiQuotaError(err)) {
-      log.warn({ err: err.message.slice(0, 80), fallback: OLLAMA_FALLBACK_MODEL }, 'Gemini quota/denied — falling back to Ollama');
-      return extractViaOllama(buffer, mimeType, activePrompt, OLLAMA_FALLBACK_MODEL);
+    const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
+    if (allowFallback && isGeminiQuotaError(err)) {
+      const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL || 'gemma4:26b';
+      log.warn({ err: err.message.slice(0, 80), fallback: fallbackModel }, 'Gemini quota/denied — falling back to Ollama');
+      return extractViaOllama(buffer, mimeType, activePrompt, fallbackModel);
     }
     throw err;
   }
