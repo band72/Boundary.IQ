@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { API } from '../config';
 import { useStatsRefresh } from '../hooks/useStatsRefresh.jsx';
 
+const getHeaders = () => {
+  const token = localStorage.getItem('boundaryiq_auth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 export default function DashboardTab() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,8 +35,9 @@ export default function DashboardTab() {
     setDeedText('');
     setDeedTab('text');
     try {
+      const headers = getHeaders();
       // Fetch full DB record
-      const detailRes = await fetch(`${API}/diagnostics/deed-detail?fileName=${encodeURIComponent(fileName)}`);
+      const detailRes = await fetch(`${API}/diagnostics/deed-detail?fileName=${encodeURIComponent(fileName)}`, { headers });
       if (detailRes.ok) {
         const detail = await detailRes.json();
         setSelectedDeed(detail);
@@ -39,7 +45,7 @@ export default function DashboardTab() {
       // Fetch raw text from disk
       const params = new URLSearchParams({ fileName });
       if (folderPath) params.set('folder', folderPath);
-      const textRes = await fetch(`${API}/diagnostics/deed-text?${params}`);
+      const textRes = await fetch(`${API}/diagnostics/deed-text?${params}`, { headers });
       if (textRes.ok) {
         const { text } = await textRes.json();
         setDeedText(text || '');
@@ -72,7 +78,7 @@ export default function DashboardTab() {
     setFailedLoading(true);
     try {
       const url = `${API}/diagnostics/failed-deeds${bucket ? `?bucket=${bucket}` : ''}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getHeaders() });
       if (res.ok) setFailedDeeds(await res.json());
     } catch (e) { console.error('Failed to fetch failed deeds:', e); }
     finally { setFailedLoading(false); }
@@ -92,7 +98,7 @@ export default function DashboardTab() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/diagnostics/stats`);
+      const res = await fetch(`${API}/diagnostics/stats`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -119,7 +125,7 @@ export default function DashboardTab() {
     setDbLoading(true);
     setDbMessage('');
     try {
-      const res = await fetch(`${API}/diagnostics/${endpoint}`, { method: 'POST' });
+      const res = await fetch(`${API}/diagnostics/${endpoint}`, { method: 'POST', headers: getHeaders() });
       const data = await res.json();
       setDbMessage(data.message || `${label} action completed.`);
       if (data.stats) {

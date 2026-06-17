@@ -153,7 +153,7 @@ export function resolveLabels(ctx, pts, courses, W, H, options = {}) {
       const tagText = isCurve ? `C${curveIndex++}` : `L${lineIndex++}`;
 
       // Format full label text (bearing + distance / radius + arcLength)
-      let fullLabelText = '';
+      let fullLabelText;
       if (isCurve) {
         const r = c.radius ? `R=${c.radius}'` : '';
         const l = (c.arcLength || c.distance) ? `L=${c.arcLength || c.distance}'` : '';

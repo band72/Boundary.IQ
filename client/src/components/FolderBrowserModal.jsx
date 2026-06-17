@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { API } from '../config';
 
+const getHeaders = () => {
+  const token = localStorage.getItem('boundaryiq_auth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 export default function FolderBrowserModal({ onClose, onSelect, initialPath }) {
   const [currentPath, setCurrentPath] = useState(initialPath || '');
   const [parentPath, setParentPath] = useState(null);
@@ -16,7 +21,7 @@ export default function FolderBrowserModal({ onClose, onSelect, initialPath }) {
     setSearchQuery('');
     try {
       const url = `${API}/folderscan/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getHeaders() });
       const data = await res.json();
 
       if (!res.ok) {

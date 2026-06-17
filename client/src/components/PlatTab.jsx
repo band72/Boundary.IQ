@@ -7,6 +7,11 @@ import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
 import { API } from '../config';
 
+const getHeaders = () => {
+  const token = localStorage.getItem('boundaryiq_auth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 export default function PlatTab() {
   const [file, setFile]         = useState(null);
   const [preview, setPreview]   = useState(null);
@@ -65,10 +70,10 @@ export default function PlatTab() {
       let url, res;
       if (mode === 'extract-and-compute') {
         url = `${API}/plat/extract-and-compute?pobN=${pobN}&pobE=${pobE}&units=Feet`;
-        res = await fetch(url, { method: 'POST', body: fd });
+        res = await fetch(url, { method: 'POST', body: fd, headers: getHeaders() });
       } else {
         url = `${API}/plat/extract`;
-        res = await fetch(url, { method: 'POST', body: fd });
+        res = await fetch(url, { method: 'POST', body: fd, headers: getHeaders() });
         // wrap single response to match combined shape
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);

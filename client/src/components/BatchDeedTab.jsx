@@ -7,6 +7,13 @@ import { API } from '../config';
 import FolderBrowserModal from './FolderBrowserModal';
 import { performFrontendOcr } from '../utils/ocr';
 
+const getHeaders = (customHeaders = {}) => {
+  const token = localStorage.getItem('boundaryiq_auth_token');
+  const headers = { ...customHeaders };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+};
+
 export default function BatchDeedTab() {
   const { triggerStatsRefresh } = useStatsRefresh();
   const [files, setFiles]       = useState([]);     // File[]
@@ -45,7 +52,7 @@ export default function BatchDeedTab() {
 
   const fetchRefPoints = async () => {
     try {
-      const res = await fetch(`${API}/diagnostics/reference-points`);
+      const res = await fetch(`${API}/diagnostics/reference-points`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setDistinctRefPoints(data || []);
@@ -57,7 +64,7 @@ export default function BatchDeedTab() {
 
   const fetchDeedsForRefPoint = async (name) => {
     try {
-      const res = await fetch(`${API}/diagnostics/by-reference-point?name=${encodeURIComponent(name)}`);
+      const res = await fetch(`${API}/diagnostics/by-reference-point?name=${encodeURIComponent(name)}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setDeedsForRefPoint(data || []);
@@ -126,7 +133,7 @@ export default function BatchDeedTab() {
 
       const res = await fetch(`${API}/dxf/combine`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ parcels }),
       });
 
@@ -251,7 +258,7 @@ export default function BatchDeedTab() {
 
   const fetchHeuristics = async () => {
     try {
-      const res = await fetch(`${API}/diagnostics/heuristics`);
+      const res = await fetch(`${API}/diagnostics/heuristics`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setHeuristics(data);
@@ -261,14 +268,14 @@ export default function BatchDeedTab() {
 
   const fetchRecentBatches = async () => {
     try {
-      const res = await fetch(`${API}/diagnostics/recent-batches?limit=30`);
+      const res = await fetch(`${API}/diagnostics/recent-batches?limit=30`, { headers: getHeaders() });
       if (res.ok) setRecentBatches(await res.json());
     } catch (e) { console.error(e); }
   };
 
   const fetchFailedCount = async () => {
     try {
-      const res = await fetch(`${API}/diagnostics/failed-deeds?limit=1000`);
+      const res = await fetch(`${API}/diagnostics/failed-deeds?limit=1000`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setFailedCount(data.length);
@@ -284,7 +291,7 @@ export default function BatchDeedTab() {
       if (dbStatus) params.append('status', dbStatus);
       if (dbMaxError) params.append('maxError', dbMaxError);
 
-      const res = await fetch(`${API}/diagnostics/search?${params}`);
+      const res = await fetch(`${API}/diagnostics/search?${params}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setDbLogs(data);
@@ -297,7 +304,7 @@ export default function BatchDeedTab() {
 
   const checkServerLockStatus = async () => {
     try {
-      const res = await fetch(`${API}/folderscan/status`);
+      const res = await fetch(`${API}/folderscan/status`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.busy) {
@@ -312,7 +319,7 @@ export default function BatchDeedTab() {
 
   const handleResetLock = async () => {
     try {
-      const res = await fetch(`${API}/folderscan/reset-lock`, { method: 'POST' });
+      const res = await fetch(`${API}/folderscan/reset-lock`, { method: 'POST', headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setServerLocked(false);
@@ -371,7 +378,7 @@ export default function BatchDeedTab() {
           const { n: activePobN, e: activePobE } = getPobCoordinates();
           const writeRes = await fetch(`${API}/writer/generate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               courses: rawCourses,
               pobNorthing: parseFloat(activePobN),
@@ -457,7 +464,7 @@ export default function BatchDeedTab() {
         ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
       });
 
-      const res = await fetch(`${API}/folderscan/process-file?${params}`, { method: 'POST' });
+      const res = await fetch(`${API}/folderscan/process-file?${params}`, { method: 'POST', headers: getHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'AI Reprocessing failed');
 
@@ -584,7 +591,7 @@ export default function BatchDeedTab() {
         ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
       });
 
-      const res = await fetch(`${API}/folderscan/process-file?${params}`, { method: 'POST' });
+      const res = await fetch(`${API}/folderscan/process-file?${params}`, { method: 'POST', headers: getHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Reprocessing failed');
 
@@ -613,7 +620,7 @@ export default function BatchDeedTab() {
     try {
       const res = await fetch(`${API}/traverse/compute`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           pointOfBeginning: { northing: parseFloat(pobN), easting: parseFloat(pobE) },
           units: 'Feet',
@@ -676,7 +683,7 @@ export default function BatchDeedTab() {
     try {
       const res = await fetch(`${API}/diagnostics/save-correction`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           fileName: active.fileName,
           parcelName: active.extraction?.parcelName || 'Manual Corrected',
@@ -763,7 +770,7 @@ export default function BatchDeedTab() {
         ...(useReferencePoint ? { refName: refPointName, refN: refPointN, refE: refPointE } : {}),
       });
 
-      const res  = await fetch(`${API}/batchdeed/process?${params}`, { method: 'POST', body: fd });
+      const res  = await fetch(`${API}/batchdeed/process?${params}`, { method: 'POST', body: fd, headers: getHeaders() });
       const text = await res.text();
 
       let data;
@@ -805,7 +812,7 @@ export default function BatchDeedTab() {
       const { n: activePobN, e: activePobE } = getPobCoordinates();
       const res = await fetch(`${API}/dxf/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           stations:         r.traverse.stations,
           adjustedStations: r.traverse.adjustedStations,
@@ -858,7 +865,7 @@ export default function BatchDeedTab() {
     if (!path) { setFolderError('Please enter a folder path.'); return; }
     setFolderScanLoading(true); setFolderError(''); setFolderManifest(null);
     try {
-      const res = await fetch(`${API}/folderscan/scan?path=${encodeURIComponent(path)}`);
+      const res = await fetch(`${API}/folderscan/scan?path=${encodeURIComponent(path)}`, { headers: getHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? `Error ${res.status}`);
       setFolderManifest(data);
@@ -926,7 +933,7 @@ export default function BatchDeedTab() {
       try {
         const p = new URLSearchParams(baseParams);
         p.set('batchIndex', i);
-        const res  = await fetch(`${API}/folderscan/process-batch?${p}`, { method: 'POST' });
+        const res  = await fetch(`${API}/folderscan/process-batch?${p}`, { method: 'POST', headers: getHeaders() });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? `Batch ${i} error ${res.status}`);
 
@@ -1007,7 +1014,7 @@ export default function BatchDeedTab() {
       });
 
       const res = await fetch(`${API}/folderscan/retry-failed?${params}`, {
-        method: 'POST', signal: ctrl.signal,
+        method: 'POST', signal: ctrl.signal, headers: getHeaders(),
       });
 
       if (!res.ok) {
@@ -2124,7 +2131,7 @@ export default function BatchDeedTab() {
                             try {
                               const res = await fetch(`${API}/folderscan/chain-adjacent`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: getHeaders({ 'Content-Type': 'application/json' }),
                                 body: JSON.stringify({
                                   primaryCourses: r.extraction?.courses || [],
                                   secondaryDeedText: adjacentDeedText.trim(),
@@ -2222,7 +2229,7 @@ export default function BatchDeedTab() {
                               const { n: activePobN, e: activePobE } = getPobCoordinates();
                               const res = await fetch(`${API}/folderscan/resolve-plat-manual`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: getHeaders({ 'Content-Type': 'application/json' }),
                                 body: JSON.stringify({
                                   fileName: r.fileName,
                                   vertices: valid.map(p => ({ northing: parseFloat(p.northing), easting: parseFloat(p.easting) })),

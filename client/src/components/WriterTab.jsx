@@ -4,6 +4,13 @@ import { API } from '../config';
 import { useToast } from '../hooks/useToast';
 import TraverseMap from './TraverseMap';
 
+const getHeaders = (customHeaders = {}) => {
+  const token = localStorage.getItem('boundaryiq_auth_token');
+  const headers = { ...customHeaders };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+};
+
 const BLANK = { type: 'Line', bearing: '', distance: '', chordBearing: '', chordDistance: '', arcLength: '', delta: '', radius: '', curveDirection: 'Right', description: '', subConnector: '', subFeature: '', subDirection: '' };
 const EXAMPLE = [
   { ...BLANK, bearing: 'N89-50-00E', distance: '669.80' },
@@ -40,7 +47,7 @@ export default function WriterTab() {
     try {
       const res = await fetch(`${API}/deed/solve-text`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           deedText: pasteText,
           pobNorthing: parseFloat(pobN) || 5000,
@@ -132,7 +139,7 @@ export default function WriterTab() {
 
       const res  = await fetch(`${API}/writer/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
       });
       const data = await res.json();

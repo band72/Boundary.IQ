@@ -59,7 +59,13 @@ function MyAccountSection() {
   const fetchSessions = useCallback(async () => {
     setSessLoading(true);
     try {
-      const r = await fetch(`${API}/auth/me/sessions`, { headers });
+      const token = localStorage.getItem('boundaryiq_auth_token');
+      const r = await fetch(`${API}/auth/me/sessions`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
       const d = await r.json();
       setSessions(d.sessions || []);
     } catch {}
@@ -196,6 +202,9 @@ export default function UserSettingsTab({
   hidePlat: propHidePlat,         setHidePlat: propSetHidePlat,
   hideWriter: propHideWriter,     setHideWriter: propSetHideWriter,
 }) {
+  const token = localStorage.getItem('boundaryiq_auth_token');
+  const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
   // Local fallbacks
   const [localHideTraverse, localSetHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
   const [localHidePlat,     localSetHidePlat]     = useLocalStorage('boundaryiq_hide_plat', false);
@@ -243,7 +252,13 @@ export default function UserSettingsTab({
   const fetchModelConfig = useCallback(async () => {
     setModelLoading(true);
     try {
-      const res = await fetch(`${API}/settings/model`);
+      const token = localStorage.getItem('boundaryiq_auth_token');
+      const res = await fetch(`${API}/settings/model`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
       if (res.ok) setModelConfig(await res.json());
     } catch (e) { console.error('Failed to fetch model config:', e); }
     finally { setModelLoading(false); }
@@ -264,7 +279,7 @@ export default function UserSettingsTab({
     if (!silent) setSaveKeysLoading(true);
     try {
       const res = await fetch(`${API}/settings/keys`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers,
         body: JSON.stringify({ geminiApiKey: gKey, openAiApiKey: oKey }),
       });
       const data = await res.json();
@@ -284,7 +299,7 @@ export default function UserSettingsTab({
       const body = { provider, model, allowApiFallback, enforceNoSelfIntersection };
       if (provider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
       const res = await fetch(`${API}/settings/model`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers,
         body: JSON.stringify(body),
       });
       const data = await res.json();
@@ -299,14 +314,14 @@ export default function UserSettingsTab({
     if (!modelConfig) return;
     const body = { provider: modelConfig.activeProvider, model: modelConfig.activeModel, allowApiFallback: val, enforceNoSelfIntersection };
     if (modelConfig.activeProvider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
-    await fetch(`${API}/settings/model`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+    await fetch(`${API}/settings/model`, { method: 'POST', headers, body: JSON.stringify(body) }).catch(() => {});
     fetchModelConfig();
   };
 
   const startOllama = async () => {
     setStartingOllama(true); setModelMsg('⏳ Starting Ollama…');
     try {
-      const res = await fetch(`${API}/settings/ollama/start`, { method: 'POST' });
+      const res = await fetch(`${API}/settings/ollama/start`, { method: 'POST', headers });
       const data = await res.json();
       if (data.started) { setModelMsg(`✓ ${data.message}`); fetchModelConfig(); }
       else {
@@ -314,7 +329,7 @@ export default function UserSettingsTab({
         let attempts = 0;
         const poll = setInterval(async () => {
           attempts++;
-          const s = await fetch(`${API}/settings/ollama/status`).then(r => r.json()).catch(() => ({}));
+          const s = await fetch(`${API}/settings/ollama/status`, { headers }).then(r => r.json()).catch(() => ({}));
           if (s.online) { clearInterval(poll); setModelMsg(`✓ Ollama online — ${s.models?.length || 0} model(s).`); setStartingOllama(false); fetchModelConfig(); }
           else if (attempts >= 8) { clearInterval(poll); setModelMsg('✗ Ollama did not start. Try running \'ollama serve\'.'); setStartingOllama(false); }
         }, 2000);
