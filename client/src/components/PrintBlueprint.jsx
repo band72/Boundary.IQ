@@ -1,15 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { API } from '../config';
+import { authFetch, authFetchRaw } from '../api';
 import { resolveLabels, getLeaderIntersection } from '../utils/labelLayout';
 const PAD = 50;
-
-const getHeaders = (customHeaders = {}) => {
-  const token = localStorage.getItem('boundaryiq_auth_token');
-  const headers = { ...customHeaders };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return headers;
-};
 
 function drawConceptualMap(ctx, W, H, conceptualAnalysis, legalDesc = '') {
   // Extract lot number and subdivision name
@@ -462,15 +455,11 @@ export default function PrintBlueprint({
         perimeter:  perimeter ? parseFloat(perimeter) : null,
       };
 
-      const res = await fetch(`${API}/writer/generate`, {
+      const data = await authFetch('/writer/generate', {
         method: 'POST',
-        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setLegalDesc(data.legalDescription ?? data.LegalDescription ?? '');
-      }
+      setLegalDesc(data.legalDescription ?? data.LegalDescription ?? '');
     } catch (e) {
       console.error('Failed to generate legal description:', e);
     } finally {
@@ -1559,9 +1548,9 @@ export default function PrintBlueprint({
         basisOfBearings: basisBrg || null,
       };
 
-      const res = await fetch(`${API}/dxf/generate`, {
+      const res = await authFetchRaw('/dxf/generate', {
         method: 'POST',
-        headers: getHeaders({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 

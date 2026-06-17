@@ -1,15 +1,8 @@
 import { useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { API } from '../config';
+import { authFetch } from '../api';
 import { useToast } from '../hooks/useToast';
 import TraverseMap from './TraverseMap';
-
-const getHeaders = (customHeaders = {}) => {
-  const token = localStorage.getItem('boundaryiq_auth_token');
-  const headers = { ...customHeaders };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return headers;
-};
 
 const BLANK = { type: 'Line', bearing: '', distance: '', chordBearing: '', chordDistance: '', arcLength: '', delta: '', radius: '', curveDirection: 'Right', description: '', subConnector: '', subFeature: '', subDirection: '' };
 const EXAMPLE = [
@@ -45,9 +38,8 @@ export default function WriterTab() {
     if (!pasteText.trim()) { setError('Paste some legal description text first.'); return; }
     setLoading(true); setError('');
     try {
-      const res = await fetch(`${API}/deed/solve-text`, {
+      const data = await authFetch('/deed/solve-text', {
         method: 'POST',
-        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           deedText: pasteText,
           pobNorthing: parseFloat(pobN) || 5000,
@@ -55,8 +47,6 @@ export default function WriterTab() {
           units,
         })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
       
       if (data.repairedCourses) {
         const newCourses = data.repairedCourses.map(c => ({
@@ -137,13 +127,10 @@ export default function WriterTab() {
         perimeter:  perimeter  ? parseFloat(perimeter)  : null,
       };
 
-      const res  = await fetch(`${API}/writer/generate`, {
+      const data = await authFetch('/writer/generate', {
         method: 'POST',
-        headers: getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `Server error ${res.status}`);
       setResult(data.legalDescription ?? data.LegalDescription ?? JSON.stringify(data));
     } catch (e) {
       setError(String(e.message));

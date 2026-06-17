@@ -23,6 +23,13 @@ const AUTH_STORAGE_KEY = 'boundaryiq_auth_token';
 
 // ── Core authenticated fetch ──────────────────────────────────────────────────
 
+export function getAuthHeaders(customHeaders = {}) {
+  const token = localStorage.getItem(AUTH_STORAGE_KEY);
+  const headers = { ...customHeaders };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
 /**
  * authFetch — wraps window.fetch with:
  *   - Automatic Bearer token injection from localStorage

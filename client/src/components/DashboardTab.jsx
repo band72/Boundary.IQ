@@ -1,11 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { API } from '../config';
+import { authFetch } from '../api';
 import { useStatsRefresh } from '../hooks/useStatsRefresh.jsx';
-
-const getHeaders = () => {
-  const token = localStorage.getItem('boundaryiq_auth_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
 
 export default function DashboardTab() {
   const [stats, setStats] = useState(null);
@@ -35,21 +30,15 @@ export default function DashboardTab() {
     setDeedText('');
     setDeedTab('text');
     try {
-      const headers = getHeaders();
       // Fetch full DB record
-      const detailRes = await fetch(`${API}/diagnostics/deed-detail?fileName=${encodeURIComponent(fileName)}`, { headers });
-      if (detailRes.ok) {
-        const detail = await detailRes.json();
-        setSelectedDeed(detail);
-      }
+      const detail = await authFetch(`/diagnostics/deed-detail?fileName=${encodeURIComponent(fileName)}`);
+      setSelectedDeed(detail);
+
       // Fetch raw text from disk
       const params = new URLSearchParams({ fileName });
       if (folderPath) params.set('folder', folderPath);
-      const textRes = await fetch(`${API}/diagnostics/deed-text?${params}`, { headers });
-      if (textRes.ok) {
-        const { text } = await textRes.json();
-        setDeedText(text || '');
-      }
+      const { text } = await authFetch(`/diagnostics/deed-text?${params}`);
+      setDeedText(text || '');
     } catch (ex) {
       setDeedText(`Error loading deed: ${ex.message}`);
     } finally {
@@ -77,11 +66,14 @@ export default function DashboardTab() {
   const fetchFailedDeeds = async (bucket = null) => {
     setFailedLoading(true);
     try {
-      const url = `${API}/diagnostics/failed-deeds${bucket ? `?bucket=${bucket}` : ''}`;
-      const res = await fetch(url, { headers: getHeaders() });
-      if (res.ok) setFailedDeeds(await res.json());
-    } catch (e) { console.error('Failed to fetch failed deeds:', e); }
-    finally { setFailedLoading(false); }
+      const bucketParam = bucket ? `?bucket=${bucket}` : '';
+      const data = await authFetch(`/diagnostics/failed-deeds${bucketParam}`);
+      setFailedDeeds(data);
+    } catch (e) {
+      console.error('Failed to fetch failed deeds:', e);
+    } finally {
+      setFailedLoading(false);
+    }
   };
 
   const openDrawer = (bucket = null) => {
@@ -98,14 +90,9 @@ export default function DashboardTab() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/diagnostics/stats`, { headers: getHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-        setError(null);
-      } else {
-        setError('Failed to load database stats');
-      }
+      const data = await authFetch('/diagnostics/stats');
+      setStats(data);
+      setError(null);
     } catch (e) {
       setError(`Error: ${e.message}`);
     } finally {
@@ -125,8 +112,7 @@ export default function DashboardTab() {
     setDbLoading(true);
     setDbMessage('');
     try {
-      const res = await fetch(`${API}/diagnostics/${endpoint}`, { method: 'POST', headers: getHeaders() });
-      const data = await res.json();
+      const data = await authFetch(`/diagnostics/${endpoint}`, { method: 'POST' });
       setDbMessage(data.message || `${label} action completed.`);
       if (data.stats) {
         setStats(data.stats);

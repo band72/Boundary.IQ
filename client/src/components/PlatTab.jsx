@@ -5,12 +5,7 @@ import { performFrontendOcr } from '../utils/ocr';
 
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
-import { API } from '../config';
-
-const getHeaders = () => {
-  const token = localStorage.getItem('boundaryiq_auth_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+import { authFetchRaw } from '../api';
 
 export default function PlatTab() {
   const [file, setFile]         = useState(null);
@@ -67,13 +62,13 @@ export default function PlatTab() {
       const fd = new FormData();
       fd.append('image', processedFile);
 
-      let url, res;
+      let path, res;
       if (mode === 'extract-and-compute') {
-        url = `${API}/plat/extract-and-compute?pobN=${pobN}&pobE=${pobE}&units=Feet`;
-        res = await fetch(url, { method: 'POST', body: fd, headers: getHeaders() });
+        path = `/plat/extract-and-compute?pobN=${pobN}&pobE=${pobE}&units=Feet`;
+        res = await authFetchRaw(path, { method: 'POST', body: fd });
       } else {
-        url = `${API}/plat/extract`;
-        res = await fetch(url, { method: 'POST', body: fd, headers: getHeaders() });
+        path = `/plat/extract`;
+        res = await authFetchRaw(path, { method: 'POST', body: fd });
         // wrap single response to match combined shape
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);

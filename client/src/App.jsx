@@ -12,7 +12,8 @@ import AdminPanel from './components/AdminPanel';
 import BillingTab from './components/BillingTab';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { AuthProvider, useAuthContext } from './context/AuthContext';
+import { AuthProvider } from './context/AuthProvider';
+import { useAuthContext } from './context/AuthContext';
 import { API } from './config.js';
 
 // ─── Tab Error Boundary ────────────────────────────────────────────────────────

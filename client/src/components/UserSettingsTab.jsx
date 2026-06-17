@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { API } from '../config';
+import { authFetch } from '../api';
 
 // Matches the canonical PANEL_DEFS in SettingsTab.jsx and TABS in App.jsx.
 // minRole: 'user' = toggleable by all users | 'admin' = admin-only / in testing
@@ -51,24 +51,16 @@ function MyAccountSection() {
   const [sessLoading, setSessLoading] = useState(false);
   const [sessMsg, setSessMsg] = useState('');
 
-  const token = localStorage.getItem('boundaryiq_auth_token');
-  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-
   const fmtTime = (s) => s ? new Date(s).toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
 
   const fetchSessions = useCallback(async () => {
     setSessLoading(true);
     try {
-      const token = localStorage.getItem('boundaryiq_auth_token');
-      const r = await fetch(`${API}/auth/me/sessions`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      const d = await r.json();
+      const d = await authFetch('/auth/me/sessions');
       setSessions(d.sessions || []);
-    } catch {}
+    } catch (e) {
+      console.error('Failed to fetch sessions:', e);
+    }
     finally { setSessLoading(false); }
   }, []);
 
@@ -77,9 +69,8 @@ function MyAccountSection() {
   const saveProfile = async () => {
     setProfileLoading(true); setProfileMsg('');
     try {
-      const r = await fetch(`${API}/auth/me/profile`, { method:'PUT', headers, body:JSON.stringify({displayName}) });
-      const d = await r.json();
-      setProfileMsg(r.ok ? '✓ Display name updated.' : `✗ ${d.error}`);
+      await authFetch('/auth/me/profile', { method:'PUT', body:JSON.stringify({displayName}) });
+      setProfileMsg('✓ Display name updated.');
     } catch (e) { setProfileMsg(`✗ ${e.message}`); }
     finally { setProfileLoading(false); }
   };
@@ -90,10 +81,9 @@ function MyAccountSection() {
     if (newPw !== confPw) return setPwMsg('✗ New passwords do not match.');
     setPwLoading(true);
     try {
-      const r = await fetch(`${API}/auth/me/password`, { method:'PUT', headers, body:JSON.stringify({currentPassword:curPw, newPassword:newPw}) });
-      const d = await r.json();
-      setPwMsg(r.ok ? '✓ Password changed.' : `✗ ${d.error}`);
-      if (r.ok) { setCurPw(''); setNewPw(''); setConfPw(''); fetchSessions(); }
+      await authFetch('/auth/me/password', { method:'PUT', body:JSON.stringify({currentPassword:curPw, newPassword:newPw}) });
+      setPwMsg('✓ Password changed.');
+      setCurPw(''); setNewPw(''); setConfPw(''); fetchSessions();
     } catch (e) { setPwMsg(`✗ ${e.message}`); }
     finally { setPwLoading(false); }
   };
@@ -101,18 +91,19 @@ function MyAccountSection() {
   const revokeOtherSessions = async () => {
     setSessMsg('');
     try {
-      const r = await fetch(`${API}/auth/me/sessions`, { method:'DELETE', headers });
-      const d = await r.json();
-      setSessMsg(r.ok ? `✓ Revoked ${d.revoked} session(s).` : `✗ ${d.error}`);
+      const d = await authFetch('/auth/me/sessions', { method:'DELETE' });
+      setSessMsg(`✓ Revoked ${d.revoked} session(s).`);
       fetchSessions();
     } catch (e) { setSessMsg(`✗ ${e.message}`); }
   };
 
   const revokeSession = async (fullToken) => {
     try {
-      await fetch(`${API}/auth/me/sessions/${fullToken}`, { method:'DELETE', headers });
+      await authFetch(`/auth/me/sessions/${fullToken}`, { method:'DELETE' });
       fetchSessions();
-    } catch {}
+    } catch (e) {
+      console.error('Failed to revoke session:', e);
+    }
   };
 
   const msgStyle = (m) => ({
@@ -197,15 +188,20 @@ function MyAccountSection() {
   );
 }
 
+const SectionDivider = ({ label }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.25rem 0' }}>
+    <div style={{ height: '1px', flex: 1, background: 'var(--border)' }} />
+    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{label}</span>
+    <div style={{ height: '1px', flex: 1, background: 'var(--border)' }} />
+  </div>
+);
+
 export default function UserSettingsTab({
   hideTraverse: propHideTraverse, setHideTraverse: propSetHideTraverse,
   hidePlat: propHidePlat,         setHidePlat: propSetHidePlat,
   hideWriter: propHideWriter,     setHideWriter: propSetHideWriter,
 }) {
-  const token = localStorage.getItem('boundaryiq_auth_token');
-  const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-
-  // Local fallbacks
+    // Local fallbacks
   const [localHideTraverse, localSetHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
   const [localHidePlat,     localSetHidePlat]     = useLocalStorage('boundaryiq_hide_plat', false);
   const [localHideWriter,   localSetHideWriter]   = useLocalStorage('boundaryiq_hide_writer', false);
@@ -227,7 +223,7 @@ export default function UserSettingsTab({
   const [shortFileNames,   setShortFileNames]    = useLocalStorage('boundaryiq_short_file_names', true);
   const [showConceptualDetail, setShowConceptualDetail] = useLocalStorage('boundaryiq_show_conceptual_detail', true);
   const [frontendOcr, setFrontendOcr]           = useLocalStorage('boundaryiq_frontend_ocr', false);
-  const [openaiBaseUrl,    setOpenaiBaseUrl]      = useLocalStorage('boundaryiq_openai_base_url', 'http://127.0.0.1:11434/v1');
+  const [openaiBaseUrl]                         = useLocalStorage('boundaryiq_openai_base_url', 'http://127.0.0.1:11434/v1');
   const [geminiKey,        setGeminiKey]          = useLocalStorage('boundaryiq_gemini_key', '');
   const [openaiKey,        setOpenaiKey]          = useLocalStorage('boundaryiq_openai_key', '');
 
@@ -252,16 +248,13 @@ export default function UserSettingsTab({
   const fetchModelConfig = useCallback(async () => {
     setModelLoading(true);
     try {
-      const token = localStorage.getItem('boundaryiq_auth_token');
-      const res = await fetch(`${API}/settings/model`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      if (res.ok) setModelConfig(await res.json());
-    } catch (e) { console.error('Failed to fetch model config:', e); }
-    finally { setModelLoading(false); }
+      const data = await authFetch('/settings/model');
+      setModelConfig(data);
+    } catch (e) {
+      console.error('Failed to fetch model config:', e);
+    } finally {
+      setModelLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -278,15 +271,17 @@ export default function UserSettingsTab({
   const saveKeysToBackend = async (gKey, oKey, silent = false) => {
     if (!silent) setSaveKeysLoading(true);
     try {
-      const res = await fetch(`${API}/settings/keys`, {
-        method: 'POST', headers,
+      await authFetch('/settings/keys', {
+        method: 'POST',
         body: JSON.stringify({ geminiApiKey: gKey, openAiApiKey: oKey }),
       });
-      const data = await res.json();
-      if (!silent) setKeysMsg(res.ok ? '✓ API keys saved.' : `✗ ${data.error}`);
-      if (res.ok) fetchModelConfig();
-    } catch (e) { if (!silent) setKeysMsg(`✗ ${e.message}`); }
-    finally { if (!silent) setSaveKeysLoading(false); }
+      if (!silent) setKeysMsg('✓ API keys saved.');
+      fetchModelConfig();
+    } catch (e) {
+      if (!silent) setKeysMsg(`✗ ${e.message}`);
+    } finally {
+      if (!silent) setSaveKeysLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -298,15 +293,17 @@ export default function UserSettingsTab({
     try {
       const body = { provider, model, allowApiFallback, enforceNoSelfIntersection };
       if (provider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
-      const res = await fetch(`${API}/settings/model`, {
-        method: 'POST', headers,
+      const data = await authFetch('/settings/model', {
+        method: 'POST',
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      setModelMsg(res.ok ? `✓ ${data.message}` : `✗ ${data.error}`);
-      if (res.ok) fetchModelConfig();
-    } catch (e) { setModelMsg(`✗ ${e.message}`); }
-    finally { setModelLoading(false); setSwitchingTo(null); }
+      setModelMsg(`✓ ${data.message}`);
+      fetchModelConfig();
+    } catch (e) {
+      setModelMsg(`✗ ${e.message}`);
+    } finally {
+      setModelLoading(false); setSwitchingTo(null);
+    }
   };
 
   const toggleApiFallback = async (val) => {
@@ -314,28 +311,51 @@ export default function UserSettingsTab({
     if (!modelConfig) return;
     const body = { provider: modelConfig.activeProvider, model: modelConfig.activeModel, allowApiFallback: val, enforceNoSelfIntersection };
     if (modelConfig.activeProvider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
-    await fetch(`${API}/settings/model`, { method: 'POST', headers, body: JSON.stringify(body) }).catch(() => {});
+    try {
+      await authFetch('/settings/model', { method: 'POST', body: JSON.stringify(body) });
+    } catch (e) {
+      console.error('Failed to toggle API fallback:', e);
+    }
     fetchModelConfig();
   };
 
   const startOllama = async () => {
     setStartingOllama(true); setModelMsg('⏳ Starting Ollama…');
     try {
-      const res = await fetch(`${API}/settings/ollama/start`, { method: 'POST', headers });
-      const data = await res.json();
-      if (data.started) { setModelMsg(`✓ ${data.message}`); fetchModelConfig(); }
-      else {
+      const data = await authFetch('/settings/ollama/start', { method: 'POST' });
+      if (data.started) {
+        setModelMsg(`✓ ${data.message}`);
+        fetchModelConfig();
+      } else {
         setModelMsg('⏳ Waiting for Ollama to initialize…');
         let attempts = 0;
         const poll = setInterval(async () => {
           attempts++;
-          const s = await fetch(`${API}/settings/ollama/status`, { headers }).then(r => r.json()).catch(() => ({}));
-          if (s.online) { clearInterval(poll); setModelMsg(`✓ Ollama online — ${s.models?.length || 0} model(s).`); setStartingOllama(false); fetchModelConfig(); }
-          else if (attempts >= 8) { clearInterval(poll); setModelMsg('✗ Ollama did not start. Try running \'ollama serve\'.'); setStartingOllama(false); }
+          try {
+            const s = await authFetch('/settings/ollama/status');
+            if (s.online) {
+              clearInterval(poll);
+              setModelMsg(`✓ Ollama online — ${s.models?.length || 0} model(s).`);
+              setStartingOllama(false);
+              fetchModelConfig();
+            } else if (attempts >= 8) {
+              clearInterval(poll);
+              setModelMsg("✗ Ollama did not start. Try running 'ollama serve'.");
+              setStartingOllama(false);
+            }
+          } catch {
+            if (attempts >= 8) {
+              clearInterval(poll);
+              setModelMsg("✗ Ollama did not start. Try running 'ollama serve'.");
+              setStartingOllama(false);
+            }
+          }
         }, 2000);
         return;
       }
-    } catch (e) { setModelMsg(`✗ ${e.message}`); }
+    } catch (e) {
+      setModelMsg(`✗ ${e.message}`);
+    }
     setStartingOllama(false);
   };
 
@@ -348,14 +368,6 @@ export default function UserSettingsTab({
 
   const panelHideMap = { traverse: hideTraverse, plat: hidePlat, writer: hideWriter };
   const panelSetMap  = { traverse: setHideTraverse, plat: setHidePlat, writer: setHideWriter };
-
-  const SectionDivider = ({ label }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.25rem 0' }}>
-      <div style={{ height: '1px', flex: 1, background: 'var(--border)' }} />
-      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{label}</span>
-      <div style={{ height: '1px', flex: 1, background: 'var(--border)' }} />
-    </div>
-  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

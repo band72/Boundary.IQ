@@ -6,13 +6,7 @@ import { useStatsRefresh } from '../hooks/useStatsRefresh.jsx';
 import { API } from '../config';
 import FolderBrowserModal from './FolderBrowserModal';
 import { performFrontendOcr } from '../utils/ocr';
-
-const getHeaders = (customHeaders = {}) => {
-  const token = localStorage.getItem('boundaryiq_auth_token');
-  const headers = { ...customHeaders };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return headers;
-};
+import { getAuthHeaders as getHeaders } from '../api';
 
 export default function BatchDeedTab() {
   const { triggerStatsRefresh } = useStatsRefresh();
