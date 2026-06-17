@@ -23,7 +23,6 @@ const PLAN_FEATURES = {
 
 export default function BillingTab({ user }) {
   const [status, setStatus] = useState(null);
-  const [plans, setPlans] = useState(null);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
   const [msg, setMsg] = useState('');
@@ -46,13 +45,12 @@ export default function BillingTab({ user }) {
       window.history.replaceState({}, '', window.location.pathname);
     }
 
-    Promise.all([
-      fetch(`${API}/billing/status`, { headers }).then(r => r.json()),
-      fetch(`${API}/billing/plans`).then(r => r.json()),
-    ]).then(([statusData, plansData]) => {
-      setStatus(statusData);
-      setPlans(plansData);
-    }).catch(e => flash(e.message, 'error'))
+    fetch(`${API}/billing/status`, { headers })
+      .then(r => r.json())
+      .then(statusData => {
+        setStatus(statusData);
+      })
+      .catch(e => flash(e.message, 'error'))
       .finally(() => setLoading(false));
   }, []);
 

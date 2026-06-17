@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Component } from 'react';
+import { useState, useEffect, Component, useMemo, useCallback } from 'react';
 import TraverseTab from './components/TraverseTab';
 import PlatTab from './components/PlatTab';
 import WriterTab from './components/WriterTab';
@@ -133,36 +133,31 @@ function AppShell() {
     return () => window.removeEventListener('auth:expired', onExpired);
   }, [logout]);
 
-  const isPanelAllowed = (panelId) => {
+  const isPanelAllowed = useCallback((panelId) => {
     if (isAdmin) return true;
     return panelPolicy[panelId] !== false;
-  };
+  }, [isAdmin, panelPolicy]);
 
-  const visibleTabs = TABS.filter(t => {
-    if (isAdmin) {
-      if (!hasRoleAccess(user, t.minRole)) return false;
-      if (!isPanelAllowed(t.id)) return false;
-      if (t.id === 'traverse' && hideTraverse) return false;
-      if (t.id === 'plat'     && hidePlat)     return false;
-      if (t.id === 'writer'   && hideWriter)   return false;
-      return true;
-    }
-    // Non-admin users: only show Writer until other tabs graduate from 'testing' status.
-    // When a tab's status changes to 'live', add it here or replace this with a
-    // data-driven check: t.status === 'live' && hasAccess(user, t).
-    return t.id === 'writer';
-  });
-
-  const visibleTabsRef = useRef(visibleTabs);
-  visibleTabsRef.current = visibleTabs;
+  const visibleTabs = useMemo(() => {
+    return TABS.filter(t => {
+      if (isAdmin) {
+        if (!hasRoleAccess(user, t.minRole)) return false;
+        if (!isPanelAllowed(t.id)) return false;
+        if (t.id === 'traverse' && hideTraverse) return false;
+        if (t.id === 'plat'     && hidePlat)     return false;
+        if (t.id === 'writer'   && hideWriter)   return false;
+        return true;
+      }
+      return t.id === 'writer';
+    });
+  }, [isAdmin, user, isPanelAllowed, hideTraverse, hidePlat, hideWriter]);
 
   // Auto-redirect to first visible tab if the active tab disappears
   useEffect(() => {
     if (!isAdmin) {
       if (tab !== 'writer') setTimeout(() => setTab('writer'), 0);
     } else {
-      const vt = visibleTabsRef.current;
-      const firstId = vt[0]?.id || 'settings';
+      const firstId = visibleTabs[0]?.id || 'settings';
       const currentDef = TABS.find(t => t.id === tab);
       const roleBlocked = currentDef && !hasRoleAccess(user, currentDef.minRole);
       if (
@@ -175,7 +170,7 @@ function AppShell() {
         setTimeout(() => setTab(firstId), 0);
       }
     }
-  }, [hideTraverse, hidePlat, hideWriter, tab, panelPolicy, user?.role, isAdmin]);
+  }, [hideTraverse, hidePlat, hideWriter, tab, isPanelAllowed, user, isAdmin, visibleTabs]);
 
   const extraTabs = isAdmin ? [
     { id: 'billing', icon: '💳', label: 'Billing' },
@@ -402,27 +397,4 @@ function TestingWall({ feature, icon }) {
   );
 }
 
-// ── Upgrade Wall (plan-gated features for users with role access) ──────────────
-function UpgradeWall({ feature, plan, onUpgrade }) {
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      height: '100%', gap: '1rem', padding: '3rem', textAlign: 'center',
-    }}>
-      <div style={{ fontSize: '3rem' }}>🔒</div>
-      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{feature}</div>
-      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: 380, lineHeight: 1.6 }}>
-        This feature is available on the <strong style={{ color: '#50c878' }}>Pro plan</strong>.
-        Upgrade to unlock unlimited deed solves, Batch Deed, Plat Extraction, and more.
-      </div>
-      <button
-        className="btn btn-primary"
-        onClick={onUpgrade}
-        style={{ marginTop: '0.5rem', padding: '0.65rem 1.75rem', fontSize: '0.92rem' }}
-      >
-        ⭐ Upgrade to Pro — $29/mo
-      </button>
-      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cancel anytime · No lock-in</div>
-    </div>
-  );
-}
+

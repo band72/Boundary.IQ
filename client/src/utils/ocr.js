@@ -17,7 +17,7 @@ function loadScript(url, integrity) {
     script.crossOrigin = 'anonymous';
     if (integrity) script.integrity = integrity;
     script.onload = () => resolve();
-    script.onerror = (err) => reject(new Error(`Failed to load script: ${url}`));
+    script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
     document.head.appendChild(script);
   });
 }

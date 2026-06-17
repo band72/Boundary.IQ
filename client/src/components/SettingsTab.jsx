@@ -79,6 +79,18 @@ export default function SettingsTab({
   const [allowApiFallback, setAllowApiFallback] = useState(true);
   const [enforceNoSelfIntersection, setEnforceNoSelfIntersection] = useState(false);
 
+  const fetchModelConfig = useCallback(async () => {
+    setModelLoading(true);
+    try {
+      const res = await fetch(`${API}/settings/model`);
+      if (res.ok) setModelConfig(await res.json());
+    } catch (e) {
+      console.error('Failed to fetch model config:', e);
+    } finally {
+      setModelLoading(false);
+    }
+  }, []);
+
   const saveKeysToBackend = async (gKey, oKey, silent = false) => {
     if (!silent) setSaveKeysLoading(true);
     try {
@@ -122,17 +134,7 @@ export default function SettingsTab({
     }
   }, []);
 
-  const fetchModelConfig = useCallback(async () => {
-    setModelLoading(true);
-    try {
-      const res = await fetch(`${API}/settings/model`);
-      if (res.ok) setModelConfig(await res.json());
-    } catch (e) {
-      console.error('Failed to fetch model config:', e);
-    } finally {
-      setModelLoading(false);
-    }
-  }, []);
+
 
   const switchModel = async (provider, model) => {
     setSwitchingTo(`${provider}/${model}`);
@@ -214,33 +216,7 @@ export default function SettingsTab({
     }
   };
 
-  // OCR toggle handler
-  const toggleOcrEnabled = async (newValue) => {
-    setOcrEnabled(newValue);
-    try {
-      const res = await fetch(`${API}/settings/system`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dbPath: systemDbPath,
-          scanRoots: systemScanRoots,
-          ocrCacheDir: systemOcrCacheDir,
-          downloadsDir: systemDownloadsDir,
-          wordDocTrainingDir: systemWordDocTrainingDir,
-          ocrEnabled: newValue,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSystemMsg('✓ OCR setting updated and persisted.');
-        fetchSystemSettings();
-      } else {
-        setSystemMsg(`✗ Error: ${data.error}`);
-      }
-    } catch (e) {
-      setSystemMsg(`✗ Connection Error: ${e.message}`);
-    }
-  };
+
 
   const startOllama = async () => {
     setStartingOllama(true);

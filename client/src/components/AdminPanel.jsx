@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API } from '../config';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -301,7 +301,9 @@ function AuditTab({ auth }) {
       const r = await fetch(`${API}/auth/audit-log${qs}&limit=200`, auth);
       const d = await r.json();
       setEntries(d.entries || []);
-    } catch { }
+    } catch (err) {
+      console.error('Failed to fetch audit log:', err);
+    }
     finally { setLoading(false); }
   }, [actionFilter]);
 
@@ -358,7 +360,9 @@ function InvitesTab({ auth, flash }) {
       const r = await fetch(`${API}/auth/invites`, auth);
       const d = await r.json();
       setInvites(d.invites || []);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to fetch invites:', err);
+    }
     finally { setLoading(false); }
   }, []);
 
