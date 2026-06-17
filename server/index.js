@@ -138,6 +138,7 @@ app.use('/api/auth/google-login', authLimiter);
 
 app.use(cors({
   origin: ALLOWED_ORIGINS,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -195,7 +196,7 @@ const server = app.listen(PORT, async () => {
     const ollamaStatus = await ollamaSvc.getStatus();
     if (ollamaStatus.online) {
       logger.info(`✓ Ollama online — ${ollamaStatus.models.length} model(s): ${ollamaStatus.models.join(', ')}`);
-    } else {
+    } else if (!IS_PROD) {
       logger.info('⏳ Ollama offline — attempting auto-start (ollama serve)…');
       const ollamaExe = OLLAMA_PATH;
       let cmd = ollamaExe;
@@ -226,6 +227,8 @@ const server = app.listen(PORT, async () => {
           logger.warn('⚠ Ollama did not respond after 10s. Start manually with: ollama serve');
         }
       }, 2000);
+    } else {
+      logger.warn('⚠ Ollama offline. Auto-start skipped in production mode.');
     }
   } catch (ex) {
     logger.warn({ err: ex }, '⚠ Ollama auto-start check failed');

@@ -52,7 +52,7 @@ export async function authFetch(path, opts = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API}${path}`, { ...opts, headers });
+  const res = await fetch(`${API}${path}`, { credentials: 'include', ...opts, headers });
 
   // Session expired or token revoked
   if (res.status === 401) {
@@ -89,7 +89,7 @@ export async function authFetchRaw(path, opts = {}) {
   const headers = { ...opts.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${API}${path}`, { ...opts, headers });
+  const res = await fetch(`${API}${path}`, { credentials: 'include', ...opts, headers });
   if (res.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:expired'));
     throw new Error('Session expired.');

@@ -7,22 +7,34 @@ const log = createChildLogger('auth');
 const PLAN_RANK = { free: 0, pro: 1, enterprise: 2, admin: 99 };
 const ROLE_RANK = { user: 0, pro: 1, admin: 99 };
 
+function parseCookies(cookieHeader) {
+  const list = {};
+  if (!cookieHeader) return list;
+  cookieHeader.split(';').forEach(cookie => {
+    const parts = cookie.split('=');
+    list[parts.shift().trim()] = decodeURIComponent(parts.join('='));
+  });
+  return list;
+}
+
 /**
- * Express middleware to validate session token via Authorization header.
+ * Express middleware to validate session token via Authorization header or Cookie.
  * Attaches the authenticated user object to req.user.
  */
 export function requireAuth(req, res, next) {
   try {
+    let token = null;
     const authHeader = req.headers.authorization;
 
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Access denied. Authorization header required.' });
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else if (req.headers.cookie) {
+      const cookies = parseCookies(req.headers.cookie);
+      token = cookies.boundaryiq_auth_token;
     }
 
-    const token = authHeader.substring(7);
-
     if (!token) {
-      return res.status(401).json({ error: 'Access denied. Authorization token not found.' });
+      return res.status(401).json({ error: 'Access denied. Authentication token not found in cookies or headers.' });
     }
 
     const sessionUser = getSession(token);

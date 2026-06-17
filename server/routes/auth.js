@@ -67,6 +67,13 @@ router.post('/register', asyncHandler(async (req, res) => {
   logAudit({ userId: user.id, actorId: user.id, action: 'register', ipAddress: getIp(req) });
   sendWelcomeEmail({ to: user.username, username: user.username, plan: user.plan }).catch(() => {});
 
+  res.cookie('boundaryiq_auth_token', token, {
+    httpOnly: true,
+    secure: IS_PROD,
+    sameSite: 'strict',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
+
   return res.status(201).json({ token, username: user.username, role: user.role, plan: user.plan || 'free' });
 }));
 
@@ -83,14 +90,33 @@ router.post('/login', asyncHandler(async (req, res) => {
   const forceReset = checkForceReset(user.id);
   logAudit({ userId: user.id, actorId: user.id, action: 'login', ipAddress: getIp(req) });
 
+  res.cookie('boundaryiq_auth_token', token, {
+    httpOnly: true,
+    secure: IS_PROD,
+    sameSite: 'strict',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
+
   return res.json({ token, username: user.username, role: user.role, plan: user.plan || 'free', forcePasswordReset: forceReset });
 }));
 
 // ── POST /api/auth/logout ──────────────────────────────────────────────────────
 router.post('/logout', asyncHandler(async (req, res) => {
+  let token = null;
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (req.headers.cookie) {
+    const cookies = req.headers.cookie.split(';').reduce((acc, c) => {
+      const parts = c.split('=');
+      acc[parts[0].trim()] = decodeURIComponent(parts[1]?.trim() || '');
+      return acc;
+    }, {});
+    token = cookies.boundaryiq_auth_token;
+  }
+
   if (token) deleteSession(token);
+  res.clearCookie('boundaryiq_auth_token');
   return res.json({ success: true, message: 'Logged out successfully' });
 }));
 
@@ -196,6 +222,13 @@ router.post('/google-login', asyncHandler(async (req, res) => {
   touchLastLogin(user.id);
   const token = createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
   logAudit({ userId: user.id, actorId: user.id, action: 'google_login', ipAddress: getIp(req) });
+
+  res.cookie('boundaryiq_auth_token', token, {
+    httpOnly: true,
+    secure: IS_PROD,
+    sameSite: 'strict',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
 
   return res.json({ token, username: user.username, role: user.role, plan: user.plan || 'free' });
 }));
