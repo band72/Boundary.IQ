@@ -1872,6 +1872,45 @@ export default function BatchDeedTab() {
                       </div>
                     )}
 
+                    {!isEditing && r.solutionSteps && (
+                      <div style={{
+                        fontSize: '0.78rem',
+                        padding: '0.8rem 1rem',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        marginBottom: '1rem'
+                      }}>
+                        <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span>🔍</span> Diagnostic Error Origin Analysis
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', color: 'var(--text-secondary)' }}>
+                          <div>
+                            <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'inline-block', width: '120px' }}>Probable Origin:</span>
+                            <span style={{
+                              fontWeight: '600',
+                              color: r.solutionSteps.probableErrorSource === 'SCRIVENER_ERROR' ? '#ffd000' :
+                                     r.solutionSteps.probableErrorSource === 'OCR_ERROR' ? '#00d4a8' :
+                                     r.solutionSteps.probableErrorSource === 'HISTORICAL_FIELD_ERROR' ? '#ff7b72' : 'var(--text-primary)'
+                            }}>
+                              {r.solutionSteps.probableErrorSource === 'SCRIVENER_ERROR' ? '✍️ Scrivener\'s Typographical Error (Field/Office Typo)' :
+                               r.solutionSteps.probableErrorSource === 'OCR_ERROR' ? '🤖 OCR Recognition Error (Scan Character Misread)' :
+                               r.solutionSteps.probableErrorSource === 'HISTORICAL_FIELD_ERROR' ? '📐 Historical Field Discrepancy / Survey Closure Limits' :
+                               r.solutionSteps.probableErrorSource === 'NONE' ? '✅ None (Deed Closed Correctly)' : r.solutionSteps.probableErrorSource}
+                            </span>
+                          </div>
+                          {r.solutionSteps.correctionsApplied > 0 && (
+                            <div>
+                              <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'inline-block', width: '120px' }}>Corrections Made:</span>
+                              <span style={{ fontFamily: 'JetBrains Mono', fontSize: '0.75rem', color: 'var(--text-primary)' }}>
+                                {r.solutionSteps.summary || `${r.solutionSteps.correctionsApplied} course correction(s) applied`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {isEditing ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         {/* Course List Table */}

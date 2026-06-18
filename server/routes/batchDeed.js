@@ -147,11 +147,13 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
             } catch {}
           }
 
-          results[index] = {
+           results[index] = {
             fileName, status: 'success',
             extraction: cachedExtraction, traverse: cachedTraverse,
             legalDescription: cachedWriteResult, error: null,
-            fileHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null
+            fileHash, 
+            agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
+            solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
           };
           const linErr = cachedTraverse.closure?.linearError ?? cachedTraverse.Closure?.LinearError ?? 0;
           const precRatio = cachedTraverse.closure?.precisionRatio ?? cachedTraverse.Closure?.PrecisionRatio ?? '';

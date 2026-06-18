@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-18T12:38:57.306Z",
+  "timestamp": "2026-06-18T12:45:39.874Z",
   "llmProvider": "ollama",
   "llmModel": "deepseek-r1:14b",
   "stats": {
@@ -25,18 +25,6 @@
       "errorMsg": null
     },
     {
-      "file": "10042L.txt",
-      "status": "PASS",
-      "stage": "Stage 5: Manual Correction",
-      "originalCourses": 2,
-      "finalCourses": 2,
-      "linearError": null,
-      "precision": "N/A",
-      "area": 0,
-      "duration": 0,
-      "errorMsg": null
-    },
-    {
       "file": "10031G.txt",
       "status": "PASS",
       "stage": "Stage 5: Manual Correction",
@@ -45,6 +33,18 @@
       "linearError": 0.0067,
       "precision": "1:482,691",
       "area": 7.7917,
+      "duration": 0,
+      "errorMsg": null
+    },
+    {
+      "file": "10042L.txt",
+      "status": "PASS",
+      "stage": "Stage 5: Manual Correction",
+      "originalCourses": 2,
+      "finalCourses": 2,
+      "linearError": null,
+      "precision": "N/A",
+      "area": 0,
       "duration": 0,
       "errorMsg": null
     },
@@ -1201,18 +1201,6 @@
       "errorMsg": null
     },
     {
-      "file": "14395L-LOT2.txt",
-      "status": "PASS",
-      "stage": "Stage 5: Manual Correction",
-      "originalCourses": 6,
-      "finalCourses": 6,
-      "linearError": 0.006,
-      "precision": "1:194,298",
-      "area": 1.5045,
-      "duration": 0,
-      "errorMsg": null
-    },
-    {
       "file": "14395-L2.txt",
       "status": "PASS",
       "stage": "Stage 5: Manual Correction",
@@ -1221,6 +1209,18 @@
       "linearError": null,
       "precision": "N/A",
       "area": 0.2322,
+      "duration": 0,
+      "errorMsg": null
+    },
+    {
+      "file": "14395L-LOT2.txt",
+      "status": "PASS",
+      "stage": "Stage 5: Manual Correction",
+      "originalCourses": 6,
+      "finalCourses": 6,
+      "linearError": 0.006,
+      "precision": "1:194,298",
+      "area": 1.5045,
       "duration": 0,
       "errorMsg": null
     }

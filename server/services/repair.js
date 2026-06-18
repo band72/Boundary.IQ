@@ -883,6 +883,63 @@ function _tryBearingHarmonization(courses, pob, units, isOpenEnded) {
 }
 
 /**
+ * Helper to classify the probable error source of a deed based on corrections applied.
+ */
+function determineProbableErrorSource(stage, corrections) {
+  if (!corrections || corrections.length === 0) {
+    if (stage && (stage.includes('Open-Ended') || stage.includes('Centerline') || stage.includes('Easement') || stage.includes('Strip'))) {
+      return 'HISTORICAL_FIELD_ERROR';
+    }
+    return 'NONE';
+  }
+
+  const stageLower = (stage || '').toLowerCase();
+  
+  if (stageLower.includes('ocr')) {
+    return 'OCR_ERROR';
+  }
+  if (stageLower.includes('scrivener') || stageLower.includes('commencement')) {
+    return 'SCRIVENER_ERROR';
+  }
+  if (stageLower.includes('compass rule') || stageLower.includes('meander') || stageLower.includes('water')) {
+    return 'HISTORICAL_FIELD_ERROR';
+  }
+
+  let hasOcrPattern = false;
+  let hasScrivenerPattern = false;
+
+  for (const c of corrections) {
+    if (c.changeType === 'BEARING_CORRECTED') {
+      const orig = (c.originalBearing || '').toLowerCase();
+      const corr = (c.correctedBearing || '').toLowerCase();
+      if (orig.includes('p') || orig.includes('9') || (orig.includes("'") && !corr.includes("'")) || (orig.includes('l') && corr.includes('1'))) {
+        hasOcrPattern = true;
+      }
+      const origMatch = orig.match(/^([nsew])(\d+)[°d](\d+)['′](\d+)[nsew]$/);
+      const corrMatch = corr.match(/^([nsew])(\d+)[°d](\d+)['′](\d+)[nsew]$/);
+      if (origMatch && corrMatch) {
+        const quadrantFlip = (origMatch[1] !== corrMatch[1] || origMatch[4] !== corrMatch[4]) && origMatch[2] === corrMatch[2] && origMatch[3] === corrMatch[3];
+        if (quadrantFlip) {
+          hasScrivenerPattern = true;
+        }
+      }
+    }
+    if (c.changeType === 'DISTANCE_CORRECTED') {
+      hasScrivenerPattern = true;
+    }
+  }
+
+  if (hasOcrPattern) return 'OCR_ERROR';
+  if (hasScrivenerPattern) return 'SCRIVENER_ERROR';
+
+  if (stageLower.includes('ai') || stageLower.includes('agent')) {
+    return 'SCRIVENER_ERROR';
+  }
+
+  return 'HISTORICAL_FIELD_ERROR';
+}
+
+/**
  * Builds a structured solution-steps record comparing original vs repaired courses.
  * Stored in SolutionStepsJson in DeedLogs for full forensic replay.
  */
@@ -933,6 +990,7 @@ function buildSolutionSteps(originalExtraction, repairedExtraction, stage, trave
     originalCourseCount: origCourses.length,
     repairedCourseCount: repairCourses.length,
     correctionsApplied: changed.length,
+    probableErrorSource: determineProbableErrorSource(stage, corrections),
     closureAfter: traverse ? {
       linearError:    traverse.closure?.linearError  ?? null,
       precisionRatio: traverse.closure?.precisionRatio ?? null,

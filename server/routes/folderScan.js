@@ -807,7 +807,11 @@ router.post('/process-batch', async (req, res) => {
                 cachedWrite = { legalDescription: legalWriter.write({ courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county: cachedEx.county, state: cachedEx.state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter }), courseCount: cachedEx.courses.length };
               } catch {}
             }
-            results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
+            results[index] = { 
+              fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash, 
+              agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
+              solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+            };
             const cachedLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : (solvedCase.parcelName || 'CACHED');
             saveDeedLogWrapper(req, batchId, fileName, cachedLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
             return;
@@ -893,7 +897,11 @@ router.post('/process-batch', async (req, res) => {
                     };
                   } catch {}
                 }
-                 const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
+                 const pRes = { 
+                   fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, 
+                   agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
+                   solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+                 };
                 parcelResults.push(pRes);
                 const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${base}`;
                 saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
@@ -1519,7 +1527,11 @@ router.post('/process-file', async (req, res) => {
               };
             } catch {}
           }
-          const result = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true, fileHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
+          const result = { 
+            fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true, fileHash, 
+            agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
+            solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+          };
           const linErr = cachedTr.closure?.linearError ?? cachedTr.Closure?.LinearError ?? 0;
           const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
           const cachedLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : (solvedCase.parcelName || 'CACHED');
@@ -1633,7 +1645,11 @@ router.post('/process-file', async (req, res) => {
                 };
               } catch {}
             }
-            const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
+            const pRes = { 
+              fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, 
+              agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
+              solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+            };
             parcelResults.push(pRes);
             const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${baseName}`;
             saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
