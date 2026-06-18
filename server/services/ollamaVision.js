@@ -33,7 +33,7 @@ const ollamaAgent = new Agent({
 // each consuming 30 min of wall time. Limit to 1 active inference at a time.
 // Multiple batch routes can run in parallel but they wait HERE for Ollama.
 let _ollamaActive = 0;
-const _ollamaQueue = [];
+const _ollamaQueue = []; // Array of { resolve, isHighPriority }
 const OLLAMA_MAX_CONCURRENT = 1;
 
 function ollamaAcquire(isHighPriority = false) {
@@ -43,18 +43,17 @@ function ollamaAcquire(isHighPriority = false) {
       resolve();
     } else {
       if (isHighPriority) {
-        console.log('⚡ Ollama Queue: Enqueueing high-priority request at the front.');
-        _ollamaQueue.unshift(resolve);
-      } else {
-        _ollamaQueue.push(resolve);
+        console.log('⚡ Ollama Queue: Enqueueing high-priority request.');
       }
+      _ollamaQueue.push({ resolve, isHighPriority });
     }
   });
 }
 function ollamaRelease() {
   if (_ollamaQueue.length > 0) {
-    const next = _ollamaQueue.shift();
-    next(); // keep _ollamaActive at 1
+    const index = _ollamaQueue.findIndex(item => item.isHighPriority);
+    const nextItem = index !== -1 ? _ollamaQueue.splice(index, 1)[0] : _ollamaQueue.shift();
+    nextItem.resolve(); // keep _ollamaActive at 1
   } else {
     _ollamaActive--;
   }

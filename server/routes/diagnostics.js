@@ -75,8 +75,26 @@ router.post('/clear-all', (req, res) => {
 
 router.post('/save-correction', (req, res) => {
   try {
-    const { fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson } = req.body;
+    const {
+      fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson,
+      agentTurnsJson, trustScore, solutionStepsJson,
+      referencePointName, referencePointNorthing, referencePointEasting,
+      pobNorthing, pobEasting, fileHash
+    } = req.body;
     if (!fileName) return res.status(400).json({ error: 'fileName is required.' });
+
+    let finalFileHash = fileHash;
+    if (!finalFileHash) {
+      const recent = db.getDeedDetail(fileName);
+      if (recent?.fileHash) {
+        finalFileHash = recent.fileHash;
+      } else {
+        try {
+          const row = db.getDb().prepare("SELECT FileHash FROM DeedLogs WHERE FileName = ? AND FileHash IS NOT NULL AND FileHash != '' ORDER BY Timestamp DESC LIMIT 1").get(fileName);
+          if (row?.FileHash) finalFileHash = row.FileHash;
+        } catch {}
+      }
+    }
     
     const id = db.saveCorrectedDeed(
       fileName, 
@@ -84,7 +102,16 @@ router.post('/save-correction', (req, res) => {
       status || 'PASS', 
       repairStageUsed || 'Stage 6: Manual Operator Corrected', 
       typeof extractionJson === 'object' ? JSON.stringify(extractionJson) : extractionJson, 
-      typeof traverseJson === 'object' ? JSON.stringify(traverseJson) : traverseJson
+      typeof traverseJson === 'object' ? JSON.stringify(traverseJson) : traverseJson,
+      agentTurnsJson ? (typeof agentTurnsJson === 'object' ? JSON.stringify(agentTurnsJson) : agentTurnsJson) : null,
+      trustScore != null ? parseFloat(trustScore) : null,
+      solutionStepsJson ? (typeof solutionStepsJson === 'object' ? JSON.stringify(solutionStepsJson) : solutionStepsJson) : null,
+      referencePointName || null,
+      referencePointNorthing != null ? parseFloat(referencePointNorthing) : null,
+      referencePointEasting != null ? parseFloat(referencePointEasting) : null,
+      pobNorthing != null ? parseFloat(pobNorthing) : null,
+      pobEasting != null ? parseFloat(pobEasting) : null,
+      finalFileHash || null
     );
     
     res.json({ success: true, id, message: `Successfully saved manual corrections for ${fileName}.` });

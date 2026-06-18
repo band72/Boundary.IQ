@@ -147,7 +147,12 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
             } catch {}
           }
 
-          results[index] = { fileName, status: 'success', extraction: cachedExtraction, traverse: cachedTraverse, legalDescription: cachedWriteResult, error: null };
+          results[index] = {
+            fileName, status: 'success',
+            extraction: cachedExtraction, traverse: cachedTraverse,
+            legalDescription: cachedWriteResult, error: null,
+            fileHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null
+          };
           const linErr = cachedTraverse.closure?.linearError ?? cachedTraverse.Closure?.LinearError ?? 0;
           const precRatio = cachedTraverse.closure?.precisionRatio ?? cachedTraverse.Closure?.PrecisionRatio ?? '';
           db.saveDeedLog(batchId, fileName, solvedCase.parcelName || 'CACHED',
@@ -220,7 +225,8 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
             fileName, status: 'skipped',
             extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Non-traversable: ${extraction.classification}`,
-            conceptualAnalysis: extraction.conceptualAnalysis || null
+            conceptualAnalysis: extraction.conceptualAnalysis || null,
+            fileHash, agentTurns: null
           };
           db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null,
@@ -238,6 +244,8 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
           trustFlags: repairResult.trustFlags || [],
           bustCourseIndex: repairResult.bustCourseIndex ?? null,
           mentalMapSummary: extraction.mentalMapSummary || null,
+          agentTurns: repairResult.agentTurns || null,
+          fileHash
         };
 
         const linearError = traverse?.closure?.linearError || 0;
@@ -256,7 +264,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'Auto-repair pipeline');
       } catch (ex) {
         log.error({ fileName, err: ex.message }, 'Batch item failed');
-        results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message };
+        results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message, fileHash, agentTurns: null };
         db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE, fileHash);
       }
     });
@@ -277,7 +285,8 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
         const fileName = files[idx]?.originalname || `file[${idx}]`;
         log.error({ fileName, err: timeoutErr.message }, 'Deed timed out or failed');
         if (!results[idx]) {
-          results[idx] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: timeoutErr.message };
+          const timeoutHash = files[idx]?.buffer ? crypto.createHash('sha256').update(files[idx].buffer).digest('hex') : null;
+          results[idx] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: timeoutErr.message, fileHash: timeoutHash, agentTurns: null };
         }
       } finally {
         sem.release();

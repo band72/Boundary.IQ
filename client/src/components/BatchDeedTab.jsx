@@ -684,7 +684,11 @@ export default function BatchDeedTab() {
           status: active.traverse?.closure?.status?.startsWith('✓') ? 'PASS' : 'FAIL',
           repairStageUsed: 'Stage 6: Manual Operator Corrected',
           extractionJson: active.extraction,
-          traverseJson: active.traverse
+          traverseJson: active.traverse,
+          fileHash: active.fileHash || null,
+          trustScore: active.trustScore ?? null,
+          solutionStepsJson: active.solutionSteps ? JSON.stringify(active.solutionSteps) : null,
+          agentTurnsJson: active.agentTurns ? JSON.stringify(active.agentTurns) : null
         }),
       });
       const data = await res.json();

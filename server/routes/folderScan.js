@@ -778,7 +778,7 @@ router.post('/process-batch', async (req, res) => {
           results[index] = {
             fileName, status: 'skipped', extraction: { courses: [], classification: 'LOT_BLOCK' }, traverse: null, legalDescription: null,
             error: null, skipReason: `Excluded by document classifier (SKIP)`,
-            conceptualAnalysis: null
+            conceptualAnalysis: null, fileHash
           };
           saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Excluded by document classifier (SKIP)', JSON.stringify({ courses: [], classification: 'LOT_BLOCK' }), null, null, null, null, fileHash);
@@ -807,7 +807,7 @@ router.post('/process-batch', async (req, res) => {
                 cachedWrite = { legalDescription: legalWriter.write({ courses: cachedEx.courses, pobNorthing: pobN, pobEasting: pobE, county: cachedEx.county, state: cachedEx.state, units: units.toLowerCase(), areaAcres: cachedTr.areaAcres, perimeter: cachedTr.perimeter }), courseCount: cachedEx.courses.length };
               } catch {}
             }
-            results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
+            results[index] = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
             const cachedLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : (solvedCase.parcelName || 'CACHED');
             saveDeedLogWrapper(req, batchId, fileName, cachedLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
             return;
@@ -826,7 +826,9 @@ router.post('/process-batch', async (req, res) => {
               legalDescription: null,
               error: null,
               skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
-              conceptualAnalysis: cachedEx.conceptualAnalysis || null
+              conceptualAnalysis: cachedEx.conceptualAnalysis || null,
+              fileHash,
+              agentTurns: null
             };
             saveDeedLogWrapper(req, batchId, fileName, skippedCase.parcelName || `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, fileHash);
             return;
@@ -891,7 +893,7 @@ router.post('/process-batch', async (req, res) => {
                     };
                   } catch {}
                 }
-                const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
+                 const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
                 parcelResults.push(pRes);
                 const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${base}`;
                 saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
@@ -911,7 +913,9 @@ router.post('/process-batch', async (req, res) => {
                   legalDescription: null,
                   error: null,
                   skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
-                  conceptualAnalysis: cachedEx.conceptualAnalysis || null
+                  conceptualAnalysis: cachedEx.conceptualAnalysis || null,
+                  fileHash: parcelHash,
+                  agentTurns: null
                 };
                 parcelResults.push(pRes);
                 const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
@@ -929,7 +933,9 @@ router.post('/process-batch', async (req, res) => {
                 traverse: null,
                 legalDescription: null,
                 error: null,
-                skipReason: 'Non-traversable (no boundary keywords)'
+                skipReason: 'Non-traversable (no boundary keywords)',
+                fileHash: parcelHash,
+                agentTurns: null
               };
               parcelResults.push(pRes);
               const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
@@ -972,12 +978,12 @@ router.post('/process-batch', async (req, res) => {
                   };
                 } catch {}
 
-                const pRes = { fileName: parcelFileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
+                const pRes = { fileName: parcelFileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult, fileHash: parcelHash, agentTurns: null };
                 parcelResults.push(pRes);
 
                 const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
                 const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
-                saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
+                saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, parcelHash);
                 
                 continue; // successfully processed this parcel offline!
               }
@@ -1021,7 +1027,7 @@ router.post('/process-batch', async (req, res) => {
                 finalStatus = 'skipped';
               }
 
-              const pRes = { fileName: parcelFileName, status: finalStatus, extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
+              const pRes = { fileName: parcelFileName, status: finalStatus, extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null, fileHash: parcelHash, agentTurns: pResult.agentTurns || null };
               parcelResults.push(pRes);
 
               saveDeedLogWrapper(req, 
@@ -1035,7 +1041,7 @@ router.post('/process-batch', async (req, res) => {
                 pResult.agentTurns ? JSON.stringify(pResult.agentTurns) : null,
                 pResult.trustScore ?? null,
                 pResult.solutionSteps ? JSON.stringify(pResult.solutionSteps) : null,
-                fileHash
+                parcelHash
               );
               console.log(`FolderScan: Parcel ${label} saved as ${parcelFileName} — ${pStatus}`);
             } catch (parcelEx) {
@@ -1065,6 +1071,8 @@ router.post('/process-batch', async (req, res) => {
               traverse: parcelResults[0].traverse,
               legalDescription: parcelResults[0].legalDescription,
               error: null,
+              fileHash,
+              agentTurns: null
             };
             return;
           }
@@ -1102,7 +1110,7 @@ router.post('/process-batch', async (req, res) => {
               };
             } catch {}
 
-            results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
+            results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult, fileHash, agentTurns: null };
             const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
             saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
             return;
@@ -1115,7 +1123,9 @@ router.post('/process-batch', async (req, res) => {
           results[index] = {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Document contains no boundary keywords (LOT_BLOCK).`,
-            conceptualAnalysis: null
+            conceptualAnalysis: null,
+            fileHash,
+            agentTurns: null
           };
           saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(extraction), null, null, null, null, fileHash);
@@ -1173,7 +1183,7 @@ router.post('/process-batch', async (req, res) => {
               let writeResult = null;
               try { writeResult = { legalDescription: legalWriter.write({ courses: platResult.courses, pobNorthing: pobN, pobEasting: pobE, county: getCountyVal(extraction, resolvedCounty), state: getStateVal(extraction, resolvedState), units: units.toLowerCase(), areaAcres: platResult.areaAcres, perimeter: traverse?.perimeter }), courseCount: platResult.courses.length }; } catch {}
               const stageLabel = `Stage 3.5: PlatLookup Tier ${platResult.tier} (${isLotBlock ? 'LOT_BLOCK' : 'PLSS'})${platResult.isFallback ? ' [fallback grid]' : ''}`;
-              results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
+              results[index] = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult, fileHash, agentTurns: null };
               saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[PLAT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
               return;
             } else if (platResult?.needsManual) {
@@ -1187,7 +1197,9 @@ router.post('/process-batch', async (req, res) => {
                 skipReason: `Lot/Block lookup requires manual coordinate entry (Tier 3)`,
                 needsManualPlat: true,
                 platInfo: { lot: platResult.lot, block: platResult.block, subdivision: platResult.subdivision },
-                conceptualAnalysis: extraction.conceptualAnalysis || null
+                conceptualAnalysis: extraction.conceptualAnalysis || null,
+                fileHash,
+                agentTurns: null
               };
               saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
                 'SKIPPED', 'Stage 4: LOT_BLOCK needs manual plat coordinates', JSON.stringify(extraction), null, null, null, null, fileHash);
@@ -1201,10 +1213,12 @@ router.post('/process-batch', async (req, res) => {
           results[index] = {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Non-traversable: ${extraction.classification}`,
-            conceptualAnalysis: extraction.conceptualAnalysis || null
+            conceptualAnalysis: extraction.conceptualAnalysis || null,
+            fileHash,
+            agentTurns: null
           };
           saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
-            'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null);
+            'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null, fileHash);
           return;
         }
 
@@ -1219,14 +1233,16 @@ router.post('/process-batch', async (req, res) => {
           results[index] = {
             fileName, status: 'skipped', extraction, traverse: null, legalDescription: null,
             error: null, skipReason: `Non-traversable: ${extraction.classification}`,
-            conceptualAnalysis: extraction.conceptualAnalysis || null
+            conceptualAnalysis: extraction.conceptualAnalysis || null,
+            fileHash,
+            agentTurns: null
           };
           saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null, fileHash);
           return;
         }
 
-        results[index] = { fileName, status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error', extraction, traverse, legalDescription: writeResult, error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction, solutionSteps: repairResult.solutionSteps || null };
+        results[index] = { fileName, status: (status === 'PASS' || status === 'MEANDER') ? 'success' : 'error', extraction, traverse, legalDescription: writeResult, error: repairResult.traverseError, originalExtraction: repairResult.originalExtraction, solutionSteps: repairResult.solutionSteps || null, fileHash, agentTurns: repairResult.agentTurns || null };
 
         const parcelLabel = resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
         const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
@@ -1234,7 +1250,7 @@ router.post('/process-batch', async (req, res) => {
         if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
       } catch (ex) {
         console.error(`FolderScan item failed: ${fileName}`, ex.message);
-        results[index] = { fileName, status: 'error', extraction: { rawText: rawDocText || '' }, traverse: null, legalDescription: null, error: ex.message };
+        results[index] = { fileName, status: 'error', extraction: { rawText: rawDocText || '' }, traverse: null, legalDescription: null, error: ex.message, fileHash, agentTurns: null };
         saveDeedLogWrapper(req, batchId, fileName, 'ERROR', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, fileHash);
       }
     });
@@ -1425,7 +1441,9 @@ router.post('/process-file', async (req, res) => {
         error: null,
         skipReason: `Excluded by document classifier (SKIP)`,
         cached: false,
-        conceptualAnalysis: null
+        conceptualAnalysis: null,
+        fileHash,
+        agentTurns: null
       };
       saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
         'SKIPPED', 'Excluded by document classifier (SKIP)', JSON.stringify({ courses: [], classification: 'LOT_BLOCK' }), null, null, null, null, fileHash);
@@ -1501,7 +1519,7 @@ router.post('/process-file', async (req, res) => {
               };
             } catch {}
           }
-          const result = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true };
+          const result = { fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true, fileHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
           const linErr = cachedTr.closure?.linearError ?? cachedTr.Closure?.LinearError ?? 0;
           const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
           const cachedLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : (solvedCase.parcelName || 'CACHED');
@@ -1535,7 +1553,9 @@ router.post('/process-file', async (req, res) => {
           error: null,
           skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
           conceptualAnalysis: cachedEx.conceptualAnalysis || null,
-          cached: true
+          cached: true,
+          fileHash,
+          agentTurns: null
         };
         saveDeedLogWrapper(req, batchId, fileName, skippedCase.parcelName || `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0, 'SKIPPED', skippedCase.repairStageUsed || 'Non-traversable document', skippedCase.extractionJson, null, null, null, null, fileHash);
 
@@ -1613,7 +1633,7 @@ router.post('/process-file', async (req, res) => {
                 };
               } catch {}
             }
-            const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null };
+            const pRes = { fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null };
             parcelResults.push(pRes);
             const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${baseName}`;
             saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, parcelHash);
@@ -1632,7 +1652,9 @@ router.post('/process-file', async (req, res) => {
               legalDescription: null,
               error: null,
               skipReason: skippedCase.repairStageUsed || `Non-traversable: ${cachedEx.classification}`,
-              conceptualAnalysis: cachedEx.conceptualAnalysis || null
+              conceptualAnalysis: cachedEx.conceptualAnalysis || null,
+              fileHash: parcelHash,
+              agentTurns: null
             };
             parcelResults.push(pRes);
             const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
@@ -1650,7 +1672,9 @@ router.post('/process-file', async (req, res) => {
             traverse: null,
             legalDescription: null,
             error: null,
-            skipReason: 'Non-traversable (no boundary keywords)'
+            skipReason: 'Non-traversable (no boundary keywords)',
+            fileHash: parcelHash,
+            agentTurns: null
           };
           parcelResults.push(pRes);
           const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
@@ -1689,12 +1713,12 @@ router.post('/process-file', async (req, res) => {
               };
             } catch {}
 
-            const pRes = { fileName: parcelFileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult };
+            const pRes = { fileName: parcelFileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, platLookup: platResult, fileHash: parcelHash, agentTurns: null };
             parcelResults.push(pRes);
 
             const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
             const pLabel = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
-            saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
+            saveDeedLogWrapper(req, batchId, parcelFileName, pLabel, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, parcelHash);
             
             continue;
           }
@@ -1738,7 +1762,7 @@ router.post('/process-file', async (req, res) => {
             finalStatus = 'skipped';
           }
 
-          const pRes = { fileName: parcelFileName, status: finalStatus, extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null };
+          const pRes = { fileName: parcelFileName, status: finalStatus, extraction: pEx, traverse: pTr, legalDescription: pWrite, error: pResult.traverseError, platLookup: null, fileHash: parcelHash, agentTurns: pResult.agentTurns || null };
           parcelResults.push(pRes);
 
           saveDeedLogWrapper(req, 
@@ -1752,7 +1776,7 @@ router.post('/process-file', async (req, res) => {
             pResult.agentTurns ? JSON.stringify(pResult.agentTurns) : null,
             pResult.trustScore ?? null,
             pResult.solutionSteps ? JSON.stringify(pResult.solutionSteps) : null,
-            fileHash
+            parcelHash
           );
         } catch (parcelEx) {
           console.warn(`FolderScan process-file: Parcel ${label} (${parcelFileName}) failed:`, parcelEx.message);
@@ -1779,7 +1803,9 @@ router.post('/process-file', async (req, res) => {
           traverse: parcelResults[0].traverse,
           legalDescription: parcelResults[0].legalDescription,
           error: null,
-          cached: false
+          cached: false,
+          fileHash,
+          agentTurns: null
         };
         if (autoOutput) {
           try {
@@ -1824,9 +1850,9 @@ router.post('/process-file', async (req, res) => {
             };
           } catch {}
 
-          const result = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, cached: false, platLookup: platResult };
+          const result = { fileName, status: 'success', extraction, traverse, legalDescription: writeResult, error: null, cached: false, platLookup: platResult, fileHash, agentTurns: null };
           const stageLabel = `Stage 1.5: Offline PLSS Intercept (${platResult.isFallback ? 'fallback grid' : 'BLM API'})`;
-          saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse));
+          saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[PLAT-INTERCEPT] ${path.parse(fileName).name}`, platResult.courses.length, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), 'PASS', stageLabel, JSON.stringify(extraction), JSON.stringify(traverse), null, null, null, fileHash);
           
           if (autoOutput) {
             try {
@@ -1850,7 +1876,9 @@ router.post('/process-file', async (req, res) => {
         error: null,
         skipReason: `Document contains no boundary keywords (LOT_BLOCK).`,
         cached: false,
-        conceptualAnalysis: null
+        conceptualAnalysis: null,
+        fileHash,
+        agentTurns: null
       };
       saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
         'SKIPPED', 'Non-traversable document (pre-check)', JSON.stringify(extraction), null, null, null, null, fileHash);
@@ -1909,7 +1937,9 @@ router.post('/process-file', async (req, res) => {
         error: null,
         skipReason: `Document contains no traversable boundary geometry (AI classification: ${extraction.classification}).`,
         cached: false,
-        conceptualAnalysis: extraction.conceptualAnalysis || null
+        conceptualAnalysis: extraction.conceptualAnalysis || null,
+        fileHash,
+        agentTurns: null
       };
       saveDeedLogWrapper(req, batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
         'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null, fileHash);
@@ -1936,7 +1966,9 @@ router.post('/process-file', async (req, res) => {
       originalExtraction: repairResult.originalExtraction,
       cached: false,
       solutionSteps: repairResult.solutionSteps || null,
-      conceptualAnalysis: extraction.conceptualAnalysis || null
+      conceptualAnalysis: extraction.conceptualAnalysis || null,
+      fileHash,
+      agentTurns: repairResult.agentTurns || null
     };
 
     const parcelLabel = resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[${extraction.classification}] ${path.parse(fileName).name}`;

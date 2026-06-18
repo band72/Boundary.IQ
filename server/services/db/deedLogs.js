@@ -153,6 +153,12 @@ export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed,
   const row = db.prepare('SELECT Id, BatchId FROM DeedLogs WHERE FileName = ? ORDER BY Timestamp DESC LIMIT 1').get(fileName);
   const batchId = row ? row.BatchId : 'CORRECTED';
 
+  // Ensure batchId exists in BatchRuns to satisfy the foreign key constraint
+  const batchExists = db.prepare('SELECT 1 FROM BatchRuns WHERE BatchId = ?').get(batchId);
+  if (!batchExists) {
+    db.prepare('INSERT INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate) VALUES (?, ?, 0, 0.0)').run(batchId, now());
+  }
+
   if (row) {
     db.prepare(`
       UPDATE DeedLogs
@@ -348,7 +354,7 @@ export function getDeedDetail(fileName) {
     id: r.Id, fileName: r.FileName, parcelName: r.ParcelName, status: r.Status,
     linearError: r.LinearError, precisionRatio: r.PrecisionRatio, geoCallCount: r.GeoCallCount,
     repairStageUsed: r.RepairStageUsed, timestamp: r.Timestamp, batchId: r.BatchId,
-    trustScore: r.TrustScore, extraction, traverse, agentTurns,
+    trustScore: r.TrustScore, extraction, traverse, agentTurns, fileHash: r.FileHash,
   };
 }
 

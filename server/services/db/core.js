@@ -260,5 +260,6 @@ export function mapDeedLog(r) {
     referencePointEasting: r.ReferencePointEasting,
     pobNorthing: r.PobNorthing,
     pobEasting: r.PobEasting,
+    fileHash: r.FileHash,
   };
 }

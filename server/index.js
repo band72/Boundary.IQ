@@ -7,6 +7,10 @@ import dotenv from 'dotenv'; // kept for hot-reload: dotenv.config({ override: t
 import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ── Config & Logger ───────────────────────────────────────────────────────────
 import {
@@ -174,6 +178,24 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/deed', deedRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/billing', billingRouter);
+
+// Serve static client assets in production
+if (IS_PROD) {
+  const clientDist = path.resolve(__dirname, '../client/dist');
+  if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    // Fallback all non-API GET requests to index.html for SPA React Router support
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      res.sendFile(path.join(clientDist, 'index.html'));
+    });
+    logger.info(`✓ Serving client static files from: ${clientDist}`);
+  } else {
+    logger.warn(`⚠ client/dist directory not found at: ${clientDist}. Client serving skipped.`);
+  }
+}
 
 // ── Global error handler ──────────────────────────────────────────────────────
 // Catches errors forwarded by asyncHandler(fn) and any synchronous throws.
