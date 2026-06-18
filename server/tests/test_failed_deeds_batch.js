@@ -9,6 +9,7 @@ import { runRepairPipeline } from '../services/repair.js';
 import * as geminiVision from '../services/geminiVision.js';
 import * as db from '../services/diagnosticsDb.js';
 import crypto from 'crypto';
+import * as output from '../services/output.js';
 
 function parsePrecisionRatio(precisionStr) {
   if (!precisionStr) return 0;
@@ -96,6 +97,7 @@ async function main() {
   }
   console.log('===========================================================\n');
 
+  const outputFolder = output.createOutputFolder(FAILED_DEEDS_DIR);
   const startBatchTime = Date.now();
   const limitFn = pLimit(concurrency);
   const results = [];
@@ -187,6 +189,37 @@ async function main() {
           );
         }
 
+        // Write deliverables
+        const mappedResult = {
+          status: res.status,
+          error: res.traverseError || null,
+          extraction: res.finalExtraction,
+          traverse: res.finalTraverse,
+          originalExtraction: res.originalExtraction,
+          conceptualAnalysis: res.conceptualAnalysis || res.finalExtraction?.conceptualAnalysis || null
+        };
+
+        let writeResult = null;
+        if (mappedResult.extraction?.courses?.length > 0) {
+          try {
+            const legalWriter = (await import('../services/legalDescriptionWriter.js')).default;
+            writeResult = {
+              legalDescription: legalWriter.write({
+                courses: mappedResult.extraction.courses,
+                pobNorthing: pob.northing,
+                pobEasting: pob.easting,
+                county: mappedResult.extraction.county || 'Unknown County',
+                state: mappedResult.extraction.state || 'Unknown State',
+                units: units.toLowerCase(),
+                areaAcres: mappedResult.traverse?.areaAcres,
+                perimeter: mappedResult.traverse?.perimeter
+              }),
+              courseCount: mappedResult.extraction.courses.length
+            };
+          } catch {}
+        }
+        await output.writeResultFiles(outputFolder, file, mappedResult, writeResult, false, false, 'arc', 'auto');
+
         const status = res.status; // 'PASS', 'MEANDER', 'FAIL'
         const stage = res.repairStageUsed;
         const origCount = res.originalExtraction?.courses?.length || 0;
@@ -208,6 +241,8 @@ async function main() {
           area: area != null ? parseFloat(area.toFixed(4)) : null,
           duration: parseFloat(elapsed),
           errorMsg: res.traverseError || null,
+          extraction: res.finalExtraction,
+          traverse: res.finalTraverse,
         });
 
       } catch (err) {
@@ -290,6 +325,18 @@ async function main() {
     };
     await fs.writeFile(RESULTS_OUTPUT_PATH, JSON.stringify(outputData, null, 2), 'utf-8');
     console.log(`✓ Full results report saved to: ${RESULTS_OUTPUT_PATH}\n`);
+
+    // Generate batch summary txt/json and combined PDF
+    console.log('Writing batch summary and combined PDF...');
+    const mappedResultsForSummary = results.map(r => ({
+      ...r,
+      fileName: r.file,
+      error: r.errorMsg,
+      status: r.status === 'PASS' ? 'success' : (r.status === 'MEANDER' ? 'success' : 'error')
+    }));
+    output.writeBatchSummary(outputFolder, FAILED_DEEDS_DIR, mappedResultsForSummary, Date.now() - startBatchTime);
+    await output.writeCombinedBatchPdf(outputFolder);
+    console.log(`\n🎉 Deliverables generated at: ${outputFolder}`);
   } catch (err) {
     console.error(`⚠️ Failed to save results to JSON file:`, err.message);
   }
