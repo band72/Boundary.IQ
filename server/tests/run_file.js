@@ -33,6 +33,26 @@ async function run() {
 
     console.log('Running repair pipeline...');
     const repairResult = await runRepairPipeline(bytes, mimeType, pob, units, isOpenEnded, fileName);
+
+    // Save the result to the database
+    const crypto = await import('crypto');
+    const fileHash = crypto.createHash('sha256').update(bytes).digest('hex');
+    const { saveCorrectedDeed } = await import('../services/diagnosticsDb.js');
+    saveCorrectedDeed(
+      fileName,
+      'SUBJECT PARCEL',
+      repairResult.status,
+      repairResult.repairStageUsed,
+      JSON.stringify(repairResult.finalExtraction || {}),
+      repairResult.finalTraverse ? JSON.stringify(repairResult.finalTraverse) : null,
+      repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null,
+      repairResult.trustScore ?? null,
+      repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null,
+      null, null, null, pob.northing, pob.easting,
+      fileHash
+    );
+    console.log('Saved result to database.');
+
     console.log('\n=== Pipeline Result ===');
     console.log('Status:', repairResult.status);
     console.log('Repair Stage Used:', repairResult.repairStageUsed);
@@ -44,8 +64,10 @@ async function run() {
     if (repairResult.finalTraverse) {
       console.log('Traverse Closure:', JSON.stringify(repairResult.finalTraverse.closure, null, 2));
     }
+    process.exit(0);
   } catch (err) {
     console.error('Error during repair pipeline:', err);
+    process.exit(1);
   }
 }
 
