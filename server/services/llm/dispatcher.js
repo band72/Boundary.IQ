@@ -153,9 +153,21 @@ export async function extractRaw(buffer, mimeType, prompt) {
   } else if (shouldRunOcrForImage(mimeType, provider, model)) {
     log.info({ model, mimeType }, 'Performing local OCR on image file');
     const ocrText = await performLocalOcr(buffer);
-    activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via local EasyOCR):\n=========================================\n${pruneLongText(ocrText)}`;
-    activeBuffer = Buffer.alloc(0);
-    activeMime = 'image/png';
+    if (ocrText && ocrText.trim().length > 0) {
+      activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via local EasyOCR):\n=========================================\n${pruneLongText(ocrText)}`;
+      activeBuffer = Buffer.alloc(0);
+      activeMime = 'image/png';
+    } else {
+      const isVision = provider === 'gemini' || provider === 'openai' || (provider === 'ollama' && ollama.isVisionCapable(model));
+      if (isVision) {
+        log.warn('Local OCR returned empty text. Falling back to sending original image directly to the vision-capable model.');
+      } else {
+        log.warn('Local OCR returned empty text, and active model is not vision-capable. The extraction may fail.');
+        activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via local EasyOCR):\n=========================================\n(OCR extracted no text)`;
+        activeBuffer = Buffer.alloc(0);
+        activeMime = 'image/png';
+      }
+    }
   }
 
   log.info({ provider, model, bufferKb: (activeBuffer.length / 1024).toFixed(0) }, 'AI extract started');
