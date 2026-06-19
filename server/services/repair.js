@@ -13,6 +13,9 @@ import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
 import { SupervisorAgent } from './agentSystem.js';
 import { createChildLogger } from '../logger.js';
+import { pdfOcrCache } from './llm/pdfProcessor.js';
+import crypto from 'crypto';
+import { GEMINI_API_KEY, ALLOW_API_FALLBACK } from '../config.js';
 
 const log = createChildLogger('repair');
 
@@ -27,12 +30,45 @@ const PASS_PRECISION_RATIO = 10000.0;
  * @param {string} units
  * @param {boolean} isOpenEnded
  * @param {string} fileName
+ * @param {number} maxTurns
+ * @param {boolean} allowEscalation
  * @returns {Promise<object>} RepairResult
  */
-export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpenEnded = false, fileName = '', maxTurns = 3) {
+export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpenEnded = false, fileName = '', maxTurns = 3, allowEscalation = true) {
   const t0 = Date.now();
   log.info({ file: fileName, mimeType, maxTurns }, 'Pipeline started');
-  const result = await _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
+  let result = await _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
+
+  // Dynamic escalation: if local model failed and we have Gemini API Key, try Gemini as a final safety net!
+  const currentProvider = gemini.getActiveProvider();
+  if (allowEscalation &&
+      (result.status === 'FAIL' || result.status === 'ERROR') &&
+      (currentProvider === 'ollama' || currentProvider === 'openai') &&
+      GEMINI_API_KEY &&
+      ALLOW_API_FALLBACK !== false) {
+
+    const fallbackModel = 'gemini-2.5-flash';
+    console.log(` Escalating failed deed "${fileName}" (status=${result.status}) from local model [${gemini.getActiveModel()}] to cloud model [${fallbackModel}] for another look.`);
+
+    const originalModel = gemini.getActiveModel();
+    try {
+      gemini.setProvider('gemini', fallbackModel);
+      const escalatedResult = await _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
+      if (escalatedResult.status === 'PASS' || escalatedResult.status === 'MEANDER') {
+        console.log(`✓ Escalation succeeded! Deed passed via ${fallbackModel}`);
+        result = escalatedResult;
+        result.repairStageUsed = `${result.repairStageUsed} (Escalated Fallback from ${currentProvider}:${originalModel})`;
+      } else {
+        console.log(` Escalation did not resolve the issue. Status: ${escalatedResult.status}`);
+      }
+    } catch (escalateErr) {
+      console.warn(`⚠️ Escalation attempt failed:`, escalateErr.message);
+    } finally {
+      // Restore original provider and model
+      gemini.setProvider(currentProvider, originalModel);
+    }
+  }
+
   const final = finalizeResult(result);
   const elapsed = Date.now() - t0;
   log.info(
@@ -165,7 +201,16 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
 
   // Fix #9: Prefer the structured isOpenEnded boolean from extraction; string scan is secondary fallback
   const docText = extraction.rawJson || '';
-  const actualOpenEnded = extraction.isOpenEnded || detectOpenEnded(docText, fileName, false) || isOpenEnded;
+  let actualOpenEnded = extraction.isOpenEnded || detectOpenEnded(docText, fileName, false) || isOpenEnded;
+  if (actualOpenEnded) {
+    // If the text contains an explicit return to POB, it is NOT open-ended.
+    const fullDocText = getDocumentText(imageBytes, mimeType);
+    const hasPobReturn = hasPobReturnText(docText) || hasPobReturnText(extraction.originalLegalDesc || '') || hasPobReturnText(fullDocText);
+    if (hasPobReturn) {
+      console.log('Open-ended classification overridden: document contains a return to POB.');
+      actualOpenEnded = false;
+    }
+  }
   if (actualOpenEnded) {
     console.log('Classified traverse as OPEN-ENDED (Easement, Right-of-Way, Centerline, Strip Deed).');
     // Stage 0 Short-Circuit: Open-ended survey lines are correct by design.
@@ -703,23 +748,25 @@ function _tryPreemptiveCommencementStrip(courses, pob, units, isOpenEnded, closu
   const errN = closure?.errorNorthing ?? 0;
   const errE = closure?.errorEasting ?? 0;
   const errMag = Math.hypot(errN, errE);
-  if (errMag < 5.0 || courses.length < 3) return null;
+  if (errMag < 5.0 || courses.length < 4) return null;
 
   let bestStrip = null;
   let minResid = Infinity;
 
-  for (let stripLen = 1; stripLen <= Math.min(3, courses.length - 2); stripLen++) {
+  for (let stripLen = 1; stripLen <= Math.min(12, courses.length - 3); stripLen++) {
     let cumN = 0, cumE = 0;
     let allResolvable = true;
     for (let k = 0; k < stripLen; k++) {
       const c = courses[k];
-      if (!c.bearing || c.isUnknown || c.distance == null) { allResolvable = false; break; }
+      const bearing = c.bearing || c.chordBearing;
+      const distance = c.distance != null ? c.distance : c.chordDistance;
+      if (!bearing || c.isUnknown || distance == null) { allResolvable = false; break; }
       let parsed;
-      try { parsed = bp.parse(c.bearing); } catch { allResolvable = false; break; }
+      try { parsed = bp.parse(bearing); } catch { allResolvable = false; break; }
       if (parsed?.azimuthDeg == null) { allResolvable = false; break; }
       const az = parsed.azimuthDeg * Math.PI / 180;
-      cumN += c.distance * Math.cos(az);
-      cumE += c.distance * Math.sin(az);
+      cumN += distance * Math.cos(az);
+      cumE += distance * Math.sin(az);
     }
     if (!allResolvable) continue;
 
@@ -730,7 +777,7 @@ function _tryPreemptiveCommencementStrip(courses, pob, units, isOpenEnded, closu
     if (residMag < errMag * 0.15 && residMag < minResid) {
       minResid = residMag;
       const stripped = courses.slice(stripLen);
-      const stripped_names = courses.slice(0, stripLen).map((c, k) => `C${k+1}(${c.bearing},${c.distance}ft)`).join(' + ');
+      const stripped_names = courses.slice(0, stripLen).map((c, k) => `C${k+1}(${c.bearing || c.chordBearing || 'Curve'},${c.distance != null ? c.distance : c.chordDistance}ft)`).join(' + ');
       bestStrip = {
         courses: stripped,
         message: `Stage 0.5: Preemptive Commencement Stripper removed ${stripLen} leading course(s) [${stripped_names}] — were commencement runs, not boundary`,
@@ -745,24 +792,26 @@ function _tryCommencementStrip(courses, pob, units, isOpenEnded, closure) {
   const errN = closure?.errorNorthing ?? 0;
   const errE = closure?.errorEasting ?? 0;
   const errMag = Math.hypot(errN, errE);
-  if (errMag < 5.0 || courses.length < 3) return null;
+  if (errMag < 5.0 || courses.length < 4) return null;
 
   let bestStrip = null;
   let minResid = Infinity;
 
-  // For each possible leading strip length (1, 2, 3 courses):
-  for (let stripLen = 1; stripLen <= Math.min(3, courses.length - 2); stripLen++) {
+  // For each possible leading strip length (up to 12 courses):
+  for (let stripLen = 1; stripLen <= Math.min(12, courses.length - 3); stripLen++) {
     let cumN = 0, cumE = 0;
     let allResolvable = true;
     for (let k = 0; k < stripLen; k++) {
       const c = courses[k];
-      if (!c.bearing || c.isUnknown || c.distance == null) { allResolvable = false; break; }
+      const bearing = c.bearing || c.chordBearing;
+      const distance = c.distance != null ? c.distance : c.chordDistance;
+      if (!bearing || c.isUnknown || distance == null) { allResolvable = false; break; }
       let parsed;
-      try { parsed = bp.parse(c.bearing); } catch { allResolvable = false; break; }
+      try { parsed = bp.parse(bearing); } catch { allResolvable = false; break; }
       if (parsed?.azimuthDeg == null) { allResolvable = false; break; }
       const az = parsed.azimuthDeg * Math.PI / 180;
-      cumN += c.distance * Math.cos(az);
-      cumE += c.distance * Math.sin(az);
+      cumN += distance * Math.cos(az);
+      cumE += distance * Math.sin(az);
     }
     if (!allResolvable) continue;
 
@@ -778,7 +827,7 @@ function _tryCommencementStrip(courses, pob, units, isOpenEnded, closure) {
       const [test] = tryCompute(stripped, pob, units, isOpenEnded);
       if (test && isPassing(test)) {
         minResid = residMag;
-        const stripped_names = courses.slice(0, stripLen).map((c, k) => `C${k+1}(${c.bearing},${c.distance}ft)`).join(' + ');
+        const stripped_names = courses.slice(0, stripLen).map((c, k) => `C${k+1}(${c.bearing || c.chordBearing || 'Curve'},${c.distance != null ? c.distance : c.chordDistance}ft)`).join(' + ');
         bestStrip = {
           courses: stripped,
           message: `Commencement Leg Stripper: removed ${stripLen} leading course(s) [${stripped_names}] — were commencement runs, not boundary`,
@@ -1315,13 +1364,6 @@ export function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // PRINCIPLE 4: Distance digit-drop / transcription errors
-  // Common patterns from real deed typist errors:
-  //   d ± 10, d ± 20  (leading digit dropped or added)
-  //   d × 10, d ÷ 10  (decimal point shift)
-  //   d with digits swapped (e.g. 95.78 → 59.78)
-  // ────────────────────────────────────────────────────────────────
   for (let i = 0; i < N_COURSES; i++) {
     const c = courses[i];
     if (!c.bearing || !c.distance || c.distance <= 0) continue;
@@ -1336,6 +1378,30 @@ export function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
         ? [Math.floor(d / 10) + (d % 10 === Math.floor(d % 10) ? 0 : 0) +
            (d % 10) * 10 + (d - Math.floor(d))] : []),
     ]);
+
+    // Single-digit substitution (e.g. "212.75" -> "214.75")
+    const dStr = d.toFixed(2);
+    for (let pos = 0; pos < dStr.length; pos++) {
+      if (dStr[pos] === '.') continue;
+      for (let digit = 0; digit <= 9; digit++) {
+        if (dStr[pos] === digit.toString()) continue;
+        const newDStr = dStr.slice(0, pos) + digit + dStr.slice(pos + 1);
+        const newD = parseFloat(newDStr);
+        if (newD > 0) variants.add(newD);
+      }
+    }
+
+    // Swap adjacent digits (e.g. "110.43" -> "110.34")
+    for (let pos = 0; pos < dStr.length - 1; pos++) {
+      if (dStr[pos] === '.' || dStr[pos + 1] === '.') continue;
+      if (dStr[pos] === dStr[pos + 1]) continue;
+      const chars = dStr.split('');
+      const tmp = chars[pos];
+      chars[pos] = chars[pos + 1];
+      chars[pos + 1] = tmp;
+      const newD = parseFloat(chars.join(''));
+      if (newD > 0) variants.add(newD);
+    }
 
     for (const testDist of variants) {
       if (testDist <= 0 || testDist > 99999) continue;
@@ -1957,6 +2023,17 @@ export function isMeanderDeed(extraction) {
 
 
 /**
+ * Helper to check if text contains an explicit return to Point of Beginning (POB)
+ */
+export function hasPobReturnText(text) {
+  if (!text) return false;
+  const combined = text.toUpperCase();
+  const cleanCombined = combined.replace(/\./g, '');
+  return /\bT[O0]\s+(?:THE\s+)?(?:TRUE\s+)?(?:POIN[TI]\s+(?:OF\s+)?)?(?:BEGINNING|PLACE\s+OF\s+BEGINNING|POB|BEG)/.test(cleanCombined) ||
+         combined.includes('RETURN TO') || combined.includes('CLOSE TO') || combined.includes('TO SAID');
+}
+
+/**
  * Unified Multi-factor Open-Ended Traverse Classifier
  */
 export function detectOpenEnded(text, fileName, aiFlag) {
@@ -2010,10 +2087,7 @@ export function detectOpenEnded(text, fileName, aiFlag) {
   const hasIndicator = indicators.some(w => combined.includes(w));
   if (!hasIndicator) return false;
   
-  const cleanCombined = combined.replace(/\./g, '');
-  const hasPobReturn = /\bT[O0]\s+(?:THE\s+)?(?:TRUE\s+)?(?:POIN[TI]\s+(?:OF\s+)?)?(?:BEGINNING|PLACE\s+OF\s+BEGINNING|POB|BEG)/.test(cleanCombined) ||
-                       combined.includes('RETURN TO') || combined.includes('CLOSE TO') || combined.includes('TO SAID');
-  if (hasPobReturn) {
+  if (hasPobReturnText(combined)) {
     return false;
   }
   
@@ -2170,4 +2244,22 @@ export function extractNamedParcels(docText) {
   }
 
   return parcels.length >= 2 ? parcels : null;
+}
+
+/**
+ * Retrieve document text from cache or text buffer
+ */
+function getDocumentText(imageBytes, mimeType) {
+  if (!imageBytes || imageBytes.length === 0) return '';
+  if (mimeType === 'text/plain') {
+    return imageBytes.toString('utf-8');
+  }
+  if (mimeType === 'application/pdf') {
+    const pdfHash = crypto.createHash('sha256').update(imageBytes).digest('hex');
+    const cached = pdfOcrCache.get(pdfHash);
+    if (cached) {
+      return (cached.extractedText || '') + '\n' + (cached.combinedOcrText || '');
+    }
+  }
+  return '';
 }

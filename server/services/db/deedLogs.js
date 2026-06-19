@@ -84,34 +84,13 @@ export function getRecentBatchesWithStats(limit = 30) {
   const batches = db.prepare('SELECT * FROM BatchRuns ORDER BY Timestamp DESC LIMIT ?').all(limit);
   if (batches.length === 0) return [];
 
-  const placeholders = batches.map(() => '?').join(',');
-  const batchIds = batches.map(b => b.BatchId);
-
-  const rows = db.prepare(`
-    SELECT BatchId, COUNT(*) AS total,
-      SUM(CASE WHEN Status = 'PASS'    THEN 1 ELSE 0 END) AS passed,
-      SUM(CASE WHEN Status = 'FAIL'    THEN 1 ELSE 0 END) AS failed,
-      SUM(CASE WHEN Status = 'ERROR'   THEN 1 ELSE 0 END) AS errors,
-      SUM(CASE WHEN Status = 'MEANDER' THEN 1 ELSE 0 END) AS meanders,
-      SUM(CASE WHEN Status = 'SKIP'    THEN 1 ELSE 0 END) AS skipped,
-      AVG(LinearError) AS avgLinearErr, MAX(LinearError) AS maxLinearErr,
-      AVG(PrecisionRatio) AS avgPrecision, MAX(PrecisionRatio) AS bestPrecision
-    FROM DeedLogs WHERE BatchId IN (${placeholders})
-    GROUP BY BatchId
-  `).all(...batchIds);
-
-  const statsByBatch = Object.fromEntries(rows.map(r => [r.BatchId, r]));
   return batches.map(b => {
-    const s = statsByBatch[b.BatchId] || {};
     return {
-      batchId: b.BatchId, timestamp: b.Timestamp, totalFiles: b.TotalFiles, passRate: b.PassRate,
-      stats: {
-        batchId: b.BatchId,
-        counts: { total: s.total||0, passed: s.passed||0, failed: s.failed||0, errors: s.errors||0, meanders: s.meanders||0, skipped: s.skipped||0 },
-        passRate: s.total > 0 ? (s.passed / s.total) : 0,
-        closure: { avgLinearErr: s.avgLinearErr || 0, maxLinearErr: s.maxLinearErr || 0 },
-        precision: { avg: s.avgPrecision || 0, best: s.bestPrecision || 0 },
-      },
+      batchId: b.BatchId,
+      timestamp: b.Timestamp,
+      totalFiles: b.TotalFiles,
+      passRate: b.PassRate,
+      stats: getBatchStats(b.BatchId),
     };
   });
 }
@@ -119,6 +98,14 @@ export function getRecentBatchesWithStats(limit = 30) {
 // ── Deed Logs ─────────────────────────────────────────────────────────────────
 
 export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
+  const db = getDb();
+
+  // Ensure batchId exists in BatchRuns to satisfy the foreign key constraint
+  const batchExists = db.prepare('SELECT 1 FROM BatchRuns WHERE BatchId = ?').get(batchId);
+  if (!batchExists) {
+    db.prepare('INSERT INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate) VALUES (?, ?, 0, 0.0)').run(batchId, now());
+  }
+
   let finalRefPointName = referencePointName;
   if (!finalRefPointName && extractionJson) {
     try {
@@ -127,7 +114,7 @@ export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearE
     } catch {}
   }
 
-  getDb().prepare(`
+  db.prepare(`
     INSERT INTO DeedLogs (
       BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
       ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson,
@@ -150,7 +137,7 @@ export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed,
     } catch {}
   }
 
-  const row = db.prepare('SELECT Id, BatchId FROM DeedLogs WHERE FileName = ? ORDER BY Timestamp DESC LIMIT 1').get(fileName);
+  const row = db.prepare('SELECT Id, BatchId FROM DeedLogs WHERE FileName = ? COLLATE NOCASE ORDER BY Timestamp DESC LIMIT 1').get(fileName);
   const batchId = row ? row.BatchId : 'CORRECTED';
 
   // Ensure batchId exists in BatchRuns to satisfy the foreign key constraint
@@ -192,7 +179,7 @@ export function searchDeedLogs(query, status, maxError) {
   let sql = 'SELECT * FROM DeedLogs WHERE 1=1';
   const params = [];
   if (query) { sql += ' AND (FileName LIKE ? OR ParcelName LIKE ?)'; params.push(`%${query}%`, `%${query}%`); }
-  if (status) { sql += ' AND Status = ?'; params.push(status); }
+  if (status) { sql += ' AND Status = ? COLLATE NOCASE'; params.push(status); }
   if (maxError != null) { sql += ' AND LinearError <= ?'; params.push(maxError); }
   sql += ' ORDER BY Timestamp DESC LIMIT 100';
   return getDb().prepare(sql).all(...params).map(mapDeedLog);
@@ -211,7 +198,7 @@ export function findSolvedCase(fileName, fileHash = null) {
     if (rows.length === 0) {
       rows = db.prepare(`
         SELECT * FROM DeedLogs
-        WHERE FileName = ? AND (FileHash IS NULL OR FileHash = '') AND Status IN ('PASS', 'MEANDER')
+        WHERE FileName = ? COLLATE NOCASE AND (FileHash IS NULL OR FileHash = '') AND Status IN ('PASS', 'MEANDER')
           AND TraverseJson IS NOT NULL AND ExtractionJson IS NOT NULL AND GeoCallCount > 0
         ORDER BY Timestamp DESC LIMIT 5
       `).all(fileName);
@@ -219,7 +206,7 @@ export function findSolvedCase(fileName, fileHash = null) {
   } else {
     rows = db.prepare(`
       SELECT * FROM DeedLogs
-      WHERE FileName = ? AND Status IN ('PASS', 'MEANDER')
+      WHERE FileName = ? COLLATE NOCASE AND Status IN ('PASS', 'MEANDER')
         AND TraverseJson IS NOT NULL AND ExtractionJson IS NOT NULL AND GeoCallCount > 0
       ORDER BY Timestamp DESC LIMIT 5
     `).all(fileName);
@@ -241,10 +228,10 @@ export function findSkippedCase(fileName, fileHash = null) {
   if (fileHash) {
     rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileHash = ? AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileHash);
     if (rows.length === 0) {
-      rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileName = ? AND (FileHash IS NULL OR FileHash = '') AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileName);
+      rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND (FileHash IS NULL OR FileHash = '') AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileName);
     }
   } else {
-    rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileName = ? AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileName);
+    rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileName);
   }
   return rows.length > 0 ? mapDeedLog(rows[0]) : null;
 }
@@ -254,7 +241,7 @@ export function purgeStaleCache(fileName = null) {
   let result;
   if (fileName) {
     result = db.prepare(`
-      DELETE FROM DeedLogs WHERE Status = 'PASS' AND FileName = ?
+      DELETE FROM DeedLogs WHERE Status = 'PASS' AND FileName = ? COLLATE NOCASE
         AND (PrecisionRatio >= 999999990 OR GeoCallCount = 0 OR TraverseJson IS NULL)
     `).run(fileName);
   } else {
@@ -340,7 +327,7 @@ export function getFailedDeedList(limit = 200, bucket = null) {
 
 export function getDeedDetail(fileName) {
   const r = getDb().prepare(`
-    SELECT * FROM DeedLogs WHERE FileName = ? AND Status IN ('FAIL','ERROR','MEANDER')
+    SELECT * FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND Status IN ('FAIL','ERROR','MEANDER')
     ORDER BY Timestamp DESC LIMIT 1
   `).get(fileName);
   if (!r) return null;
@@ -361,7 +348,7 @@ export function getDeedDetail(fileName) {
 export function getSolutionSteps(fileName) {
   const row = getDb().prepare(`
     SELECT SolutionStepsJson, RepairStageUsed, Status, Timestamp
-    FROM DeedLogs WHERE FileName = ? AND SolutionStepsJson IS NOT NULL
+    FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND SolutionStepsJson IS NOT NULL
     ORDER BY Timestamp DESC LIMIT 1
   `).get(fileName);
   if (!row) return null;
@@ -446,7 +433,7 @@ export function incrementHeuristic(problemName, solutionApplied) {
 
 export function getDeedsByReferencePoint(refPointName) {
   return getDb().prepare(`
-    SELECT * FROM DeedLogs WHERE ReferencePointName = ? AND Status IN ('PASS', 'MEANDER') ORDER BY Timestamp DESC
+    SELECT * FROM DeedLogs WHERE ReferencePointName = ? COLLATE NOCASE AND Status IN ('PASS', 'MEANDER') ORDER BY Timestamp DESC
   `).all(refPointName).map(mapDeedLog);
 }
 

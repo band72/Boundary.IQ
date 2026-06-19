@@ -235,12 +235,26 @@ export function parseDmsToDecimal(dms) {
 function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCenters) {
   let deltaDeg = parseDmsToDecimal(c.delta);
 
+  // Reconcile conflicting curve parameters: if R, Arc, and Delta are all provided,
+  // check if they are mathematically consistent. If they differ by more than 0.5 degrees,
+  // recalculate delta from the physical arc length and radius to resolve the scrivener error.
+  if (c.radius && c.arcLength && deltaDeg) {
+    const calculatedDeltaRad = c.arcLength / c.radius;
+    const calculatedDeltaDeg = calculatedDeltaRad * 180.0 / Math.PI;
+    if (Math.abs(deltaDeg - calculatedDeltaDeg) > 0.5) {
+      console.log(`[traverse.js] Reconciling curve conflict: stated delta ${deltaDeg.toFixed(4)}° conflicts with calculated delta ${calculatedDeltaDeg.toFixed(4)}°. Recalculating delta from ArcLength and Radius.`);
+      deltaDeg = calculatedDeltaDeg;
+      c.delta = deltaDeg;
+    }
+  }
+
   // Synthesize missing delta from Radius & Arc Length
   if ((c.delta == null || c.delta === 0) && c.radius && c.arcLength) {
     const deltaRad = c.arcLength / c.radius;
     deltaDeg = deltaRad * 180.0 / Math.PI;
     c.delta = deltaDeg;
   }
+
 
   // Arc length: prefer given, else compute from R × Δ
   let arcLen = c.arcLength;
@@ -280,7 +294,8 @@ function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCent
     } else {
       incTangent = t1;
     }
-    console.log(`[traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
+    // console.log(` RadToCenterDegRadToCenterDeg radialDirDeg radialDirRad radToCenterDeg RadToCenterDeg RadToCenterDeg RadToCenterDeg radToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg radToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg RadToCenterDeg RadToCenterDeg [traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
+    // console.log(`[traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
   }
 
   let outgoingTangent = null;
@@ -320,7 +335,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCent
     const dn = chordDist * Math.cos(synthAzRad);
     const de = chordDist * Math.sin(synthAzRad);
     const label = `Curve R=${(c.radius).toFixed(2)} Δ=${deltaDeg.toFixed(4)}° [CHORD-SYNTH]`;
-    console.log(`Curve chord synthesized: bearing=${bp.toDisplayString(synthAzDeg)} dist=${chordDist.toFixed(3)}'`);
+    // console.log(`Curve chord synthesized: bearing=${bp.toDisplayString(synthAzDeg)} dist=${chordDist.toFixed(3)}'`);
     return { dn, de, perimeter: perim, label, centerN, centerE, outgoingTangent };
   }
 

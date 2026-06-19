@@ -1,4 +1,4 @@
-import { solveFromCourses } from './services/deedTextSolver.js';
+import { solveFromCourses } from '../services/deedTextSolver.js';
 import fs from 'fs';
 
 const courses = [

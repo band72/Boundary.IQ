@@ -163,13 +163,15 @@ router.post('/keys', requireRole(['admin']), asyncHandler(async (req, res) => {
   const { geminiApiKey, openAiApiKey } = req.body;
   if (geminiApiKey) {
     gemini.init(geminiApiKey);
+    process.env.GEMINI_API_KEY = geminiApiKey;
     log.info({ actor: req.user?.username }, 'Gemini API key updated dynamically');
   }
   if (openAiApiKey) {
     process.env.OPENAI_API_KEY = openAiApiKey;
     log.info({ actor: req.user?.username }, 'OpenAI API key updated dynamically');
   }
-  res.json({ success: true, message: 'API keys updated successfully in server memory.' });
+  saveSystemSettingsToEnv(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, geminiApiKey);
+  res.json({ success: true, message: 'API keys updated successfully in server memory and persisted to .env.' });
 }));
 
 // ── GET /api/settings/system — retrieve SQLite path, scan roots, path overrides ─
@@ -243,7 +245,7 @@ router.post('/system', requireRole(['admin']), asyncHandler(async (req, res) => 
 // ── Helper: persist system settings to .env file (atomic write) ───────────────
 // Reads existing .env, merges only the supplied keys, and atomically renames.
 // Comments and unrelated keys are preserved.
-function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir, newOcrEnabled) {
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir, newOcrEnabled, newGeminiApiKey) {
   const envPath    = path.resolve(process.cwd(), '.env');
   const envTmpPath = envPath + '.tmp';
 
@@ -274,6 +276,7 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
   if (newDownloadsDir     !== undefined) vars['BOUNDARY_DOWNLOADS_DIR']   = newDownloadsDir;
   if (newWordDocTrainingDir !== undefined) vars['WORD_DOC_TRAINING_DIR']  = newWordDocTrainingDir;
   if (newOcrEnabled       !== undefined) vars['OCR_ENABLED']              = newOcrEnabled ? 'true' : 'false';
+  if (newGeminiApiKey     !== undefined) vars['GEMINI_API_KEY']           = newGeminiApiKey;
 
   const newLines = ['# Boundary.IQ — Environment Variables'];
   for (const [key, val] of Object.entries(vars)) {

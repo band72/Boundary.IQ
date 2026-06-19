@@ -4,6 +4,7 @@ import * as db from '../services/diagnosticsDb.js';
 import { requireAuth } from '../middleware/auth.js';
 import fs from 'fs';
 import path from 'path';
+import { resolvePathCaseInsensitive } from '../services/pathUtils.js';
 const router = Router();
 
 // Secure all diagnostics routes with session authentication
@@ -159,7 +160,7 @@ router.get("/deed-text", (req, res) => {
     // Try disk first: look for _extracted/<basename>.txt in the given folder
     if (folder) {
       const base = path.parse(fileName).name;
-      const txtPath = path.join(folder, "_extracted", base + ".txt");
+      const txtPath = resolvePathCaseInsensitive(path.join(folder, "_extracted", base + ".txt"));
       if (fs.existsSync(txtPath)) {
         const text = fs.readFileSync(txtPath, "utf-8");
         return res.json({ fileName, source: "disk", text });

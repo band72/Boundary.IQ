@@ -3,6 +3,34 @@
 
 // ── Unicode & OCR artifact normalization ─────────────────────────────────────
 
+export function normalizeOcrText(text) {
+  if (!text) return '';
+  return text
+    .replace(/\bTHENCII\b/gi, 'THENCE')
+    .replace(/\bTHENCEE\b/gi, 'THENCE')
+    .replace(/\bTHENC\b/gi, 'THENCE')
+    .replace(/\bNO\s+RTH\b/gi, 'NORTH')
+    .replace(/\bNARTH\b/gi, 'NORTH')
+    .replace(/\bNORT['1]H\b/gi, 'NORTH')
+    .replace(/\bSAUTH\b/gi, 'SOUTH')
+    .replace(/\bSOU['1]H\b/gi, 'SOUTH')
+    .replace(/\bENST\b/gi, 'EAST')
+    .replace(/\bEAS['1]\b/gi, 'EAST')
+    .replace(/\bWES['1]\b/gi, 'WEST')
+    .replace(/\bALANG\b/gi, 'ALONG')
+    .replace(/\bAIONG\b/gi, 'ALONG')
+    .replace(/\bSALD\b/gi, 'SAID')
+    .replace(/\bUNE\b/gi, 'LINE')
+    .replace(/\bIINLL\b/gi, 'LINE')
+    .replace(/\bMINUTLLS\b/gi, 'MINUTES')
+    .replace(/\bROI\\?D\b/gi, 'ROAD')
+    .replace(/\bFOAT\b/gi, 'FOOT')
+    .replace(/\bDEJ\.'1"EES\b/gi, 'DEGREES')
+    .replace(/([NSEW]\.)([Oo]+)(°|\()/gi, (_, prefix, zeros, sep) => prefix + zeros.replace(/[Oo]/g, '0') + sep)
+    .replace(/\b(NORTH|SOUTH|EAST|WEST)\s+J\s+(\d)/gi, (_, dir, d) => `${dir} 3${d}`)
+    .replace(/(\d)\s+J\s+(\d+)\s+(DEGREES|DEG\.?|°)/gi, (_, a, b, unit) => `${a}3${b} ${unit}`);
+}
+
 export function postProcessOcrText(text) {
   if (!text) return '';
   let cleaned = text;
@@ -41,6 +69,7 @@ export function postProcessOcrText(text) {
   cleaned = cleaned.replace(/([NSns])\s*(\d{1,2})[oO-]\s*(\d{1,2})['"]/, "$1 $2° $3'");
   cleaned = cleaned.replace(/([Nn]orth|[Ss]outh|[Ee]ast|[Ww]est)\s*(\d{1,2})[oO0-]\s*(\d{1,2})['"]/, "$1 $2° $3'");
 
+  cleaned = normalizeOcrText(cleaned);
   return cleaned;
 }
 

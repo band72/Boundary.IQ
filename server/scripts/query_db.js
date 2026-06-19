@@ -6,16 +6,24 @@ const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.confi
 const dbPath = path.join(configDir, 'BoundaryQC', 'BoundaryQCDiagnostics.db');
 const db = new Database(dbPath, { readonly: true });
 
-const rows = db.prepare(`
-  SELECT FileName, ParcelName, LinearError, PrecisionRatio, Status, RepairStageUsed
-  FROM DeedLogs
-  ORDER BY Id DESC
-  LIMIT 40
-`).all();
 
-console.log("=== RECENT DEED LOGS ===");
-rows.forEach(r => {
-  console.log(`File: ${r.FileName} | Status: ${r.Status} | Err: ${r.LinearError} | Prec: ${r.PrecisionRatio} | Stage: ${r.RepairStageUsed}`);
-});
+const row = db.prepare(`
+  SELECT ExtractionJson FROM DeedLogs WHERE Id = 16083
+`).get();
+
+if (row) {
+  const ext = JSON.parse(row.ExtractionJson || '{}');
+  console.log("=== EXTRACTED COURSES ===");
+  console.log(JSON.stringify(ext.courses || ext.Courses || [], null, 2));
+  console.log("=== COMMENCEMENT SEGMENTS ===");
+  console.log(JSON.stringify(ext.commencementSegments || ext.commencement_segments || [], null, 2));
+} else {
+
+  console.log("Deed Log ID 16083 not found.");
+}
 
 db.close();
+
+
+
+

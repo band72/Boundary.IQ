@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { solveFromCourses } from './services/deedTextSolver.js';
+import { solveFromCourses } from '../services/deedTextSolver.js';
 
 const courses = [
   {

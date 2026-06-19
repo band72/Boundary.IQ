@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
-import * as geminiVision from './services/geminiVision.js';
-import * as traverseSvc from './services/traverse.js';
+import * as geminiVision from '../services/geminiVision.js';
+import * as traverseSvc from '../services/traverse.js';
 
 // Initialize the model settings
 geminiVision.setProvider('ollama', 'gemma3:4b');

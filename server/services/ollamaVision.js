@@ -177,14 +177,23 @@ async function generateVisionChat(buffer, model, prompt) {
     message.images = [buffer.toString('base64')];
   }
 
+  const isGemma4 = model.toLowerCase().includes('gemma4');
   const payload = {
     model,
     messages: [message],
     stream: false,
-    options: { temperature: 0.1, num_predict: 2048, num_ctx: 8192 },
+    options: {
+      temperature: 0.1,
+      num_predict: 2048,
+      num_ctx: isGemma4 ? 32768 : 16384
+    },
     // NOTE: Do NOT set format:'json' — vision models may not honor it and it
     // can suppress the entire response. Rely on prompt instructions instead.
   };
+
+  if (isGemma4) {
+    payload.think = false;
+  }
 
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -239,14 +248,24 @@ async function generateVisionChat(buffer, model, prompt) {
 
 async function generateTextOnly(prompt, model) {
   const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
+  const isGemma4 = model.toLowerCase().includes('gemma4');
+  let activePrompt = prompt;
+  if (isReasoning) {
+    activePrompt += `\n\nIMPORTANT: Since you are a reasoning model, keep your <think> process extremely brief, short, and concise (under 150 words). Go straight to generating the JSON output.`;
+  }
   const payload = {
     model,
-    prompt,
+    prompt: activePrompt,
     stream: false,
-    options: isReasoning 
-      ? { temperature: 0.1, num_predict: 8192, num_ctx: 16384 }
-      : { temperature: 0.1, num_predict: 4096, num_ctx: 8192 }
+    options: isGemma4
+      ? { temperature: 0.1, num_predict: 4096, num_ctx: 32768 }
+      : isReasoning
+        ? { temperature: 0.1, num_predict: 8192, num_ctx: 32768 }
+        : { temperature: 0.1, num_predict: 4096, num_ctx: 16384 }
   };
+  if (isGemma4) {
+    payload.think = false;
+  }
   if (!isReasoning && !isVisionModel(model)) {
     payload.format = 'json';
   }

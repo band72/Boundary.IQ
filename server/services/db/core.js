@@ -86,12 +86,12 @@ function _initializeSchema() {
     CREATE TABLE IF NOT EXISTS DeedLogs (
       Id INTEGER PRIMARY KEY AUTOINCREMENT,
       BatchId TEXT NOT NULL,
-      FileName TEXT NOT NULL,
+      FileName TEXT NOT NULL COLLATE NOCASE,
       ParcelName TEXT,
       GeoCallCount INTEGER NOT NULL,
       LinearError REAL NOT NULL,
       PrecisionRatio REAL NOT NULL,
-      Status TEXT NOT NULL,
+      Status TEXT NOT NULL COLLATE NOCASE,
       RepairStageUsed TEXT,
       Timestamp TEXT NOT NULL,
       ExtractionJson TEXT,
@@ -112,7 +112,7 @@ function _initializeSchema() {
 
     CREATE TABLE IF NOT EXISTS Users (
       Id INTEGER PRIMARY KEY AUTOINCREMENT,
-      Username TEXT UNIQUE NOT NULL,
+      Username TEXT UNIQUE NOT NULL COLLATE NOCASE,
       PasswordHash TEXT NOT NULL,
       Role TEXT NOT NULL DEFAULT 'user',
       Plan TEXT NOT NULL DEFAULT 'free',
@@ -191,7 +191,7 @@ function _runMigrations() {
     { name: 'add_AgentTurnsJson',          sql: 'ALTER TABLE DeedLogs ADD COLUMN AgentTurnsJson TEXT' },
     { name: 'add_TrustScore',              sql: 'ALTER TABLE DeedLogs ADD COLUMN TrustScore REAL' },
     { name: 'add_SolutionStepsJson',       sql: 'ALTER TABLE DeedLogs ADD COLUMN SolutionStepsJson TEXT' },
-    { name: 'add_ReferencePointName',      sql: 'ALTER TABLE DeedLogs ADD COLUMN ReferencePointName TEXT' },
+    { name: 'add_ReferencePointName',      sql: 'ALTER TABLE DeedLogs ADD COLUMN ReferencePointName TEXT COLLATE NOCASE' },
     { name: 'add_ReferencePointNorthing',  sql: 'ALTER TABLE DeedLogs ADD COLUMN ReferencePointNorthing REAL' },
     { name: 'add_ReferencePointEasting',   sql: 'ALTER TABLE DeedLogs ADD COLUMN ReferencePointEasting REAL' },
     { name: 'add_PobNorthing',             sql: 'ALTER TABLE DeedLogs ADD COLUMN PobNorthing REAL' },

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import * as dbSvc from './services/diagnosticsDb.js';
+import * as dbSvc from '../services/diagnosticsDb.js';
 
 dbSvc.init();
 // We can't access dbPath directly unless we inspect the module or replicate the logic,

@@ -28,7 +28,7 @@ const log = _cl('geminiVision');
 async function generateConceptualAnalysisFallback(docText) {
   const { getActiveProvider, getActiveModel } = await import('./llm/dispatcher.js');
   const { extractViaOpenAI } = await import('./llm/openaiProvider.js');
-  const { extractViaGemini, isGeminiQuotaError } = await import('./llm/geminiProvider.js');
+  const { extractViaGemini, isGeminiQuotaError, isNetworkOrTimeoutError } = await import('./llm/geminiProvider.js');
 
 
   const provider = getActiveProvider();
@@ -64,9 +64,12 @@ Return ONLY valid JSON. No conversational text or markdown fences.`;
         rawText = await extractViaGemini(Buffer.alloc(0), 'text/plain', fallbackPrompt, model);
       } catch (err) {
         const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
-        if (allowFallback && isGeminiQuotaError(err)) {
+        const isQuota = isGeminiQuotaError(err);
+        const isNetOrTimeout = isNetworkOrTimeoutError(err);
+        if (allowFallback && (isQuota || isNetOrTimeout)) {
           const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL || 'gemma4:26b';
-          log.warn({ err: err.message.slice(0, 80), fallback: fallbackModel }, 'Gemini quota — routing conceptual fallback to Ollama');
+          const reason = isQuota ? 'quota' : 'timeout/network error';
+          log.warn({ err: err.message.slice(0, 80), fallback: fallbackModel, reason }, `Gemini API call failed (${reason}) — routing conceptual fallback to Ollama`);
           const { rawText: ot } = await ollama.generate(Buffer.alloc(0), 'text/plain', fallbackModel, fallbackPrompt);
           rawText = ot;
         } else throw err;
@@ -410,6 +413,47 @@ function tryParseJsonAndGetStructure(jsonStr) {
   throw new Error('Parsed root is null');
 }
 
+function sanitizeJsonStringValues(jsonStr) {
+  let out = '';
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < jsonStr.length; i++) {
+    const ch = jsonStr[i];
+
+    if (escape) {
+      out += ch;
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      escape = true;
+      out += ch;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      out += ch;
+      continue;
+    }
+
+    if (inString) {
+      if (ch === '\n') { out += '\\n'; continue; }
+      if (ch === '\r') { out += '\\r'; continue; }
+      if (ch === '\t') { out += '\\t'; continue; }
+      if (ch.charCodeAt(0) < 0x20) {
+        out += `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`;
+        continue;
+      }
+    }
+
+    out += ch;
+  }
+  return out;
+}
+
 function parseStructuredResponse(raw) {
   let cleanJson = raw.trim();
   
@@ -430,8 +474,13 @@ function parseStructuredResponse(raw) {
   // Clean JSON comments and trailing commas (DeepSeek-R1 / local LLM output sanitization)
   cleanJson = cleanJson.replace(/\/\/[^\n]*/g, '');
   cleanJson = cleanJson.replace(/\/\*[\s\S]*?\*\//g, '');
-  cleanJson = cleanJson.replace(/,\s*([}\]])/g, '$1');
   cleanJson = cleanJson.trim();
+
+  // Escape literal control chars / newlines inside string values
+  cleanJson = sanitizeJsonStringValues(cleanJson);
+
+  // Clean trailing commas
+  cleanJson = cleanJson.replace(/,\s*([}\]])/g, '$1');
 
   // Robustly quote any unquoted property values
   cleanJson = cleanInvalidJsonValues(cleanJson);
@@ -511,18 +560,19 @@ export function isPlaceholderHallucination(courses) {
   let matchCount = 0;
   for (const c of courses) {
     const bearingStr = (c.bearing || c.chordBearing || '').toString().toUpperCase();
+    const cleanBrg = bearingStr.replace(/[^A-Z0-9]/g, '');
     const dist = c.distance ?? c.chordDistance ?? 0;
 
     // Check 1: 150.25 and 45°22'10"
-    if (Math.abs(dist - 150.25) < 0.01 && (bearingStr.includes("45°22") || bearingStr.includes("45D22") || bearingStr.includes("45.37") || bearingStr.includes("45°22'10\""))) {
+    if (Math.abs(dist - 150.25) < 0.01 && (cleanBrg.includes("4522") || cleanBrg.includes("4537"))) {
       matchCount++;
     }
     // Check 2: 57.84 and Northerly/00°00'00"
-    if (Math.abs(dist - 57.84) < 0.01 && (bearingStr.includes("NORTHERLY") || bearingStr.includes("00°00") || bearingStr.includes("0°00") || bearingStr.includes("00.00"))) {
+    if (Math.abs(dist - 57.84) < 0.01 && (bearingStr.includes("NORTHERLY") || cleanBrg.includes("0000") || cleanBrg.includes("000"))) {
       matchCount++;
     }
     // Check 3: 89.02 and 13°22'54" or deflection 13.3819
-    if (Math.abs(dist - 89.02) < 0.01 && (bearingStr.includes("13°22") || bearingStr.includes("13D22") || c.deflectionAngle === 13.3819)) {
+    if (Math.abs(dist - 89.02) < 0.01 && (cleanBrg.includes("1322") || c.deflectionAngle === 13.3819)) {
       matchCount++;
     }
     // Check 4: Curve R=200 and Delta=12.3015 or radius=150/100/80 and delta=10.3015/8.3015/6.3015
@@ -586,7 +636,7 @@ function getStructureFromRoot(root, cleanJson) {
 
     const referencePointName = root.ReferencePointName || root.referencePointName || null;
     const rawCommSegments = root.CommencementSegments || root.commencementSegments || [];
-    const commencementSegments = Array.isArray(rawCommSegments) ? parseSegmentArray(rawCommSegments) : [];
+    const commencementSegments = parseSegmentArray(rawCommSegments);
 
     const classification = root.Classification || root.classification || 'LOT_BLOCK';
     const preambleFound = root.PreambleFound === true || root.preambleFound === true;
@@ -631,6 +681,16 @@ function getStructureFromRoot(root, cleanJson) {
 }
 
 function parseSegmentArray(arr) {
+  if (typeof arr === 'string') {
+    try {
+      const parsed = JSON.parse(arr.trim());
+      if (Array.isArray(parsed)) {
+        arr = parsed;
+      }
+    } catch (e) {
+      // Ignore and fall through to standard error handling
+    }
+  }
   if (!arr || !Array.isArray(arr)) {
     console.warn('⚠️ parseSegmentArray received a non-array:', typeof arr, arr);
     return [];

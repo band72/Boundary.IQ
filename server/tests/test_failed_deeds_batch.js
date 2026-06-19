@@ -44,7 +44,7 @@ for (let i = 0; i < args.length; i++) {
 }
 
 const FAILED_DEEDS_DIR = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions/_FAILED/_extracted';
-const RESULTS_OUTPUT_PATH = './server/tests/test_failed_deeds_results.json';
+const RESULTS_OUTPUT_PATH = path.resolve(__dirname, 'test_failed_deeds_results.json');
 
 async function main() {
   // 1. Initialize Database
@@ -202,7 +202,7 @@ async function main() {
         let writeResult = null;
         if (mappedResult.extraction?.courses?.length > 0) {
           try {
-            const legalWriter = (await import('../services/legalDescriptionWriter.js')).default;
+            const legalWriter = await import('../services/legalWriter.js');
             writeResult = {
               legalDescription: legalWriter.write({
                 courses: mappedResult.extraction.courses,
@@ -340,6 +340,7 @@ async function main() {
   } catch (err) {
     console.error(`⚠️ Failed to save results to JSON file:`, err.message);
   }
+  process.exit(0);
 }
 
 main();

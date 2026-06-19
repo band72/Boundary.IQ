@@ -1,11 +1,11 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { runRepairPipeline } from './services/repair.js';
-import { writeResultFiles } from './services/output.js';
-import { init } from './services/diagnosticsDb.js';
-import * as legalWriter from './services/legalWriter.js';
+import { runRepairPipeline } from '../services/repair.js';
+import { writeResultFiles } from '../services/output.js';
+import { init } from '../services/diagnosticsDb.js';
+import * as legalWriter from '../services/legalWriter.js';
 
-import * as geminiVision from './services/geminiVision.js';
+import * as geminiVision from '../services/geminiVision.js';
 
 async function run() {
   init();

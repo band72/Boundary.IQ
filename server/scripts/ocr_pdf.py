@@ -16,7 +16,15 @@ def main():
         sys.exit(1)
 
     try:
-        # Create a temp directory
+        ext = os.path.splitext(pdf_path)[1].lower()
+        if ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif']:
+            # For images, read directly using EasyOCR
+            reader = easyocr.Reader(['en'], gpu=False)
+            results = reader.readtext(pdf_path, detail=0)
+            print("\n".join(results))
+            return
+
+        # Create a temp directory for PDF page conversion
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_prefix = os.path.join(temp_dir, 'page')
             

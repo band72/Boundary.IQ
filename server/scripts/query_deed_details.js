@@ -9,7 +9,7 @@ const db = new Database(dbPath, { readonly: true });
 const row = db.prepare(`
   SELECT ExtractionJson, TraverseJson, RepairStageUsed, Status
   FROM DeedLogs
-  WHERE FileName = '180455 Title Commitment(1).pdf'
+  WHERE FileName = '2502.7 - WD.pdf'
   ORDER BY Id DESC
   LIMIT 1
 `).get();

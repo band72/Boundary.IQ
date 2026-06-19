@@ -27,6 +27,13 @@ async function postWithRetry(url, payload, customHeaders = {}) {
     });
     const body = await res.text();
     if (res.ok) return { status: res.status, body };
+    if (res.status === 429) {
+      const lowerBody = body.toLowerCase();
+      if (lowerBody.includes('quota') || lowerBody.includes('billing') || lowerBody.includes('exceeded')) {
+        log.warn({ status: res.status, body: body.slice(0, 200) }, 'Gemini quota/billing exceeded, fast-failing');
+        return { status: res.status, body };
+      }
+    }
     if ((res.status === 429 || res.status === 503) && attempt < MAX_RETRIES) {
       const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
       log.warn({ attempt: attempt + 1, max: MAX_RETRIES, delaySec: (delay / 1000).toFixed(1), status: res.status }, 'Gemini rate-limited, retrying');
@@ -55,7 +62,7 @@ export async function extractViaGemini(buffer, mimeType, prompt, model) {
   let url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const customHeaders = {};
 
-  const isAccessToken = !_geminiApiKey.startsWith('AIzaSy');
+  const isAccessToken = !_geminiApiKey.startsWith('AIzaSy') && !_geminiApiKey.startsWith('AQ.');
   if (isAccessToken) {
     customHeaders['Authorization'] = `Bearer ${_geminiApiKey}`;
   } else {
@@ -82,3 +89,15 @@ export function isGeminiQuotaError(err) {
          err.message.includes('UNAUTHENTICATED') || err.message.includes('API_KEY_SERVICE_BLOCKED') ||
          err.message.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED');
 }
+
+export function isNetworkOrTimeoutError(err) {
+  const msg = (err?.message || '').toLowerCase();
+  return msg.includes('timeout') ||
+         msg.includes('abort') ||
+         msg.includes('fetch') ||
+         msg.includes('network') ||
+         msg.includes('eai_again') ||
+         msg.includes('econnrefused') ||
+         msg.includes('enotfound');
+}
+

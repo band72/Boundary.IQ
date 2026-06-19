@@ -1,4 +1,4 @@
-import { detectSelfIntersection } from './services/traverse.js';
+import { detectSelfIntersection } from '../services/traverse.js';
 
 console.log('Running Self-Intersection Validation Tests...\n');
 

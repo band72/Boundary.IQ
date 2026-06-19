@@ -932,8 +932,16 @@ export default function BatchDeedTab() {
         const p = new URLSearchParams(baseParams);
         p.set('batchIndex', i);
         const res  = await fetch(`${API}/folderscan/process-batch?${p}`, { method: 'POST', headers: getHeaders() });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error ?? `Batch ${i} error ${res.status}`);
+        let data = null;
+        let text = '';
+        try {
+          text = await res.text();
+          data = JSON.parse(text.trim() || '{}');
+        } catch (jsonErr) {
+          if (!res.ok) throw new Error(`Batch ${i + 1} failed with status ${res.status}`, { cause: jsonErr });
+          throw new Error(`Failed to parse response: ${text.slice(0, 100) || 'empty response'}`, { cause: jsonErr });
+        }
+        if (!res.ok) throw new Error(data?.error ?? `Batch ${i + 1} error ${res.status}`);
 
         if (data?.outputFolder) {
           setLastOutputFolder(data.outputFolder);
@@ -1036,7 +1044,7 @@ export default function BatchDeedTab() {
         const parts = buf.split('\n\n');
         buf = parts.pop();
         for (const part of parts) {
-          const eventLine = part.match(/^event: (\w+)/m)?.[1];
+          const eventLine = part.match(/^event: ([\w-]+)/m)?.[1];
           const dataLine  = part.match(/^data: (.+)/m)?.[1];
           if (!eventLine || !dataLine) continue;
           let data;
@@ -1307,7 +1315,7 @@ export default function BatchDeedTab() {
             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <span className="status-badge pass">✓ {folderManifest.toProcess} processable</span>
               <span className="status-badge fail">⊘ {folderManifest.toSkip} skipped</span>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{folderManifest.batchesNeeded} batch{folderManifest.batchesNeeded !== 1 ? 'es' : ''} of 20</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{folderManifest.batchesNeeded} batch{folderManifest.batchesNeeded !== 1 ? 'es' : ''} of {folderManifest.batchSize ?? 20} deeds each</span>
               {parallelBatches > 1 && !folderBatchLoading && (
                 <span style={{ fontSize: '0.78rem', color: '#c97a00', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                   ⚡ Turbo: {parallelBatches} parallel streams × {concurrentAgents} agents
@@ -1544,7 +1552,7 @@ export default function BatchDeedTab() {
         {/* Model cascade legend */}
         <div style={{ padding: '0 1rem 0.6rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
           <span>Model cascade:</span>
-          {['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b', 'gemma4:26b'].map((m, i) => (
+          {['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b', 'deepseek-r1:14b', 'gemma4:26b'].map((m, i) => (
             <span key={m} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
               {i > 0 && <span>→</span>}
               <span style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 7px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem' }}>{m}</span>
@@ -2590,7 +2598,7 @@ export default function BatchDeedTab() {
                     <div style={{ padding: '0.75rem 1.25rem 1.25rem', background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
                       {/* Precision quality buckets */}
-                      {(s.precision.excellent + s.precision.good + s.precision.fair + s.precision.poor) > 0 && (
+                      {s.precision && (s.precision.excellent + s.precision.good + s.precision.fair + s.precision.poor) > 0 && (
                         <div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.4rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Closure Precision (passed deeds)</div>
                           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -2605,7 +2613,7 @@ export default function BatchDeedTab() {
                                 <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textAlign: 'center' }}>{b.label}</span>
                               </div>
                             ))}
-                            {s.closure.avgLinearErr > 0 && (
+                            {s.closure?.avgLinearErr > 0 && (
                               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.3rem 0.7rem', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 90 }}>
                                 <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--danger)' }}>{s.closure.avgLinearErr.toFixed(3)} ft</span>
                                 <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>avg fail error</span>
@@ -2616,7 +2624,7 @@ export default function BatchDeedTab() {
                       )}
 
                       {/* Repair stages */}
-                      {s.stages.length > 0 && (
+                      {s.stages && s.stages.length > 0 && (
                         <div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.4rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Repair Stages Used</div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
@@ -2639,7 +2647,7 @@ export default function BatchDeedTab() {
                       )}
 
                       {/* Failed files */}
-                      {s.failedFiles.length > 0 && (
+                      {s.failedFiles && s.failedFiles.length > 0 && (
                         <div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.4rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Failed / Error Files ({s.failedFiles.length})</div>
                           <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>

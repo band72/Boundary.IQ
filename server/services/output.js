@@ -229,6 +229,36 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
       fs.writeFileSync(path.join(targetFolder, corrScriptFile), scriptLines.join('\n'));
     }
 
+    // Run Python Conceptual Map Pipeline if courses exist
+    if (courses.length > 0) {
+      let tempFilePath = null;
+      try {
+        const { execSync } = await import('child_process');
+        const { fileURLToPath } = await import('url');
+        
+        // Write courses JSON to a temporary file
+        tempFilePath = path.join(targetFolder, `temp_courses_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.json`);
+        fs.writeFileSync(tempFilePath, JSON.stringify(courses));
+        
+        const pyScriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../conceptual_pipeline/main.py');
+        const outSvg = path.join(targetFolder, shortFileNames ? 'Conceptual_Map.svg' : `${baseName}_conceptual_map.svg`);
+        const outPng = path.join(targetFolder, shortFileNames ? 'Conceptual_Map.png' : `${baseName}_conceptual_map.png`);
+        const outReport = path.join(targetFolder, shortFileNames ? 'Conceptual_Report.json' : `${baseName}_conceptual_report.json`);
+        
+        // Execute python pipeline with courses-json file
+        const cmd = `python3 "${pyScriptPath}" --courses-json "${tempFilePath}" --output-svg "${outSvg}" --output-img "${outPng}" --output-report "${outReport}"`;
+        execSync(cmd, { stdio: 'ignore' });
+      } catch (pyErr) {
+        console.warn(`Output: Python conceptual drawing pipeline failed for ${sourceFileName}:`, pyErr.message);
+      } finally {
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+          try {
+            fs.unlinkSync(tempFilePath);
+          } catch {}
+        }
+      }
+    }
+
     if (conceptual && (!courses || courses.length === 0)) {
       try {
         const _inferred0 = inferCountyStateFromText(rawOCR || '');

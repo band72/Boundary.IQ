@@ -37,7 +37,7 @@ export function verifyPassword(password, storedHash) {
 
 export function createUser(username, password, role = null, plan = 'free') {
   const db = getDb();
-  const existing = db.prepare('SELECT Id FROM Users WHERE Username = ?').get(username);
+  const existing = db.prepare('SELECT Id FROM Users WHERE Username = ? COLLATE NOCASE').get(username);
   if (existing) throw new Error('Username already exists');
 
   const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
@@ -62,7 +62,7 @@ export function createUser(username, password, role = null, plan = 'free') {
 
 export function verifyUser(username, password) {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM Users WHERE Username = ?').get(username);
+  const row = db.prepare('SELECT * FROM Users WHERE Username = ? COLLATE NOCASE').get(username);
   if (!row) return null;
   const { valid, needsRehash, newHash } = verifyPassword(password, row.PasswordHash);
   if (!valid) return null;
@@ -75,7 +75,7 @@ export function verifyUser(username, password) {
 
 export function findUserByUsername(username) {
   const db = getDb();
-  const row = db.prepare('SELECT Id as id, Username as username, Role as role, Plan as plan FROM Users WHERE Username = ?').get(username);
+  const row = db.prepare('SELECT Id as id, Username as username, Role as role, Plan as plan FROM Users WHERE Username = ? COLLATE NOCASE').get(username);
   return row ? { id: row.id, username: row.username, role: row.role, plan: row.plan || 'free' } : null;
 }
 

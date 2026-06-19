@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import * as output from './services/output.js';
+import * as output from '../services/output.js';
 
 const DB_PATH = process.env.DATABASE_PATH || '/home/artwalk/.config/BoundaryQC/BoundaryQCDiagnostics.db';
 const db = new Database(DB_PATH);
@@ -9,7 +9,7 @@ const db = new Database(DB_PATH);
 const row = db.prepare(`
   SELECT FileName, Status, ExtractionJson
   FROM DeedLogs 
-  WHERE FileName LIKE '%deed-001%'
+  WHERE FileName LIKE '%14395L-LOT2%'
   ORDER BY Timestamp DESC 
   LIMIT 1
 `).get();
@@ -37,7 +37,7 @@ if (!fs.existsSync(testFolder)) {
 }
 
 console.log("Writing conceptual output files to:", testFolder);
-output.writeResultFiles(testFolder, row.FileName, resultObj, null);
+await output.writeResultFiles(testFolder, row.FileName, resultObj, null);
 
 // Check if files exist
 console.log("\n=== Generated Files ===");

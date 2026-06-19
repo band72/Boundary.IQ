@@ -4,16 +4,16 @@
 // Extracted from geminiVision.js.
 
 import * as ollama from '../ollamaVision.js';
-import { extractViaGemini, setGeminiKey, isGeminiQuotaError } from './geminiProvider.js';
+import { extractViaGemini, setGeminiKey, isGeminiQuotaError, isNetworkOrTimeoutError } from './geminiProvider.js';
 import { extractViaOpenAI } from './openaiProvider.js';
 import {
   pdfOcrCache, computePdfHash, buildPdfCacheEntry, loadDiskCacheEntry,
-  persistCacheEntry, extractTextFromPdf, convertPdfToPng,
+  persistCacheEntry, extractTextFromPdf, convertPdfToPng, performLocalOcr,
 } from './pdfProcessor.js';
-import { hasBoundaryKeywords, pruneLongText } from './ocrPostProcess.js';
+import { hasBoundaryKeywords, pruneLongText, normalizeOcrText } from './ocrPostProcess.js';
 import {
   ACTIVE_PROVIDER, ACTIVE_MODEL, OPENAI_BASE_URL,
-  GEMINI_API_KEY,
+  GEMINI_API_KEY, OCR_ENABLED,
 } from '../../config.js';
 import { createChildLogger } from '../../logger.js';
 
@@ -29,10 +29,14 @@ let activeOpenAiBaseUrl = OPENAI_BASE_URL;
 export function init(key) {
   if (key) {
     setGeminiKey(key);
-    if (!ACTIVE_PROVIDER || ACTIVE_PROVIDER === 'ollama') {
+    // Only automatically switch default provider if user has not explicitly requested a provider in .env
+    if (!process.env.ACTIVE_PROVIDER) {
       activeProvider = 'gemini';
-      activeModel = ACTIVE_MODEL || 'gemini-3.5-flash';
+      activeModel = (ACTIVE_MODEL && ACTIVE_MODEL.startsWith('gemini')) ? ACTIVE_MODEL : 'gemini-3.5-flash';
       log.info({ provider: activeProvider, model: activeModel }, 'Gemini API key loaded — switched to gemini provider');
+    } else if (activeProvider === 'gemini' && (!activeModel || !activeModel.startsWith('gemini'))) {
+      // Prevent model/provider mismatch if user did set ACTIVE_PROVIDER=gemini but left ACTIVE_MODEL as a local model
+      activeModel = 'gemini-3.5-flash';
     }
   }
 }
@@ -96,11 +100,11 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
     // Route using cache entry
     if (!cacheEntry.isScanned) {
       log.info('Digitally-born PDF — text-only mode');
-      activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted from PDF — use as primary source):\n=========================================\n${pruneLongText(cacheEntry.extractedText)}`;
+      activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted from PDF — use as primary source):\n=========================================\n${pruneLongText(normalizeOcrText(cacheEntry.extractedText))}`;
       activeBuffer = Buffer.alloc(0);
       activeMime   = 'image/png';
     } else {
-      const ocrText = cacheEntry.combinedOcrText;
+      const ocrText = normalizeOcrText(cacheEntry.combinedOcrText || '');
       if (ocrText && ocrText.trim().length > 50) {
         log.info('Scanned PDF with OCR — text-only mode');
         activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via combined local EasyOCR):\n=========================================\n${pruneLongText(ocrText)}`;
@@ -127,30 +131,50 @@ async function extractViaOllama(buffer, mimeType, prompt, model) {
 }
 
 // ── Unified dispatcher ────────────────────────────────────────────────────────
+function shouldRunOcrForImage(mimeType, provider, model) {
+  if (!mimeType || typeof mimeType !== 'string' || !mimeType.startsWith('image/')) return false;
+  if (OCR_ENABLED) return true;
+  if (provider === 'ollama' && !ollama.isVisionCapable(model)) return true;
+  if (provider === 'openai') return true;
+  return false;
+}
+
 export async function extractRaw(buffer, mimeType, prompt) {
   const provider = activeProvider;
   const model    = activeModel;
 
   let activePrompt = prompt;
+  let activeBuffer = buffer;
+  let activeMime   = mimeType;
+
   if (mimeType === 'text/plain') {
-    const textContent = buffer.toString('utf-8');
+    const textContent = normalizeOcrText(buffer.toString('utf-8'));
     activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT TO PARSE:\n=========================================\n${pruneLongText(textContent)}`;
+  } else if (shouldRunOcrForImage(mimeType, provider, model)) {
+    log.info({ model, mimeType }, 'Performing local OCR on image file');
+    const ocrText = await performLocalOcr(buffer);
+    activePrompt = `${prompt}\n\n=========================================\nLEGAL DESCRIPTION TEXT (extracted via local EasyOCR):\n=========================================\n${pruneLongText(ocrText)}`;
+    activeBuffer = Buffer.alloc(0);
+    activeMime = 'image/png';
   }
 
-  log.info({ provider, model, bufferKb: (buffer.length / 1024).toFixed(0) }, 'AI extract started');
+  log.info({ provider, model, bufferKb: (activeBuffer.length / 1024).toFixed(0) }, 'AI extract started');
 
-  if (provider === 'ollama') return extractViaOllama(buffer, mimeType, activePrompt, model);
-  if (provider === 'openai') return extractViaOpenAI(buffer, mimeType, activePrompt, model, activeOpenAiBaseUrl);
+  if (provider === 'ollama') return extractViaOllama(activeBuffer, activeMime, activePrompt, model);
+  if (provider === 'openai') return extractViaOpenAI(activeBuffer, activeMime, activePrompt, model, activeOpenAiBaseUrl);
 
-  // Gemini with Ollama fallback on quota errors
+  // Gemini with Ollama fallback on quota, timeout, or network connection errors
   try {
-    return await extractViaGemini(buffer, mimeType, activePrompt, model);
+    return await extractViaGemini(activeBuffer, activeMime, activePrompt, model);
   } catch (err) {
     const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
-    if (allowFallback && isGeminiQuotaError(err)) {
+    const isQuota = isGeminiQuotaError(err);
+    const isNetOrTimeout = isNetworkOrTimeoutError(err);
+    if (allowFallback && (isQuota || isNetOrTimeout)) {
       const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL || 'gemma4:26b';
-      log.warn({ err: err.message.slice(0, 80), fallback: fallbackModel }, 'Gemini quota/denied — falling back to Ollama');
-      return extractViaOllama(buffer, mimeType, activePrompt, fallbackModel);
+      const reason = isQuota ? 'quota/denied' : 'timeout/network error';
+      log.warn({ err: err.message.slice(0, 80), fallback: fallbackModel, reason }, `Gemini API call failed (${reason}) — falling back to Ollama`);
+      return extractViaOllama(activeBuffer, activeMime, activePrompt, fallbackModel);
     }
     throw err;
   }

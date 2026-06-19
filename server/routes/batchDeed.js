@@ -9,6 +9,7 @@ import { runRepairPipeline } from '../services/repair.js';
 import * as legalWriter from '../services/legalWriter.js';
 import * as db from '../services/diagnosticsDb.js';
 import { isWordDocument, convertToPdf } from '../services/docConversion.js';
+import { resolvePathCaseInsensitive } from '../services/pathUtils.js';
 import * as geminiVision from '../services/geminiVision.js';
 import crypto from 'crypto';
 import * as lockService from '../services/lockService.js';
@@ -181,7 +182,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
             const base = path.parse(fileName).name;
             const wordDocTrainingDir = process.env.WORD_DOC_TRAINING_DIR || '';
             const trainingBase = wordDocTrainingDir
-              ? path.join(wordDocTrainingDir, '_extracted', base + '.txt')
+              ? resolvePathCaseInsensitive(path.join(wordDocTrainingDir, '_extracted', base + '.txt'))
               : '';
             if (trainingBase && fs.existsSync(trainingBase)) {
               log.info({ fileName, fallback: trainingBase }, 'Using pre-extracted text fallback');

@@ -89,7 +89,14 @@ export function parse(bearing) {
     .replace(/DEGREES|DEG/gi, '°')
     .replace(/MINUTES|MIN/gi, "'")
     .replace(/SECONDS|SEC/gi, '"')
-    .replace(/\*/g, ' ');
+    .replace(/\*/g, ' ')
+    // Fix OCR/LLM single-quote-for-decimal-point error in seconds (e.g. 18'50" -> 18.50")
+    .replace(/(\d+)'\s*(\d+)"/g, '$1.$2"')
+    // Fix OCR/LLM degree symbol used instead of minutes symbol (e.g. 0°18°50" -> 0°18'50")
+    .replace(/(\d+)\s*°\s*(\d+)\s*°/g, "$1°$2'")
+    // Fix OCR/LLM degree symbol used instead of seconds symbol (e.g. 0°18'50° -> 0°18'50")
+    .replace(/(\d+)\s*'\s*(\d+)\s*°/g, '$1\'$2"');
+
 
 
   // Check if it's a cardinal/ordinal direction word directly

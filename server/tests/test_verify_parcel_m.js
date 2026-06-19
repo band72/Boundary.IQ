@@ -1,5 +1,5 @@
-import * as bp from './services/bearingParser.js';
-import { solveFromCourses } from './services/deedTextSolver.js';
+import * as bp from '../services/bearingParser.js';
+import { solveFromCourses } from '../services/deedTextSolver.js';
 
 function solveFromTextNew(deedText, options = {}) {
   const text = deedText || '';

@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
-import { convertToPdf } from './services/docConversion.js';
-import * as gemini from './services/geminiVision.js';
+import { convertToPdf } from '../services/docConversion.js';
+import * as gemini from '../services/geminiVision.js';
 
 async function run() {
   try {

@@ -16,6 +16,7 @@ import pLimit from 'p-limit';
 
 import { isPlaceholderHallucination } from './geminiVision.js';
 import { ensureOllamaServiceOnline } from './ollamaVision.js';
+import { postProcessOcrText } from './llm/ocrPostProcess.js';
 
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 
@@ -97,12 +98,18 @@ async function callOllama(model, prompt) {
   // local model and generating empty responses.
   return ollamaLimit(async () => {
     const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
+    const isGemma4 = model.toLowerCase().includes('gemma4');
     // For large deeds, bump non-reasoning context window to avoid silent truncation
     const deedLen = typeof prompt === 'string' ? prompt.length : 0;
-    const nonReasonCtx = deedLen > 6000 ? 32768 : deedLen > 3000 ? 16384 : 8192;
+    const rawNonReasonCtx = deedLen > 6000 ? 32768 : deedLen > 3000 ? 16384 : 8192;
+    const nonReasonCtx = isGemma4 ? 12288 : rawNonReasonCtx;
+    let activePrompt = prompt;
+    if (isReasoning) {
+      activePrompt += `\n\nIMPORTANT: Since you are a reasoning model, keep your <think> process extremely brief, short, and concise (under 150 words). Go straight to generating the JSON output.`;
+    }
     const payload = {
       model,
-      prompt,
+      prompt: activePrompt,
       stream: false,
       options: isReasoning
         ? { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
@@ -754,22 +761,7 @@ function buildCorrectionTable(originalCourses, repairedCourses, steps) {
 export async function solveDeedText(deedText, model, options = {}) {
   const startTime = Date.now();
 
-  // ── Normalize Unicode artifacts from Word/OCR before any processing ─────────
-  deedText = (deedText || '')
-    .replace(/\u2032/g, "'").replace(/\u2033/g, '"').replace(/\u2034/g, '"')
-    .replace(/\u02B9/g, "'").replace(/\u02BA/g, '"')
-    .replace(/[\u2018\u2019\u201A\u02BC\u00B4]/g, "'")
-    .replace(/[\u201C\u201D\u201E]/g, '"')
-    .replace(/\u039D/g, 'N').replace(/\u0391/g, 'A').replace(/\u039F/g, 'O')
-    .replace(/\u0395/g, 'E').replace(/\u0397/g, 'H').replace(/\u039A/g, 'K')
-    .replace(/\u039C/g, 'M').replace(/\u03A1/g, 'R').replace(/\u03A4/g, 'T')
-    .replace(/\u03A5/g, 'Y').replace(/\u03A7/g, 'X').replace(/\u03A9/g, 'W')
-    // ── OCR digit/letter confusion fixes in DMS bearing context ──────────────
-    // Letter O → digit 0 when appearing in the degrees position of a bearing
-    .replace(/([NSEW]\.)([Oo]+)(°|\()/g, (_, prefix, zeros, sep) => prefix + zeros.replace(/[Oo]/g, '0') + sep)
-    // Spurious letter J → digit 3 in DMS cardinal phrases (common OCR error J≈3)
-    .replace(/\b(NORTH|SOUTH|EAST|WEST)\s+J\s+(\d)/gi, (_, dir, d) => `${dir} 3${d}`)
-    .replace(/(\d)\s+J\s+(\d+)\s+(DEGREES|DEG\.?|°)/gi, (_, a, b, unit) => `${a}3${b} ${unit}`);
+  deedText = postProcessOcrText(deedText);
 
   const pob = {
     northing: options.pobNorthing ?? 5000,
@@ -1122,7 +1114,7 @@ export function solveFromCourses(courses, options = {}) {
  * Flags unknown/ambiguous bearings ("North / West", "N?") as isUnknown.
  */
 export function solveFromText(deedText, options = {}) {
-  const text = deedText || '';
+  const text = postProcessOcrText(deedText);
 
   const normText = text.toUpperCase();
   if (normText.includes('RIDGECREST') && normText.includes('LOT 12') && normText.includes('STREAM')) {

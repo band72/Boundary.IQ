@@ -548,18 +548,34 @@ export class SupervisorAgent {
         if (diag.type === 'OCR_TRANSCRIPTION_BUST') continue; // requires visual re-read
 
         console.log(`[${this.name}] Testing surveyor hypothesis: "${diag.message}" (Confidence: ${(diag.confidence * 100).toFixed(0)}%)`);
-        const candidateCourses = diag.apply();
+        let candidateCourses = diag.apply();
+        let testReport = this.cogo.analyze(candidateCourses, pob, units, isOpenEnded);
+        let appliedScrivener = false;
+        let scrivenerMsg = '';
 
-        const testReport = this.cogo.analyze(candidateCourses, pob, units, isOpenEnded);
+        if (!testReport.isPassing && diag.type !== 'SCRIVENER_CORRECTION') {
+          const sRes = tryScrivenerErrorSolver({ courses: candidateCourses }, pob, units, isOpenEnded);
+          if (sRes && sRes.courses) {
+            const sReport = this.cogo.analyze(sRes.courses, pob, units, isOpenEnded);
+            if (sReport.success && sReport.isPassing) {
+              console.log(`[${this.name}] SUCCESS: Surveyor hypothesis "${diag.type}" + Scrivener correction resolved closure! (${sRes.message})`);
+              candidateCourses = sRes.courses;
+              testReport = sReport;
+              appliedScrivener = true;
+              scrivenerMsg = sRes.message;
+            }
+          }
+        }
+
         if (testReport.success && testReport.isPassing) {
           console.log(`[${this.name}] SUCCESS: Surveyor hypothesis "${diag.type}" resolved closure!`);
           extraction.courses = testReport.courses;
           extraction.rawJson = JSON.stringify(testReport.courses);
 
-          // Fix #11: Score the passing result
+          // Score the passing result
           const { trustScore, trustLevel, trustFlags } = this.scorer.score(extraction.courses, testReport);
 
-          turnRecord.outcome = `PASS_VIA_${diag.type}`;
+          turnRecord.outcome = `PASS_VIA_${diag.type}${appliedScrivener ? '_WITH_SCRIVENER' : ''}`;
           agentTurns.push(turnRecord);
 
           return {
@@ -567,7 +583,7 @@ export class SupervisorAgent {
             extraction,
             traverse: testReport,
             error: null,
-            repairStageUsed: `Stage 5: Agentic Surveyor Repair (${diag.type})`,
+            repairStageUsed: `Stage 5: Agentic Surveyor Repair (${diag.type}${appliedScrivener ? ` + ${scrivenerMsg}` : ''})`,
             agentTurns,
             trustScore,
             trustLevel,

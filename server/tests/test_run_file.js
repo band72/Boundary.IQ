@@ -1,8 +1,8 @@
 import fs from 'fs/promises';
-import { runRepairPipeline } from './services/repair.js';
-import * as geminiVision from './services/geminiVision.js';
-import { convertToPdf } from './services/docConversion.js';
-import { init } from './services/diagnosticsDb.js';
+import { runRepairPipeline } from '../services/repair.js';
+import * as geminiVision from '../services/geminiVision.js';
+import { convertToPdf } from '../services/docConversion.js';
+import { init } from '../services/diagnosticsDb.js';
 
 async function run() {
   init();

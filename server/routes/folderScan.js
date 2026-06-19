@@ -9,6 +9,7 @@ import fs from 'fs';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { runRepairPipeline, extractNamedParcels, detectOpenEnded } from '../services/repair.js';
+import { resolvePathCaseInsensitive } from '../services/pathUtils.js';
 import * as legalWriter from '../services/legalWriter.js';
 import * as db from '../services/diagnosticsDb.js';
 import { isWordDocument, convertToPdf, getMimeType } from '../services/docConversion.js';
@@ -25,7 +26,7 @@ import * as traverseSvc from '../services/traverse.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
 import pdfParse from 'pdf-parse';
 import { requireAuth } from '../middleware/auth.js';
-import { SCAN_RATE_LIMIT } from '../config.js';
+import { SCAN_RATE_LIMIT, GEMINI_API_KEY } from '../config.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -115,7 +116,10 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath, for
         // Run python OCR
         try {
           console.log(`🔍 Running OCR on ${fileName}...`);
-          const cmd = `python3 ./scripts/ocr_pdf.py "${filePath}"`;
+          const baseDir = process.cwd();
+          const serverDir = fs.existsSync(path.join(baseDir, 'server')) ? path.join(baseDir, 'server') : baseDir;
+          const ocrScriptPath = path.join(serverDir, 'scripts', 'ocr_pdf.py');
+          const cmd = `python3 "${ocrScriptPath}" "${filePath}"`;
           const result = execSync(cmd, { encoding: 'utf-8' });
           text = result.trim();
         } catch (e) {
@@ -171,7 +175,8 @@ function shouldInterceptPLSS(text) {
 }
 
 const MAX_FILE_SIZE = 51 * 1024 * 1024;
-const SUPPORTED_EXTS = new Set(['.pdf', '.doc', '.docx', '.txt']);
+const BATCH_SIZE = 5;
+const SUPPORTED_EXTS = new Set(['.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.jpeg', '.webp', '.gif']);
 
 // ── Allowed roots (path traversal protection) ────────────────────────────────
 function getAllowedRoots() {
@@ -221,26 +226,29 @@ function validatePath(p) {
   normalized = normalized.replace(/\\/g, '/');
 
   // Translate to actual location under the extracted training folder if the directly requested ones don't exist
-  if (!fs.existsSync(normalized)) {
+  let resolvedCasePath = resolvePathCaseInsensitive(normalized);
+  if (fs.existsSync(resolvedCasePath)) {
+    normalized = resolvedCasePath;
+  } else {
     const trainingPattern = /\/Downloads\/training-[^/]+\/training/i;
     if (trainingPattern.test(normalized)) {
-      const candidate = normalized.replace(trainingPattern, '/Downloads/FILES/training');
+      const candidate = resolvePathCaseInsensitive(normalized.replace(trainingPattern, '/Downloads/FILES/training'));
       if (fs.existsSync(candidate)) normalized = candidate;
     } else if (normalized.includes('/Downloads/TrainPDF')) {
-      const candidate = normalized.replace('/Downloads/TrainPDF', '/Downloads/FILES/training/TrainPDF');
+      const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/TrainPDF', '/Downloads/FILES/training/TrainPDF'));
       if (fs.existsSync(candidate)) normalized = candidate;
     } else if (normalized.includes('/Downloads/Legal Descriptions')) {
-      const candidate = normalized.replace('/Downloads/Legal Descriptions', '/Downloads/FILES/training/Legal Descriptions');
+      const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/Legal Descriptions', '/Downloads/FILES/training/Legal Descriptions'));
       if (fs.existsSync(candidate)) normalized = candidate;
     }
 
     // Fallback standard structure
     if (!fs.existsSync(normalized)) {
       if (normalized.includes('/Downloads/TrainPDF')) {
-        const candidate = normalized.replace('/Downloads/TrainPDF', '/Downloads/training-20260530T124201Z-3-001/training/TrainPDF');
+        const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/TrainPDF', '/Downloads/training-20260530T124201Z-3-001/training/TrainPDF'));
         if (fs.existsSync(candidate)) normalized = candidate;
       } else if (normalized.includes('/Downloads/Legal Descriptions')) {
-        const candidate = normalized.replace('/Downloads/Legal Descriptions', '/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions');
+        const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/Legal Descriptions', '/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions'));
         if (fs.existsSync(candidate)) normalized = candidate;
       }
     }
@@ -317,10 +325,10 @@ function classifyByFilename(fileName) {
   if (upper.includes('DEED') || upper.includes('GRANT')) return 'DEED';
   if (upper.includes('COMMITMENT') || upper.includes('COMMITTMENT')) return 'DEED';
   
-  // Generic or unknown filenames: if it's a PDF/Word/TXT file, let's treat it as a potential DEED 
+  // Generic or unknown filenames: if it's a PDF/Word/TXT/image file, let's treat it as a potential DEED 
   // so we can inspect its content, rather than skipping it preemptively.
   const ext = path.extname(fileName).toLowerCase();
-  if (['.pdf', '.doc', '.docx', '.txt'].includes(ext)) {
+  if (['.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
     return 'DEED';
   }
 
@@ -467,7 +475,7 @@ router.get('/scan', scanLimiter, (req, res) => {
 
   const total = files.length;
   const toProcess = files.filter(f => f.willProcess).length;
-  res.json({ path: req.query.path, total, toProcess, toSkip: total - toProcess, batchesNeeded: Math.ceil(toProcess / 20), files });
+  res.json({ path: req.query.path, total, toProcess, toSkip: total - toProcess, batchesNeeded: Math.ceil(toProcess / BATCH_SIZE), batchSize: BATCH_SIZE, files });
 });
 
 // GET /api/folderscan/debug-skipped
@@ -713,7 +721,7 @@ router.post('/process-batch', async (req, res) => {
 
     if (allProcessable.length === 0) return res.json({ message: 'No processable deed PDFs found.', results: [] });
 
-    const totalBatches = Math.ceil(allProcessable.length / 20);
+    const totalBatches = Math.ceil(allProcessable.length / BATCH_SIZE);
     if (batchIndex >= totalBatches) return res.status(400).json({ error: `batchIndex ${batchIndex} out of range (0–${totalBatches - 1}).` });
 
     // Start keepalive heartbeat immediately to prevent idle connection timeout
@@ -736,7 +744,7 @@ router.post('/process-batch', async (req, res) => {
       }
     }, 15000);
 
-    const batch = allProcessable.slice(batchIndex * 20, (batchIndex + 1) * 20);
+    const batch = allProcessable.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE);
     const batchId = uuidv4();
     const results = new Array(batch.length);
 
@@ -1345,7 +1353,7 @@ router.post('/process-file', async (req, res) => {
     const fileName = req.query.file;
     if (!fileName) return res.status(400).json({ error: 'file query parameter is required.' });
 
-    let filePath = path.join(validPath, fileName);
+    let filePath = resolvePathCaseInsensitive(path.join(validPath, fileName));
     if (!fs.existsSync(filePath)) {
       // Fallback: search in common training and dataset directories
       const downloadsDir = process.env.BOUNDARY_DOWNLOADS_DIR || path.join(os.homedir(), 'Downloads');
@@ -1361,8 +1369,9 @@ router.post('/process-file', async (req, res) => {
         path.join(downloadsDir, 'drive-download-20260602T132437Z-3-001', fileName),
       ];
       for (const cand of candidates) {
-        if (fs.existsSync(cand)) {
-          filePath = cand;
+        const resolvedCand = resolvePathCaseInsensitive(cand);
+        if (fs.existsSync(resolvedCand)) {
+          filePath = resolvedCand;
           break;
         }
       }
@@ -1374,12 +1383,12 @@ router.post('/process-file', async (req, res) => {
           for (const item of items) {
             const itemPath = path.join(downloadsDir, item);
             if (fs.statSync(itemPath).isDirectory()) {
-              const possibleFile = path.join(itemPath, fileName);
+              const possibleFile = resolvePathCaseInsensitive(path.join(itemPath, fileName));
               if (fs.existsSync(possibleFile)) {
                 filePath = possibleFile;
                 break;
               }
-              const possibleNested = path.join(itemPath, 'training', 'TrainPDF', 'Regency-Title', fileName);
+              const possibleNested = resolvePathCaseInsensitive(path.join(itemPath, 'training', 'TrainPDF', 'Regency-Title', fileName));
               if (fs.existsSync(possibleNested)) {
                 filePath = possibleNested;
                 break;
@@ -2212,7 +2221,14 @@ router.post('/retry-failed', async (req, res) => {
   const PER_FILE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 min max per file
 
   // Local model cascade — dynamically query available models from local Ollama
-  let LOCAL_MODELS = ['gemma3:4b', 'llama3.2:3b', 'deepseek-r1:8b', 'gemma4:26b'];
+  const hasGemini = !!GEMINI_API_KEY;
+  let LOCAL_MODELS = ['gemma3:4b', 'llama3.2:3b'];
+  if (!hasGemini) {
+    LOCAL_MODELS.push('deepseek-r1:8b');
+    LOCAL_MODELS.push('deepseek-r1:14b');
+    LOCAL_MODELS.push('gemma4:26b');
+  }
+
   try {
     const status = await ollamaSvc.getStatus();
     if (status.online && status.models && status.models.length > 0) {
@@ -2234,6 +2250,10 @@ router.post('/retry-failed', async (req, res) => {
       });
 
       for (const m of sortedModels) {
+        if (hasGemini && (m.includes('8b') || m.includes('14b') || m.includes('26b') || m.includes('70b') || m.includes('32b') || m.includes('deepseek') || m.includes('r1'))) {
+          // Skip heavy local models on CPU since we have Gemini API fallback
+          continue;
+        }
         if (!LOCAL_MODELS.includes(m)) {
           LOCAL_MODELS.push(m);
         }
@@ -2241,6 +2261,11 @@ router.post('/retry-failed', async (req, res) => {
     }
   } catch (err) {
     console.error('Failed to retrieve online local models:', err);
+  }
+
+  if (hasGemini) {
+    LOCAL_MODELS.push('gemini:gemini-2.5-flash');
+    LOCAL_MODELS.push('gemini:gemini-2.5-pro');
   }
 
   // SSE setup
@@ -2314,6 +2339,16 @@ router.post('/retry-failed', async (req, res) => {
       if (fs.existsSync(direct)) return direct;
       try {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
+        const targetLower = cleanName.toLowerCase();
+        
+        // First check files in this directory case-insensitively
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.toLowerCase() === targetLower) {
+            return path.join(dir, entry.name);
+          }
+        }
+        
+        // Recurse into directories
         for (const entry of entries) {
           if (entry.isDirectory()) {
             const subDir = path.join(dir, entry.name);
@@ -2419,16 +2454,28 @@ router.post('/retry-failed', async (req, res) => {
             if (succeeded) break;
             if (res.writableEnded || fileAbort.signal.aborted) break;
             try {
-              geminiVision.setProvider(provider, model);
-              send('model-try', { fileName, model });
+              let activeModelProvider = provider;
+              let cleanModelName = model;
+              if (model.includes(':')) {
+                const parts = model.split(':');
+                if (parts[0] === 'gemini' || parts[0] === 'ollama' || parts[0] === 'openai') {
+                  activeModelProvider = parts[0];
+                  cleanModelName = parts.slice(1).join(':');
+                }
+              } else if (model.startsWith('gemini-') || model.startsWith('gemini')) {
+                activeModelProvider = 'gemini';
+              }
+
+              geminiVision.setProvider(activeModelProvider, cleanModelName);
+              send('model-try', { fileName, model: cleanModelName });
 
               const thinkingInterval = setInterval(() => {
-                send('status', { message: `🤖 [${model}] is thinking... Inference in progress, please stand by...` });
+                send('status', { message: `🤖 [${cleanModelName}] is thinking... Inference in progress, please stand by...` });
               }, 15000);
 
               let repairResult;
               try {
-                repairResult = await runRepairPipeline(activeImageBytes, activeMime, pob, units, activeIsOpenEnded, fileName, maxPasses);
+                repairResult = await runRepairPipeline(activeImageBytes, activeMime, pob, units, activeIsOpenEnded, fileName, maxPasses, false);
               } finally {
                 clearInterval(thinkingInterval);
               }
@@ -2437,10 +2484,10 @@ router.post('/retry-failed', async (req, res) => {
                 const extraction = repairResult.finalExtraction;
                 const traverse  = repairResult.finalTraverse;
                 const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
-                saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [${provider}:${model}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
+                saveDeedLogWrapper(req, batchId, fileName, resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[RETRY] ${path.parse(fileName).name}`, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), repairResult.status, `${repairResult.repairStageUsed} [${activeModelProvider}:${cleanModelName}]`, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, null, repairResult.trustScore ?? null, stepsJson);
                 fixed++;
                 succeeded = true;
-                send('file-pass', { fileName, model, stage: repairResult.repairStageUsed, status: repairResult.status, area: traverse?.areaAcres?.toFixed(4) ?? 'n/a', fixed, total: queue.length });
+                send('file-pass', { fileName, model: cleanModelName, stage: repairResult.repairStageUsed, status: repairResult.status, area: traverse?.areaAcres?.toFixed(4) ?? 'n/a', fixed, total: queue.length });
               } else {
                 lastError = repairResult.traverseError || 'Did not pass closure';
               }
