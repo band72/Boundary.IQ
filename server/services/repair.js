@@ -391,12 +391,23 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     console.log('Stage 3.6: Meander-Parcel — attempting gap closure of water boundary courses.');
 
     const meanderCourses = (bestExtraction.courses || []).map(c => {
-      // Mark as unknown if: distance=0, isUnknown=true, or description contains meander keywords
+      // Mark as unknown if: distance=0, isUnknown=true, or description contains meander keywords and bearing is unparseable
       const desc = ((c.description || '') + ' ' + (c.label || '')).toUpperCase();
+      let parsedBearingValid = false;
+      const b = c.bearing || c.chordBearing;
+      if (b) {
+        try {
+          bp.parse(b);
+          parsedBearingValid = true;
+        } catch {}
+      }
+      const isMeanderAlways = /MEANDER/.test(desc);
+      const isMeanderIfUnparseable = /MORE OR LESS|BANK OF|CREEK|RIVER|LAKE|MARSH|CANAL|THEREOF/.test(desc);
       const isMeanderCourse =
         c.isUnknown ||
         c.distance === 0 || c.distance == null ||
-        /MEANDER|MORE OR LESS|BANK OF|CREEK|RIVER|LAKE|MARSH|CANAL|THEREOF/.test(desc);
+        isMeanderAlways ||
+        (!parsedBearingValid && isMeanderIfUnparseable);
       if (isMeanderCourse) {
         return { type: 'Line', bearing: null, distance: null, isUnknown: true, _wasMeander: true };
       }
@@ -2001,7 +2012,20 @@ export function isMeanderDeed(extraction) {
 
   // If the text contains significantly more "thence" calls than courses extracted,
   // it is highly likely to be a lazy metes-and-bounds extraction, not a meander deed.
-  const thenceCount = (text.match(/\bTHENCE\b/g) || []).length;
+  // Note: Commencing sections can contain many "thence" calls. We should only count
+  // "thence" calls in the actual main legal description body starting from Point of Beginning.
+  const rawTextUpper = (extraction.rawText || extraction.extractedText || '').toUpperCase();
+  let mainText = rawTextUpper;
+  const pobIndex = rawTextUpper.indexOf('POINT OF BEGINNING');
+  if (pobIndex !== -1) {
+    mainText = rawTextUpper.slice(pobIndex);
+  } else {
+    const truePobIndex = rawTextUpper.indexOf('TRUE POINT');
+    if (truePobIndex !== -1) {
+      mainText = rawTextUpper.slice(truePobIndex);
+    }
+  }
+  const thenceCount = (mainText.match(/\bTHENCE\b/g) || []).length;
   if (thenceCount > (extraction.courses?.length || 0) + 1) {
     return false;
   }

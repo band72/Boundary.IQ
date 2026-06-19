@@ -43,6 +43,13 @@ for (let i = 0; i < args.length; i++) {
 }
 
 const FAILED_DEEDS_DIR = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions/_FAILED/_extracted';
+let srcDir = FAILED_DEEDS_DIR;
+
+for (let i = 0; i < args.length; i++) {
+  if (!args[i].startsWith('--')) {
+    srcDir = path.resolve(args[i]);
+  }
+}
 const RESULTS_OUTPUT_PATH = path.resolve(__dirname, 'test_failed_deeds_nocache_results.json');
 
 async function main() {
@@ -69,22 +76,22 @@ async function main() {
   console.log(`LLM Provider:   ${geminiVision.getActiveProvider()}`);
   console.log(`LLM Model:      ${geminiVision.getActiveModel()}`);
   console.log(`Concurrency:    ${concurrency}`);
-  console.log(`Source Folder:  ${FAILED_DEEDS_DIR}`);
+  console.log(`Source Folder:  ${srcDir}`);
   
   let files;
   try {
-    const allFiles = await fs.readdir(FAILED_DEEDS_DIR);
+    const allFiles = await fs.readdir(srcDir);
     files = allFiles.filter(f => f.toLowerCase().endsWith('.txt')).sort();
   } catch (err) {
     console.error(`❌ Error scanning source directory:`, err.message);
     process.exit(1);
   }
-
+ 
   if (files.length === 0) {
     console.log('⚠️ No text files found.');
     process.exit(0);
   }
-
+ 
   if (limit !== null) {
     console.log(`Limit:          Processing first ${limit} of ${files.length} files`);
     files = files.slice(0, limit);
@@ -92,16 +99,16 @@ async function main() {
     console.log(`Total Files:    Processing all ${files.length} files`);
   }
   console.log('===========================================================\n');
-
-  const outputFolder = output.createOutputFolder(FAILED_DEEDS_DIR);
+ 
+  const outputFolder = output.createOutputFolder(srcDir);
   const startBatchTime = Date.now();
   const limitFn = pLimit(concurrency);
   const results = [];
   const batchId = 'BATCH_NOCACHE_' + Date.now();
-
+ 
   const tasks = files.map((file, idx) => {
     return limitFn(async () => {
-      const filePath = path.join(FAILED_DEEDS_DIR, file);
+      const filePath = path.join(srcDir, file);
       const startTime = Date.now();
       
       try {

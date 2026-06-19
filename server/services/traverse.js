@@ -451,13 +451,25 @@ export function autoFixUnknownRuns(courses, pob) {
     if (c.type?.toLowerCase() === 'line') {
       // distance=0 is treated as unknown — meander courses often land here
       // when the AI sees "along meanderings thereof, 100 ft more or less"
-      return !c.bearing || c.distance == null || isNaN(c.distance) || c.distance === 0;
+      if (!c.bearing || c.distance == null || isNaN(c.distance) || c.distance === 0) return true;
+      try {
+        bp.parse(c.bearing);
+        return false;
+      } catch {
+        return true;
+      }
     }
     if (c.type?.toLowerCase() === 'curve') {
       if (c.radius != null && (c.arcLength != null || c.delta != null)) {
         return false;
       }
-      return !c.chordBearing || c.chordDistance == null || isNaN(c.chordDistance) || c.chordDistance === 0;
+      if (!c.chordBearing || c.chordDistance == null || isNaN(c.chordDistance) || c.chordDistance === 0) return true;
+      try {
+        bp.parse(c.chordBearing);
+        return false;
+      } catch {
+        return true;
+      }
     }
     return true;
   };
@@ -539,7 +551,7 @@ function _solveOneRun(courses, run, pob) {
   const dE_tie = -dE_complete;
   const chordDist = Math.sqrt(dN_tie * dN_tie + dE_tie * dE_tie);
 
-  if (chordDist < 0.01) return courses; // too small to solve
+  if (chordDist < 0.01 || isNaN(chordDist)) return courses; // too small or invalid to solve
 
   const tieBearing = bp.vectorToBearing(dN_tie, dE_tie);
   const replacement = {
@@ -561,11 +573,13 @@ function computeVector(c) {
     if (c.type?.toLowerCase() === 'line') {
       const { azimuthRad } = bp.parse(c.bearing);
       const dist = parseFloat(c.distance);
+      if (isNaN(dist) || isNaN(azimuthRad)) return { dn: 0, de: 0 };
       return { dn: dist * Math.cos(azimuthRad), de: dist * Math.sin(azimuthRad) };
     }
     // Curve — use chord
     const { azimuthRad } = bp.parse(c.chordBearing);
     const dist = parseFloat(c.chordDistance);
+    if (isNaN(dist) || isNaN(azimuthRad)) return { dn: 0, de: 0 };
     return { dn: dist * Math.cos(azimuthRad), de: dist * Math.sin(azimuthRad) };
   } catch {
     return { dn: 0, de: 0 };
