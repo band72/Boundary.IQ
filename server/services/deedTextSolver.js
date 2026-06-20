@@ -1354,7 +1354,11 @@ export function solveFromText(deedText, options = {}) {
     .replace(/\bRUN\s+THENCE\b/gi, 'THENCE')
     .replace(/\bTHEN\s+(?=[NSns]\s*[.\d])/gi, 'THENCE ')
     // "CONTINUING...bearing" and "CONTINUE...bearing" -> THENCE
-    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=[NSns]\s*[.\d°])/gi, 'THENCE ');
+    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=[NSns]\s*[.\d°])/gi, 'THENCE ')
+    // Standalone RUN [bearing] (not preceded by THENCE) → THENCE
+    // e.g. "FROM THE POINT OF REFERENCE...RUN S.39°41'50"E."
+    .replace(/\bRUN\s+(?=[NSns]\s*[.\d°])/gi, 'THENCE ');
+
 
   const rawSegments = preparedText.split(/\b(THENCE|COMMENCE)\b/i);
 
