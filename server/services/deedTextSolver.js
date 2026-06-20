@@ -33,10 +33,6 @@ const ollamaAgent = new Agent({
 const ollamaLimit = pLimit(1);
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
-// Key design: the LLM prompt is intentionally tiny and mechanical.
-// No math, no reasoning — just text → structured JSON.
-// The COGO engine handles everything else.
-
 function buildExtractionPrompt(deedText) {
   return `You are a legal description parser. Extract boundary courses from the deed text below.
 
@@ -50,7 +46,7 @@ RULES:
 7. If a course describes a deflection angle (e.g. "AT A DEFLECTION ANGLE TO THE LEFT/RIGHT OF X DEGREES, Y FEET"), represent it as: "Type": "Line", "Bearing": null, "Distance": Y, "DeflectionAngle": X, "DeflectionDirection": "Left" or "Right", "IsUnknown": (Y === 0 || Y === null)
 8. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
 8a. ACTUAL vs PLAT distances: When a clause contains both an ACTUAL DISTANCE and a PLAT distance (e.g. "AN ACTUAL DISTANCE OF 117.30 FEET (126.97 FEET PLAT)"), always use the ACTUAL DISTANCE. The plat figure appears in parentheses and must NOT be used for the traverse.
-9. Bearings format: "N45°22'10\\"E" — keep the exact degree/minute/second format from the text.
+9. Bearings format: "N45°22'10\"E" — keep the exact degree/minute/second format from the text.
 10. Distances are decimal feet (or meters if stated).
 11. IDENTIFY the Point of Reference (POR) (e.g. the section corner, subdivision corner, or benchmark mentioned) and any commencement/reference runs leading from that Reference Point (POR) to the Point of Beginning (POB).
    - Populate the "ReferencePointName" field with the name/description of the Point of Reference (or null if not found).
@@ -60,31 +56,35 @@ RULES:
 13. OPEN-ENDED TRAVERSE: Identify if the traverse is open-ended (e.g. it is an easement description, a road centerline, meanders, or terminates without returning to the Point of Beginning / POB). Set "IsOpenEnded": true or false accordingly.
 14. Output ONLY a JSON object. No explanation, no markdown.
 15. DUAL DESCRIPTION — If the deed contains TWO complete traverse descriptions of the SAME property (signals: "THIS IS THE SAME PROPERTY AS DESCRIBED IN...", "BEING THE SAME LANDS AS DESCRIBED IN...", or a second "POINT OF BEGINNING" traverse after the first), extract ONLY the SECOND (more recent/precise) description. Ignore the first. The second usually follows a surveyor's job number or "JOB NO." reference.
-16. MULTI-PARCEL DEED — If the deed labels separate parcels as "PARCEL 1:", "PARCEL 2:", etc., extract ONLY "PARCEL 1" boundary courses. Do NOT mix courses from multiple parcels.
+16. MULTI-PARCEL / MULTI-TRACT DEED — If the deed contains multiple distinct parcels, tracts, or easements (e.g., "PARCEL 1:", "PARCEL 2:", "TRACT A:", "TRACT B:", "EASEMENT 1:"), extract ALL of them into separate elements in the "Tracts" array. For each tract, specify its Name, POB, ReferencePointName, CommencementSegments, IsOpenEnded, and Segments. Even if there is only a single tract/parcel, wrap it as the sole element in the "Tracts" array.
 
 
 OUTPUT FORMAT:
 {
-  "POB": { "Northing": 5000.00, "Easting": 5000.00 },
-  "ReferencePointName": "Southeast corner of Section 12",
-  "CommencementSegments": [
-    { "Type": "Line", "Bearing": "N00°02'10\\"W", "Distance": 330.15, "IsUnknown": false }
-  ],
   "Units": "Feet",
-  "IsOpenEnded": false,
-  "Segments": [
-    { "Type": "Line", "Bearing": "N45°22'10\\"E", "Distance": 150.25, "IsUnknown": false },
+  "Tracts": [
     {
-      "Type": "Curve",
-      "Radius": 424.73,
-      "Delta": "93°62'00.00\"",
-      "ArcLength": 93.43,
-      "CurveDirection": "Left",
-      "ChordBearing": "S16°38'52\\"E",
-      "ChordDistance": 93.43,
-      "IsUnknown": false
-    },
-    { "Type": "Line", "Bearing": null, "Distance": null, "IsUnknown": true }
+      "Name": "Parcel 1 (or Tract 1, etc.)",
+      "POB": { "Northing": 5000.00, "Easting": 5000.00 },
+      "ReferencePointName": "Southeast corner of Section 12",
+      "CommencementSegments": [
+        { "Type": "Line", "Bearing": "N00°02'10\"W", "Distance": 330.15, "IsUnknown": false }
+      ],
+      "IsOpenEnded": false,
+      "Segments": [
+        { "Type": "Line", "Bearing": "N45°22'10\"E", "Distance": 150.25, "IsUnknown": false },
+        {
+          "Type": "Curve",
+          "Radius": 424.73,
+          "Delta": "93°12'00.00\"",
+          "ArcLength": 93.43,
+          "CurveDirection": "Left",
+          "ChordBearing": "S16°38'52\"E",
+          "ChordDistance": 93.43,
+          "IsUnknown": false
+        }
+      ]
+    }
   ]
 }
 
@@ -153,9 +153,8 @@ async function callOllama(model, prompt) {
           }
           throw new Error('Ollama returned empty response string.');
         }
-        console.log('--- OLLAMA RESPONSE IN CALLOLLAMA ---');
-        console.log(rawText);
-        console.log('--------------------------------------');
+        // Fix B: log only a short prefix to avoid polluting batch-run logs with raw LLM output
+        console.log(`[callOllama] OK (${rawText.length} chars) — preview: ${rawText.substring(0, 120).replace(/\n/g, ' ')}…`);
         return rawText;
       } catch (ex) {
         const isConnectionError = ex.code === 'ECONNREFUSED' || ex.code === 'ETIMEDOUT' ||
@@ -278,7 +277,7 @@ function sanitizeJsonStringValues(jsonStr) {
 }
 
 // ── JSON parser — robust to common local LLM formatting issues ────────────────
-function parseExtractionJson(raw, deedText) {
+export function parseExtractionJson(raw, deedText) {
   let text = raw.trim();
 
   // Clean think/thought tags if present
@@ -329,22 +328,10 @@ function parseExtractionJson(raw, deedText) {
   }
 
 
-  // Normalize casing variations (some models use lowercase keys)
-  const segments = root.Segments || root.segments || root.courses || root.Courses || [];
-  const pobRaw = root.POB || root.pob || root.PointOfBeginning || {};
-  const pob = {
-    northing: parseFloat(pobRaw.Northing ?? pobRaw.northing ?? 5000),
-    easting:  parseFloat(pobRaw.Easting  ?? pobRaw.easting  ?? 5000),
-  };
-  if (isNaN(pob.northing)) pob.northing = 5000;
-  if (isNaN(pob.easting))  pob.easting  = 5000;
-
   const units = root.Units || root.units || 'Feet';
-  const referencePointName = root.ReferencePointName || root.referencePointName || null;
   const mapSegment = (s) => {
     const type = (s.Type || s.type || 'Line');
     const rawBearing = s.Bearing ?? s.bearing ?? null;
-    // Guard: reject cardinal-word bearings (e.g. "SOUTHERLY", "NORTH") from truncated LLM output
     const CARDINAL_WORD_RE = /^(NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)$/i;
     const bearing = rawBearing && CARDINAL_WORD_RE.test(rawBearing.trim()) ? null : rawBearing;
     const distance = (s.Distance != null && !isNaN(parseFloat(s.Distance))) ? parseFloat(s.Distance) : null;
@@ -401,124 +388,158 @@ function parseExtractionJson(raw, deedText) {
     return resObj;
   };
 
-  const rawCommSegments = root.CommencementSegments || root.commencementSegments || [];
-  let commencementSegments = Array.isArray(rawCommSegments) ? rawCommSegments.map(mapSegment) : [];
-  const courses = Array.isArray(segments) ? segments.map(mapSegment) : [];
-  let normalizedCourses = courses;
-  if (isPlaceholderHallucination(courses)) {
-    console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN TEXT EXTRACTION! Clearing courses.');
-    normalizedCourses = [];
-  }
+  const processSingleTractData = (tName, tSegments, tPobRaw, tRefName, tCommSegments, tOpenEnded) => {
+    const pob = {
+      northing: parseFloat(tPobRaw.Northing ?? tPobRaw.northing ?? 5000),
+      easting:  parseFloat(tPobRaw.Easting  ?? tPobRaw.easting  ?? 5000),
+    };
+    if (isNaN(pob.northing)) pob.northing = 5000;
+    if (isNaN(pob.easting))  pob.easting  = 5000;
 
+    const referencePointName = tRefName || null;
+    let commencementSegments = Array.isArray(tCommSegments) ? tCommSegments.map(mapSegment) : [];
+    const courses = Array.isArray(tSegments) ? tSegments.map(mapSegment) : [];
+    let normalizedCourses = courses;
+    if (isPlaceholderHallucination(courses)) {
+      console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN TEXT EXTRACTION! Clearing courses.');
+      normalizedCourses = [];
+    }
 
-  // Apply Commencement Splitting Heuristic if deedText is provided
-  if (deedText && normalizedCourses.length > 0) {
-    // 1. Remove placeholder commencement segments
-    let cleanComm = commencementSegments.filter(c => {
-      const b = (c.bearing || c.chordBearing || '').toUpperCase().replace(/\s/g, '');
-      const d = c.distance || c.chordDistance || c.arcLength;
-      const isPlaceholder = (b === 'N00°02\'10"W' || b === 'N0°02\'10"W' || b === 'N0°2\'10"W' || b === 'N00°02\'10”W') && d != null && Math.abs(d - 330.15) < 0.1;
-      return !isPlaceholder;
-    });
+    // Apply Commencement Splitting Heuristic if deedText is provided
+    if (deedText && normalizedCourses.length > 0) {
+      let cleanComm = commencementSegments.filter(c => {
+        const b = (c.bearing || c.chordBearing || '').toUpperCase().replace(/\s/g, '');
+        const d = c.distance || c.chordDistance || c.arcLength;
+        const isPlaceholder = (b === 'N00°02\'10"W' || b === 'N0°02\'10"W' || b === 'N0°2\'10"W' || b === 'N00°02\'10”W') && d != null && Math.abs(d - 330.15) < 0.1;
+        return !isPlaceholder;
+      });
 
-    if (cleanComm.length === 0) {
-      // Try to find the Point of Beginning in the deed text to split the courses.
-      const pobRegex = /\b(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)\b/gi;
-      let match;
-      let lastPobIndex = -1;
-      while ((match = pobRegex.exec(deedText)) !== null) {
-        lastPobIndex = match.index;
-      }
-
-      if (lastPobIndex !== -1) {
-        const commencementText = deedText.substring(0, lastPobIndex);
-        const boundaryText = deedText.substring(lastPobIndex);
-
-        let bestK = 0;
-        let maxScore = -1;
-
-        for (let k = 0; k <= normalizedCourses.length; k++) {
-          const commPart = normalizedCourses.slice(0, k);
-          const boundPart = normalizedCourses.slice(k);
-
-          let score = 0;
-          
-          commPart.forEach(c => {
-            const d = c.distance || c.chordDistance || c.arcLength;
-            if (d != null && d > 0) {
-              const dStr = d.toFixed(2);
-              const dStrInt = Math.floor(d).toString();
-              if (commencementText.includes(dStr) || commencementText.includes(dStrInt)) {
-                score += 2;
-              } else {
-                score -= 1;
-              }
-            }
-          });
-
-          boundPart.forEach(c => {
-            const d = c.distance || c.chordDistance || c.arcLength;
-            if (d != null && d > 0) {
-              const dStr = d.toFixed(2);
-              const dStrInt = Math.floor(d).toString();
-              if (boundaryText.includes(dStr) || boundaryText.includes(dStrInt)) {
-                score += 2;
-              } else {
-                score -= 1;
-              }
-            }
-          });
-
-          if (score > maxScore) {
-            maxScore = score;
-            bestK = k;
-          }
+      if (cleanComm.length === 0) {
+        const pobRegex = /\b(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)\b/gi;
+        let match;
+        let lastPobIndex = -1;
+        while ((match = pobRegex.exec(deedText)) !== null) {
+          lastPobIndex = match.index;
         }
 
-        // COGO-verification override: Try stripping 1..4 leading courses.
-        // If any gives a traverse that closes to < 1ft linear error, prefer it
-        // over the text-match result (text-match fails when all distances appear
-        // on both sides of the POB clause).
-        let cogoVerifiedK = -1;
-        const cogoMaxStrip = Math.min(6, normalizedCourses.length - 2); // increased from 4 to handle longer commencement runs
-        for (let ck = 1; ck <= cogoMaxStrip; ck++) {
-          const testCourses = normalizedCourses.slice(ck);
-          const testResult = tryCompute(testCourses, pob || { northing: 5000, easting: 5000 }, units || 'Feet');
-          if (testResult && testResult.result && !testResult.error) {
-            const linErr = testResult.result.closure?.linearError ?? Infinity;
-            if (linErr < 1.0) {
-              cogoVerifiedK = ck;
-              console.log(`[DeedTextSolver] COGO-verified commencement strip at k=${ck}: linErr=${linErr.toFixed(4)}ft — accepting.`);
-              break;
+        if (lastPobIndex !== -1) {
+          const commencementText = deedText.substring(0, lastPobIndex);
+          const boundaryText = deedText.substring(lastPobIndex);
+
+          let bestK = 0;
+          let maxScore = -1;
+
+          for (let k = 0; k <= normalizedCourses.length; k++) {
+            const commPart = normalizedCourses.slice(0, k);
+            const boundPart = normalizedCourses.slice(k);
+
+            let score = 0;
+            commPart.forEach(c => {
+              const d = c.distance || c.chordDistance || c.arcLength;
+              if (d != null && d > 0) {
+                const dStr = d.toFixed(2);
+                const dStrInt = Math.floor(d).toString();
+                if (commencementText.includes(dStr) || commencementText.includes(dStrInt)) {
+                  score += 2;
+                } else {
+                  score -= 1;
+                }
+              }
+            });
+
+            boundPart.forEach(c => {
+              const d = c.distance || c.chordDistance || c.arcLength;
+              if (d != null && d > 0) {
+                const dStr = d.toFixed(2);
+                const dStrInt = Math.floor(d).toString();
+                if (boundaryText.includes(dStr) || boundaryText.includes(dStrInt)) {
+                  score += 2;
+                } else {
+                  score -= 1;
+                }
+              }
+            });
+
+            if (score > maxScore) {
+              maxScore = score;
+              bestK = k;
             }
           }
-        }
 
-        const acceptedK = cogoVerifiedK >= 0 ? cogoVerifiedK : bestK;
+          let cogoVerifiedK = -1;
+          let lowestCogoError = Infinity;
+          const cogoMaxStrip = normalizedCourses.length - 3;
+          for (let ck = 1; ck <= cogoMaxStrip; ck++) {
+            const testCourses = normalizedCourses.slice(ck);
+            const testResult = tryCompute(testCourses, pob, units);
+            if (testResult && testResult.result && !testResult.error) {
+              const linErr = testResult.result.closure?.linearError ?? Infinity;
+              if (linErr < 2.0 && linErr < lowestCogoError) {
+                lowestCogoError = linErr;
+                cogoVerifiedK = ck;
+              }
+            }
+          }
+          if (cogoVerifiedK >= 0) {
+            console.log(`[DeedTextSolver] COGO-verified commencement strip at k=${cogoVerifiedK}: lowest error=${lowestCogoError.toFixed(4)}ft — accepting.`);
+          }
 
-        // Only split if the best split point is between 1 and courses.length - 2
-        // and we have a positive/significant match score.
-        if (acceptedK > 0 && acceptedK < normalizedCourses.length) {
-          console.log(`[DeedTextSolver] Commencement split at index ${acceptedK}${cogoVerifiedK >= 0 ? ' (COGO-verified)' : ' (text-match)'}: moving first ${acceptedK} courses to commencement.`);
-          const commSegs = normalizedCourses.slice(0, acceptedK);
-          const boundSegs = normalizedCourses.slice(acceptedK);
-          normalizedCourses = boundSegs;
-          commencementSegments = [...cleanComm, ...commSegs];
+          const acceptedK = cogoVerifiedK >= 0 ? cogoVerifiedK : bestK;
+
+          if (acceptedK > 0 && acceptedK < normalizedCourses.length) {
+            console.log(`[DeedTextSolver] Commencement split at index ${acceptedK}: moving first ${acceptedK} courses to commencement.`);
+            const commSegs = normalizedCourses.slice(0, acceptedK);
+            const boundSegs = normalizedCourses.slice(acceptedK);
+            normalizedCourses = boundSegs;
+            commencementSegments = [...cleanComm, ...commSegs];
+          } else {
+            commencementSegments = cleanComm;
+          }
         } else {
           commencementSegments = cleanComm;
         }
-
       } else {
         commencementSegments = cleanComm;
       }
-    } else {
-      commencementSegments = cleanComm;
     }
+
+    const isOpenEnded = tOpenEnded === true || tOpenEnded === 'true';
+
+    return { name: tName, courses: normalizedCourses, pob, referencePointName, commencementSegments, isOpenEnded };
+  };
+
+  let tracts = [];
+  const rawTracts = root.Tracts || root.tracts;
+  if (Array.isArray(rawTracts) && rawTracts.length > 0) {
+    tracts = rawTracts.map((t, idx) => {
+      const tName = t.Name || t.name || `Tract ${idx + 1}`;
+      const tSegments = t.Segments || t.segments || t.courses || t.Courses || [];
+      const tPobRaw = t.POB || t.pob || t.PointOfBeginning || {};
+      const tRefName = t.ReferencePointName || t.referencePointName || null;
+      const tCommSegments = t.CommencementSegments || t.commencementSegments || [];
+      const tOpenEnded = t.IsOpenEnded ?? t.isOpenEnded ?? false;
+      return processSingleTractData(tName, tSegments, tPobRaw, tRefName, tCommSegments, tOpenEnded);
+    });
+  } else {
+    const tName = root.Name || root.name || "Tract 1";
+    const tSegments = root.Segments || root.segments || root.courses || root.Courses || [];
+    const tPobRaw = root.POB || root.pob || root.PointOfBeginning || {};
+    const tRefName = root.ReferencePointName || root.referencePointName || null;
+    const tCommSegments = root.CommencementSegments || root.commencementSegments || [];
+    const tOpenEnded = root.IsOpenEnded ?? root.isOpenEnded ?? false;
+    tracts = [processSingleTractData(tName, tSegments, tPobRaw, tRefName, tCommSegments, tOpenEnded)];
   }
 
-  const isOpenEnded = root.IsOpenEnded === true || root.isOpenEnded === true || root.isOpenEnded === 'true';
-
-  return { courses: normalizedCourses, pob, units, referencePointName, commencementSegments, isOpenEnded };
+  const firstTract = tracts[0];
+  return {
+    tracts,
+    units,
+    courses: firstTract.courses,
+    pob: firstTract.pob,
+    referencePointName: firstTract.referencePointName,
+    commencementSegments: firstTract.commencementSegments,
+    isOpenEnded: firstTract.isOpenEnded
+  };
 }
 
 // ── Deterministic COGO repair ─────────────────────────────────────────────────
@@ -562,8 +583,47 @@ function flipNS(bearing) {
 
 
 function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencementSegments = []) {
-  const courses = traverseSvc.resolveDeflectionAngles(rawCourses);
+  let courses = traverseSvc.resolveDeflectionAngles(rawCourses);
   const steps = [];
+
+  // Evaluate synthesized curve chord bearings vs explicit chord bearings
+  let hasCandidates = false;
+  const synthCourses = courses.map(c => {
+    if (c.type?.toLowerCase() === 'curve') {
+      const dir = (c.curveDirection || c.direction || '').toLowerCase().trim();
+      const hasDir = dir === 'left' || dir === 'right';
+      const hasBrg = c.chordBearing || c.bearing;
+      const hasParams = (c.delta != null && c.delta !== '') ||
+                        (c.radius != null && c.radius !== '' && c.arcLength != null && c.arcLength !== '') ||
+                        (c.radius != null && c.radius !== '' && c.chordDistance != null && c.chordDistance !== '');
+      if (hasBrg && hasDir && hasParams) {
+        hasCandidates = true;
+        const copy = { ...c };
+        delete copy.chordBearing;
+        delete copy.bearing;
+        return copy;
+      }
+    }
+    return c;
+  });
+
+  if (hasCandidates) {
+    const { result: rA } = tryCompute(courses, pob, units, isOpenEnded, commencementSegments);
+    const { result: rB } = tryCompute(synthCourses, pob, units, isOpenEnded, commencementSegments);
+    if (rB && rB.closure && !rB.error) {
+      const errA = rA && rA.closure ? rA.closure.linearError : Infinity;
+      const errB = rB.closure.linearError;
+      console.log(`[DeedTextSolver] Curve Synthesis comparison: Explicit error = ${errA.toFixed(4)}ft, Synthesized error = ${errB.toFixed(4)}ft`);
+      if (errB < 2.0 && (errA > 2.0 || errB < errA - 1.0 || isNaN(errA))) {
+        console.log(`[DeedTextSolver] Accepting tangent-synthesized curve parameters (error improved to ${errB.toFixed(4)}ft).`);
+        courses = rB.courses;
+        steps.push({
+          hypothesis: 'CURVE_TANGENT_SYNTHESIS',
+          note: `Synthesized curve bearings improved linear error from ${errA.toFixed(2)}ft to ${errB.toFixed(2)}ft`
+        });
+      }
+    }
+  }
 
   // ── Step 1: Detect and flag anomalies ────────────────────────────────────
   const anomalies = [];
@@ -611,6 +671,57 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
 
   function isSensible(testSolved) {
     return testSolved.every(c => !c.distance || c.distance <= maxKnown * 1.25);
+  }
+
+  // ── Step 2.5: Transposition Scrivener Repair ──────────────────────────
+  for (let i = 0; i < courses.length; i++) {
+    const c = courses[i];
+    
+    // Test distance transpositions (e.g. 105.25 instead of 150.25)
+    if (c.distance != null && !c.isUnknown) {
+      const distVariants = generateDistanceTranspositions(c.distance);
+      for (const newDist of distVariants) {
+        const test = courses.map((x, j) =>
+          j === i ? { ...x, distance: newDist } : { ...x }
+        );
+        const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
+        const { result: rT } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
+        const rTBowtie = rT && (rT.areaAcres == null || rT.areaAcres < 0.0001) && !isOpenEnded;
+        if (rT && isPassing(rT) && !rTBowtie && isSensible(testSolved)) {
+          steps.push({
+            hypothesis: 'DISTANCE_TRANSPOSITION_REPAIR',
+            courseIndex: i,
+            originalDistance: c.distance,
+            correctedDistance: newDist
+          });
+          console.log(`[DeedTextSolver] Scrivener Repair: Corrected transposed distance on course ${i + 1} from ${c.distance} to ${newDist}`);
+          return { courses: rT.courses || testSolved, result: rT, steps };
+        }
+      }
+    }
+
+    // Test bearing transpositions (e.g. N45°10'22"E instead of N45°22'10"E)
+    if (c.bearing && !c.isUnknown) {
+      const bearingVariants = generateBearingTranspositions(c.bearing);
+      for (const newBrg of bearingVariants) {
+        const test = courses.map((x, j) =>
+          j === i ? { ...x, bearing: newBrg } : { ...x }
+        );
+        const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
+        const { result: rT } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
+        const rTBowtie = rT && (rT.areaAcres == null || rT.areaAcres < 0.0001) && !isOpenEnded;
+        if (rT && isPassing(rT) && !rTBowtie && isSensible(testSolved)) {
+          steps.push({
+            hypothesis: 'BEARING_TRANSPOSITION_REPAIR',
+            courseIndex: i,
+            originalBearing: c.bearing,
+            correctedBearing: newBrg
+          });
+          console.log(`[DeedTextSolver] Scrivener Repair: Corrected transposed bearing on course ${i + 1} from ${c.bearing} to ${newBrg}`);
+          return { courses: rT.courses || testSolved, result: rT, steps };
+        }
+      }
+    }
   }
 
   // Step 3: Single flip — try EW-only, NS-only, and full quadrant per course
@@ -941,84 +1052,85 @@ export async function solveDeedText(deedText, model, options = {}) {
     throw new Error(`Failed to parse LLM JSON output: ${ex.message}. Raw: ${rawResponse.substring(0, 300)}`);
   }
 
-  if (!extraction.courses || extraction.courses.length === 0) {
+  if (!extraction.tracts || extraction.tracts.length === 0) {
     throw new Error('LLM returned no courses. The deed text may not contain a traversable boundary.');
   }
 
-  // Override POB if LLM found explicit coordinates in the deed
-  if (extraction.pob.northing !== 5000 || extraction.pob.easting !== 5000) {
-    pob.northing = extraction.pob.northing;
-    pob.easting  = extraction.pob.easting;
-  }
+  console.log(`[DeedTextSolver] Phase 3: Solving and repairing ${extraction.tracts.length} tracts independently...`);
 
-  const originalCourses = extraction.courses.map(c => ({ ...c }));
-  console.log(`[DeedTextSolver] Phase 2: Extracted ${extraction.courses.length} courses.`);
+  const solvedTracts = extraction.tracts.map((tract, tIdx) => {
+    const tractPob = {
+      northing: tIdx === 0 && (extraction.pob.northing !== 5000 || extraction.pob.easting !== 5000) ? extraction.pob.northing : (tract.pob?.northing ?? pob.northing),
+      easting:  tIdx === 0 && (extraction.pob.northing !== 5000 || extraction.pob.easting !== 5000) ? extraction.pob.easting : (tract.pob?.easting ?? pob.easting),
+    };
 
-  const actualOpenEnded = options.isOpenEnded ?? extraction.isOpenEnded ?? false;
+    const originalCourses = tract.courses.map(c => ({ ...c }));
+    const actualOpenEnded = options.isOpenEnded ?? tract.isOpenEnded ?? false;
 
-  // ── Phase 3: COGO repair — all math, zero LLM involvement ────────────────
-  console.log(`[DeedTextSolver] Phase 3: Running deterministic COGO repair...`);
-  const processedCourses = preprocessZeroLengthCourses(extraction.courses);
-  const { courses: repairedCourses, result, steps } = repairCourses(processedCourses, pob, units, actualOpenEnded);
+    const processedCourses = preprocessZeroLengthCourses(tract.courses);
+    const { courses: repairedCourses, result, steps } = repairCourses(
+      processedCourses,
+      tractPob,
+      units,
+      actualOpenEnded,
+      tract.commencementSegments
+    );
 
-  const passed = result && isPassing(result);
+    const passed = result && isPassing(result);
+    const correctionTable = buildCorrectionTable(originalCourses, repairedCourses, steps);
+    const legalDescription = writeLegalDescription(originalCourses, repairedCourses, result, tractPob, units, steps, actualOpenEnded);
+
+    const hypotheses = steps.map(s => s.hypothesis).filter(Boolean);
+    const primaryHypothesis = hypotheses[0] || 'NONE';
+
+    // Confidence score
+    let trustScore = 100;
+    if (!passed) trustScore -= 40;
+    const inventedBearings = correctionTable.filter(c => c.status === 'SOLVED-BY-INVERSE').length;
+    const correctedBearings = correctionTable.filter(c => c.status === 'CORRECTED').length;
+    if (inventedBearings > 1) trustScore -= 15;
+    if (correctedBearings > 2) trustScore -= 20;
+    if (result?.areaAcres != null && result.areaAcres < 0.01 && !actualOpenEnded) trustScore -= 25;
+    trustScore = Math.max(0, Math.min(100, trustScore));
+    const trustLevel = trustScore >= 80 ? 'HIGH' : trustScore >= 55 ? 'MEDIUM' : 'LOW';
+
+    return {
+      name: tract.name || `Tract ${tIdx + 1}`,
+      status: passed ? 'PASS' : 'FAIL',
+      originalCourses,
+      pob: tractPob,
+      units,
+      referencePointName: tract.referencePointName || null,
+      commencementSegments: tract.commencementSegments || [],
+      isOpenEnded: actualOpenEnded,
+      repairedCourses,
+      correctionTable,
+      steps,
+      primaryHypothesis,
+      traverse: result ? {
+        stations: result.stations,
+        adjustedStations: result.adjustedStations,
+        closure: result.closure,
+        perimeter: result.perimeter,
+        areaAcres: result.areaAcres,
+        areaSqFt: result.areaSqFt,
+      } : null,
+      trustScore,
+      trustLevel,
+      legalDescription,
+    };
+  });
+
+  const firstTract = solvedTracts[0];
   const elapsedMs = Date.now() - startTime;
 
-  console.log(`[DeedTextSolver] Done. Status: ${passed ? 'PASS' : 'FAIL'} | Elapsed: ${elapsedMs}ms`);
-
-  // ── Phase 4: Build output ─────────────────────────────────────────────────
-  const correctionTable = buildCorrectionTable(originalCourses, repairedCourses, steps);
-  const legalDescription = writeLegalDescription(originalCourses, repairedCourses, result, pob, units, steps, actualOpenEnded);
-
-  const hypotheses = steps.map(s => s.hypothesis).filter(Boolean);
-  const primaryHypothesis = hypotheses[0] || 'NONE';
-
-  // ── Confidence score ──────────────────────────────────────────────────────
-  let trustScore = 100;
-  if (!passed) trustScore -= 40;
-  const inventedBearings = correctionTable.filter(c => c.status === 'SOLVED-BY-INVERSE').length;
-  const correctedBearings = correctionTable.filter(c => c.status === 'CORRECTED').length;
-  if (inventedBearings > 1) trustScore -= 15;
-  if (correctedBearings > 2) trustScore -= 20;
-  if (result?.areaAcres != null && result.areaAcres < 0.01 && !actualOpenEnded) trustScore -= 25;
-  trustScore = Math.max(0, Math.min(100, trustScore));
-  const trustLevel = trustScore >= 80 ? 'HIGH' : trustScore >= 55 ? 'MEDIUM' : 'LOW';
+  console.log(`[DeedTextSolver] Done. Solved ${solvedTracts.length} tracts. Status of first tract: ${firstTract.status} | Elapsed: ${elapsedMs}ms`);
 
   return {
-    status: passed ? 'PASS' : 'FAIL',
+    ...firstTract,
     model,
     elapsedMs,
-
-    // Extraction
-    originalCourses,
-    pob,
-    units,
-    referencePointName: extraction.referencePointName || null,
-    commencementSegments: extraction.commencementSegments || [],
-    isOpenEnded: actualOpenEnded,
-
-    // Repair
-    repairedCourses,
-    correctionTable,
-    steps,
-    primaryHypothesis,
-
-    // COGO results
-    traverse: result ? {
-      stations: result.stations,
-      adjustedStations: result.adjustedStations,
-      closure: result.closure,
-      perimeter: result.perimeter,
-      areaAcres: result.areaAcres,
-      areaSqFt: result.areaSqFt,
-    } : null,
-
-    // Trust
-    trustScore,
-    trustLevel,
-
-    // Final output
-    legalDescription,
+    tracts: solvedTracts,
   };
 }
 
@@ -1357,3 +1469,77 @@ export async function listAvailableModels() {
   });
   return models;
 }
+
+function generateDistanceTranspositions(dist) {
+  if (dist == null || dist <= 0) return [];
+  const s = dist.toString();
+  const variants = new Set();
+  
+  for (let i = 0; i < s.length - 1; i++) {
+    if (!/\d/.test(s[i]) || !/\d/.test(s[i + 1])) continue;
+    if (s[i] === s[i + 1]) continue;
+    const chars = s.split('');
+    const temp = chars[i];
+    chars[i] = chars[i + 1];
+    chars[i + 1] = temp;
+    const v = parseFloat(chars.join(''));
+    if (!isNaN(v) && v > 0) {
+      variants.add(v);
+    }
+  }
+  return Array.from(variants);
+}
+
+function generateBearingTranspositions(bearing) {
+  if (!bearing) return [];
+  const variants = new Set();
+  
+  const match = /([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*([EWew])?/i.exec(bearing);
+  if (match) {
+    const ns = match[1];
+    const degStr = match[2];
+    const minStr = match[3];
+    const secStr = match[4];
+    const ew = match[5] || '';
+
+    if (degStr.length > 1) {
+      for (let i = 0; i < degStr.length - 1; i++) {
+        const dChars = degStr.split('');
+        const tmp = dChars[i];
+        dChars[i] = dChars[i + 1];
+        dChars[i + 1] = tmp;
+        const newDeg = dChars.join('');
+        variants.add(`${ns}${newDeg}°${minStr}'${secStr}"${ew}`);
+      }
+    }
+    if (minStr.length > 1) {
+      for (let i = 0; i < minStr.length - 1; i++) {
+        const mChars = minStr.split('');
+        const tmp = mChars[i];
+        mChars[i] = mChars[i + 1];
+        mChars[i + 1] = tmp;
+        const newMin = mChars.join('');
+        variants.add(`${ns}${degStr}°${newMin}'${secStr}"${ew}`);
+      }
+    }
+    const secInt = secStr.split('.')[0];
+    if (secInt.length > 1) {
+      for (let i = 0; i < secInt.length - 1; i++) {
+        const sChars = secInt.split('');
+        const tmp = sChars[i];
+        sChars[i] = sChars[i + 1];
+        sChars[i + 1] = tmp;
+        const newSec = sChars.join('') + (secStr.includes('.') ? '.' + secStr.split('.')[1] : '');
+        variants.add(`${ns}${degStr}°${minStr}'${newSec}"${ew}`);
+      }
+    }
+    if (degStr !== minStr) {
+      variants.add(`${ns}${minStr}°${degStr}'${secStr}"${ew}`);
+    }
+    if (minStr !== secStr) {
+      variants.add(`${ns}${degStr}°${secStr}'${minStr}"${ew}`);
+    }
+  }
+  return Array.from(variants);
+}
+

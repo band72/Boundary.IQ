@@ -30,20 +30,24 @@ router.post('/generate', (req, res) => {
 
 function normalizeCourses(arr) {
   return arr.map(c => ({
-    type: c.type ?? c.Type ?? 'Line',
-    bearing: c.bearing ?? c.Bearing ?? null,
-    distance: c.distance ?? c.Distance ?? null,
-    delta: c.delta ?? c.Delta ?? null,
-    radius: c.radius ?? c.Radius ?? null,
-    arcLength: c.arcLength ?? c.ArcLength ?? null,
-    curveDirection: c.curveDirection ?? c.CurveDirection ?? c.Direction ?? null,
-    chordBearing: c.chordBearing ?? c.ChordBearing ?? null,
-    chordDistance: c.chordDistance ?? c.ChordDistance ?? null,
-    isUnknown: c.isUnknown ?? c.IsUnknown ?? false,
-    description: c.description ?? c.Description ?? null,
-    subConnector: c.subConnector ?? c.SubConnector ?? null,
-    subFeature: c.subFeature ?? c.SubFeature ?? null,
-    subDirection: c.subDirection ?? c.SubDirection ?? null,
+    type:               c.type               ?? c.Type               ?? 'Line',
+    bearing:            c.bearing            ?? c.Bearing            ?? null,
+    distance:           c.distance           ?? c.Distance           ?? null,
+    delta:              c.delta              ?? c.Delta              ?? null,
+    radius:             c.radius             ?? c.Radius             ?? null,
+    arcLength:          c.arcLength          ?? c.ArcLength          ?? null,
+    curveDirection:     c.curveDirection     ?? c.CurveDirection     ?? c.Direction ?? null,
+    chordBearing:       c.chordBearing       ?? c.ChordBearing       ?? null,
+    chordDistance:      c.chordDistance      ?? c.ChordDistance      ?? null,
+    isUnknown:          c.isUnknown          ?? c.IsUnknown          ?? false,
+    description:        c.description        ?? c.Description        ?? null,
+    subConnector:       c.subConnector       ?? c.SubConnector       ?? null,
+    subFeature:         c.subFeature         ?? c.SubFeature         ?? null,
+    subDirection:       c.subDirection       ?? c.SubDirection       ?? null,
+    // FIX #5: preserve deflection-angle fields so resolveDeflectionAngles()
+    // in traverse.js can synthesise a proper bearing from them.
+    deflectionAngle:    c.deflectionAngle    ?? c.DeflectionAngle    ?? null,
+    deflectionDirection:c.deflectionDirection?? c.DeflectionDirection?? null,
   }));
 }
 

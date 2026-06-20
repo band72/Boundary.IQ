@@ -137,10 +137,23 @@ function formatBearing(raw) {
   return `${ns} ${mid} ${ew}`;
 }
 
+/**
+ * Format decimal degrees as a surveyor DMS string.
+ *
+ * FIX #4: traverse.js writes delta as `dDeg.toFixed(6)` — a plain decimal-degrees
+ * value (e.g. 93.385278°).  The previous implementation wrongly treated this as
+ * packed DMS (DDD.MMSS), converting 93.385278 → 93°38'52.78" instead of the
+ * correct 93°23'06.99".
+ *
+ * This version always interprets `dms` as decimal degrees and converts properly.
+ * Strings are parsed with parseFloat() so callers may pass either a number or
+ * the string produced by toFixed(6).
+ */
 function formatDMS(dms) {
-  const d = Math.floor(Math.abs(dms));
-  const rem = (Math.abs(dms) - d) * 100;
-  const m = Math.floor(rem);
-  const s = (rem - m) * 100;
-  return `${String(d).padStart(2, '0')}°${String(m).padStart(2, '0')}'${s.toFixed(2).padStart(5, '0')}"`;
+  const decDeg = Math.abs(parseFloat(dms) || 0);
+  const d = Math.floor(decDeg);
+  const minFrac = (decDeg - d) * 60;
+  const m = Math.floor(minFrac);
+  const s = (minFrac - m) * 60;
+  return `${String(d).padStart(2, '0')}\u00b0${String(m).padStart(2, '0')}'${s.toFixed(2).padStart(5, '0')}"`;
 }

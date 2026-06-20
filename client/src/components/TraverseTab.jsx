@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../hooks/useToast';
 import TraverseMap from './TraverseMap';
 import PrintBlueprint from './PrintBlueprint';
+import ExportModal from './ExportModal';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { API } from '../config';
+import { previewDeedText, deedPreviewSummary } from '../utils/deedParser.js';
 
 const BLANK_COURSE = { type: 'Line', bearing: '', distance: '', curveDirection: 'Right', delta: '', radius: '', arcLength: '', chordBearing: '', chordDistance: '' };
 const EXAMPLE_COURSES = [
@@ -54,6 +56,164 @@ function computeLinearError(courseList, pobN, pobE) {
   return Math.sqrt(errN * errN + errE * errE);
 }
 
+function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
+  const course = courses[index];
+  const [type, setType] = useState('Line');
+  const [bearing, setBearing] = useState('');
+  const [distance, setDistance] = useState('');
+  const [curveDirection, setCurveDirection] = useState('Right');
+  const [delta, setDelta] = useState('');
+  const [radius, setRadius] = useState('');
+  const [arcLength, setArcLength] = useState('');
+  const [chordBearing, setChordBearing] = useState('');
+  const [chordDistance, setChordDistance] = useState('');
+
+  useEffect(() => {
+    if (course) {
+      setType(course.type || 'Line');
+      setBearing(course.bearing || '');
+      setDistance(course.distance != null ? String(course.distance) : '');
+      setCurveDirection(course.curveDirection || 'Right');
+      setDelta(course.delta != null ? String(course.delta) : '');
+      setRadius(course.radius != null ? String(course.radius) : '');
+      setArcLength(course.arcLength != null ? String(course.arcLength) : '');
+      setChordBearing(course.chordBearing || '');
+      setChordDistance(course.chordDistance != null ? String(course.chordDistance) : '');
+    }
+  }, [course, index]);
+
+  if (index === null || !course) return null;
+
+  const handleSave = () => {
+    const updated = [...courses];
+    updated[index] = {
+      ...BLANK_COURSE,
+      type,
+      bearing: type === 'Line' ? bearing : null,
+      distance: type === 'Line' && distance !== '' ? distance : null,
+      curveDirection: type === 'Curve' ? curveDirection : null,
+      delta: type === 'Curve' && delta !== '' ? delta : null,
+      radius: type === 'Curve' && radius !== '' ? radius : null,
+      arcLength: type === 'Curve' && arcLength !== '' ? arcLength : null,
+      chordBearing: type === 'Curve' ? chordBearing : null,
+      chordDistance: type === 'Curve' && chordDistance !== '' ? chordDistance : null,
+    };
+    onSave(updated);
+  };
+
+  return (
+    <>
+      <div className="course-drawer-backdrop open" onClick={onClose} />
+      <div className="course-drawer open">
+        <div className="course-drawer-header">
+          <h3>✏️ Edit Course #{index + 1}</h3>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} style={{ color: '#fff', fontSize: '1.2rem' }}>✕</button>
+        </div>
+        <div className="course-drawer-body">
+          <div className="form-group">
+            <label className="form-label">Course Type</label>
+            <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
+              <option value="Line">Line</option>
+              <option value="Curve">Curve</option>
+            </select>
+          </div>
+
+          {type === 'Line' ? (
+            <>
+              <div className="form-group">
+                <label className="form-label">Bearing</label>
+                <input
+                  type="text"
+                  value={bearing}
+                  onChange={e => setBearing(e.target.value)}
+                  placeholder={"e.g. N45°22'10\"E"}
+                  style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Distance</label>
+                <input
+                  type="number"
+                  value={distance}
+                  onChange={e => setDistance(e.target.value)}
+                  placeholder="Distance in feet/meters"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-group">
+                <label className="form-label">Curve Direction</label>
+                <select value={curveDirection} onChange={e => setCurveDirection(e.target.value)} style={{ width: '100%', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
+                  <option value="Left">Left</option>
+                  <option value="Right">Right</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Radius</label>
+                <input
+                  type="number"
+                  value={radius}
+                  onChange={e => setRadius(e.target.value)}
+                  placeholder="Radius"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Delta (DMS or Degrees)</label>
+                <input
+                  type="text"
+                  value={delta}
+                  onChange={e => setDelta(e.target.value)}
+                  placeholder={"e.g. 93°12'00\" or 93.2"}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Arc Length</label>
+                <input
+                  type="number"
+                  value={arcLength}
+                  onChange={e => setArcLength(e.target.value)}
+                  placeholder="Arc Length"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Chord Bearing</label>
+                <input
+                  type="text"
+                  value={chordBearing}
+                  onChange={e => setChordBearing(e.target.value)}
+                  placeholder={"e.g. S16°38'52\"E"}
+                  style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Chord Distance</label>
+                <input
+                  type="number"
+                  value={chordDistance}
+                  onChange={e => setChordDistance(e.target.value)}
+                  placeholder="Chord Distance"
+                />
+              </div>
+            </>
+          )}
+        </div>
+        <div className="course-drawer-footer">
+          <button className="btn btn-danger btn-sm" onClick={() => onDelete(index)} style={{ marginRight: 'auto' }}>
+            🗑 Delete Course
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={handleSave}>
+            Save &amp; Compute
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function TraverseTab() {
   const [pob, setPob] = useLocalStorage('boundaryiq_traverse_pob', { northing: '5000.00', easting: '5000.00' });
   const [units, setUnits] = useLocalStorage('boundaryiq_traverse_units', 'Feet');
@@ -66,6 +226,11 @@ export default function TraverseTab() {
   const [typoHint, setTypoHint] = useState(null);
   const { showToast, ToastPortal } = useToast();
 
+  // ── Segment Selection/Hovering & Active Tract ────────────────────────────────
+  const [selectedCourseIndex, setSelectedCourseIndex] = useState(null);
+  const [hoveredCourseIndex, setHoveredCourseIndex] = useState(null);
+  const [activeTractIndex, setActiveTractIndex] = useState(0);
+
   // ── Fix Deed Text state ────────────────────────────────────────────────────
   const [fixDeedText, setFixDeedText] = useState('');
   const [fixDeedLoading, setFixDeedLoading] = useState(false);
@@ -73,9 +238,24 @@ export default function TraverseTab() {
   const [fixDeedError, setFixDeedError] = useState('');
   const [fixDeedOpen, setFixDeedOpen] = useState(false);
 
+  // ── Feature 1: Bowditch Adjustment Toggle ─────────────────────────────────
+  const [showAdjusted, setShowAdjusted] = useState(true);
+
+  // ── Feature 3: Georeferencing ─────────────────────────────────────────────
+  const [georef, setGeoref] = useLocalStorage('boundaryiq_georef', {
+    pobLat: '', pobLng: '', rotationDeg: '0', scaleFactor: '1.000',
+  });
+  const [georefOpen, setGeorefOpen] = useState(false);
+
+  // ── Feature 5: Export Modal ───────────────────────────────────────────────
+  const [showExport, setShowExport] = useState(false);
+
+  // ── Live deed preview (Feature 2) ─────────────────────────────────────────
+  const deedPreview = useMemo(() => previewDeedText(fixDeedText), [fixDeedText]);
+  const deedPreviewStr = useMemo(() => deedPreviewSummary(deedPreview), [deedPreview]);
+
   // ── Typo Assist: run after every failed result ────────────────────────────────────
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTypoHint(null);
     if (!result || result.closure?.status?.startsWith('✓')) return;
     const pobN = parseFloat(pob.northing);
@@ -100,19 +280,20 @@ export default function TraverseTab() {
   const removeCourse = i => setCourses(c => c.filter((_, idx) => idx !== i));
   const updateCourse = (i, field, val) => setCourses(c => c.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
-  const compute = async () => {
-    setLoading(true); setError(''); setResult(null);
+  const compute = async (overrideCourses) => {
+    setLoading(true); setError('');
     try {
+      const targetCourses = overrideCourses || courses;
       const body = {
         pointOfBeginning: { northing: parseFloat(pob.northing), easting: parseFloat(pob.easting) },
         units,
         isOpenEnded,
-        courses: courses.map(c => ({
+        courses: targetCourses.map(c => ({
           type: c.type,
           bearing: c.type === 'Line' ? c.bearing : null,
-          distance: c.type === 'Line' ? parseFloat(c.distance) : null,
-          delta: c.type === 'Curve' ? parseFloat(c.delta) : null,
-          radius: c.type === 'Curve' ? parseFloat(c.radius) : null,
+          distance: c.type === 'Line' && c.distance ? parseFloat(c.distance) : null,
+          delta: c.type === 'Curve' && c.delta ? parseFloat(c.delta) : null,
+          radius: c.type === 'Curve' && c.radius ? parseFloat(c.radius) : null,
           arcLength: c.type === 'Curve' && c.arcLength ? parseFloat(c.arcLength) : null,
           curveDirection: c.type === 'Curve' ? c.curveDirection : null,
           chordBearing: c.type === 'Curve' ? c.chordBearing : null,
@@ -128,7 +309,30 @@ export default function TraverseTab() {
         const err = await res.json();
         throw new Error(err.error || `Server error ${res.status}`);
       }
-      setResult(await res.json());
+      const data = await res.json();
+      
+      if (result && result.tracts && result.tracts.length > 0) {
+        const updatedTracts = [...result.tracts];
+        updatedTracts[activeTractIndex] = {
+          ...updatedTracts[activeTractIndex],
+          originalCourses: [...body.courses],
+          repairedCourses: targetCourses.map(c => ({ ...c })),
+          traverse: data,
+          status: data.closure?.linearError < 10.0 ? 'PASS' : 'FAIL',
+        };
+        setResult({
+          ...result,
+          ...updatedTracts[activeTractIndex],
+          tracts: updatedTracts,
+          stations: data.stations || [],
+          adjustedStations: data.adjustedStations || [],
+          closure: data.closure || null,
+          perimeter: data.perimeter || 0,
+          areaAcres: data.areaAcres || 0,
+        });
+      } else {
+        setResult(data);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -164,19 +368,38 @@ export default function TraverseTab() {
   };
 
   const applyFixedCourses = () => {
-    if (!fixDeedResult?.repairedCourses) return;
-    const newCourses = fixDeedResult.repairedCourses.map(c => ({
-      ...{ ...BLANK_COURSE },
-      type: c.type || 'Line',
-      bearing: c.bearing || '',
-      distance: c.distance != null ? String(c.distance) : '',
-    }));
-    setCourses(newCourses);
-    // Also update POB from deed if available
-    if (fixDeedResult.pob) {
-      setPob({ northing: String(fixDeedResult.pob.northing), easting: String(fixDeedResult.pob.easting) });
+    if (!fixDeedResult) return;
+    
+    if (fixDeedResult.tracts && fixDeedResult.tracts.length > 0) {
+      setResult(fixDeedResult);
+      setActiveTractIndex(0);
+      const firstT = fixDeedResult.tracts[0];
+      setCourses((firstT.originalCourses || firstT.courses || []).map(c => ({
+        ...BLANK_COURSE,
+        ...c,
+        distance: c.distance != null ? String(c.distance) : '',
+        radius: c.radius != null ? String(c.radius) : '',
+        arcLength: c.arcLength != null ? String(c.arcLength) : '',
+        chordDistance: c.chordDistance != null ? String(c.chordDistance) : '',
+      })));
+      if (firstT.pob) {
+        setPob({ northing: String(firstT.pob.northing), easting: String(firstT.pob.easting) });
+      }
+    } else {
+      const newCourses = (fixDeedResult.repairedCourses || []).map(c => ({
+        ...BLANK_COURSE,
+        ...c,
+        distance: c.distance != null ? String(c.distance) : '',
+        radius: c.radius != null ? String(c.radius) : '',
+        arcLength: c.arcLength != null ? String(c.arcLength) : '',
+        chordDistance: c.chordDistance != null ? String(c.chordDistance) : '',
+      }));
+      setCourses(newCourses);
+      if (fixDeedResult.pob) {
+        setPob({ northing: String(fixDeedResult.pob.northing), easting: String(fixDeedResult.pob.easting) });
+      }
+      setResult(null);
     }
-    setResult(null);
     setFixDeedOpen(false);
     setFixDeedResult(null);
     setFixDeedText('');
@@ -186,6 +409,66 @@ export default function TraverseTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* ── Tract Switcher ────────────────────────────────────────────── */}
+      {result && result.tracts && result.tracts.length > 1 && (
+        <div className="card" style={{ padding: '0.75rem 1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>📍 Active Tract:</span>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {result.tracts.map((tract, idx) => {
+                const isActive = idx === activeTractIndex;
+                const isTractPassing = tract.status === 'PASS' || (tract.traverse?.closure?.linearError != null && tract.traverse.closure.linearError < 10.0);
+                return (
+                  <button
+                    key={idx}
+                    className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{
+                      fontWeight: 600,
+                      border: isActive ? 'none' : '1px solid var(--border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                    }}
+                    onClick={() => {
+                      setActiveTractIndex(idx);
+                      const targetTract = result.tracts[idx];
+                      const newCourses = (targetTract.repairedCourses || targetTract.originalCourses || targetTract.courses || []).map(c => ({
+                        ...BLANK_COURSE,
+                        ...c,
+                        distance: c.distance != null ? String(c.distance) : '',
+                        radius: c.radius != null ? String(c.radius) : '',
+                        arcLength: c.arcLength != null ? String(c.arcLength) : '',
+                        chordDistance: c.chordDistance != null ? String(c.chordDistance) : '',
+                      }));
+                      setCourses(newCourses);
+                      if (targetTract.pob) {
+                        setPob({ northing: String(targetTract.pob.northing), easting: String(targetTract.pob.easting) });
+                      }
+                      setIsOpenEnded(targetTract.isOpenEnded ?? false);
+                      setResult(prev => ({
+                        ...prev,
+                        ...targetTract,
+                      }));
+                    }}
+                  >
+                    <span>{tract.name || `Tract ${idx + 1}`}</span>
+                    <span style={{
+                      fontSize: '0.7rem',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      background: isTractPassing ? 'rgba(0, 200, 80, 0.2)' : 'rgba(255, 80, 80, 0.2)',
+                      color: isTractPassing ? 'var(--success)' : 'var(--danger)',
+                    }}>
+                      {isTractPassing ? '✓' : '✗'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Setup ───────────────────────────────────────────────────── */}
       <div className="card">
@@ -214,11 +497,21 @@ export default function TraverseTab() {
         </div>
       </div>
 
-      {/* ── Fix Deed Text ─────────────────────────────────────────────── */}
+      {/* ── Fix Deed Text (Feature 2: enhanced with live preview) ─────── */}
       <div className="card" style={{ borderColor: fixDeedOpen ? 'var(--accent)' : undefined }}>
         <div className="card-header" style={{ cursor: 'pointer' }} onClick={() => setFixDeedOpen(o => !o)}>
-          <div className="card-title">🔧 Fix Broken Deed Description</div>
+          <div className="card-title">🔧 Deed Text Parser</div>
           <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+            {deedPreviewStr && fixDeedOpen && (
+              <span style={{
+                fontSize: '0.72rem', fontWeight: 600,
+                padding: '2px 8px', borderRadius: 4,
+                background: 'rgba(61,127,255,0.12)',
+                color: 'var(--accent)', border: '1px solid rgba(61,127,255,0.25)',
+              }}>
+                {deedPreviewStr}
+              </span>
+            )}
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Paste raw deed text — auto-corrects errors &amp; loads courses
             </span>
@@ -365,6 +658,100 @@ export default function TraverseTab() {
         )}
       </div>
 
+      {/* ── Feature 3: Georeferencing Panel ──────────────────────────── */}
+      <div className="card" style={{ borderColor: georefOpen ? 'rgba(0,212,168,0.5)' : undefined }}>
+        <div
+          className="card-header"
+          style={{ cursor: 'pointer' }}
+          onClick={() => setGeorefOpen(o => !o)}
+        >
+          <div className="card-title">🌐 Georeference</div>
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+            {georef.pobLat && georef.pobLng ? (
+              <span style={{
+                fontSize: '0.72rem', fontWeight: 600,
+                padding: '2px 8px', borderRadius: 4,
+                background: 'rgba(0,212,168,0.1)',
+                color: '#00d4a8', border: '1px solid rgba(0,212,168,0.3)',
+              }}>
+                ✓ Georeferenced
+              </span>
+            ) : (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Set real-world position, rotation &amp; scale
+              </span>
+            )}
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{georefOpen ? '▲' : '▼'}</span>
+          </div>
+        </div>
+
+        {georefOpen && (
+          <div style={{ padding: '0 1rem 1rem' }}>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.75rem' }}>
+              Enter the WGS84 coordinates of your POB to produce real-world GeoJSON/KML output.
+              Rotation offsets grid-north to true-north; scale corrects ground-to-grid distortion.
+            </p>
+            <div className="grid-2" style={{ gap: '0.75rem' }}>
+              <div className="form-group">
+                <label className="form-label">POB Latitude</label>
+                <input
+                  id="georef-pob-lat"
+                  type="number" step="0.000001" placeholder="e.g. 30.267153"
+                  value={georef.pobLat}
+                  onChange={e => setGeoref(g => ({ ...g, pobLat: e.target.value }))}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">POB Longitude</label>
+                <input
+                  id="georef-pob-lng"
+                  type="number" step="0.000001" placeholder="e.g. -97.743061"
+                  value={georef.pobLng}
+                  onChange={e => setGeoref(g => ({ ...g, pobLng: e.target.value }))}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Rotation Offset (°)</label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    id="georef-rotation"
+                    type="range" min="-180" max="180" step="0.1"
+                    value={georef.rotationDeg}
+                    onChange={e => setGeoref(g => ({ ...g, rotationDeg: e.target.value }))}
+                    style={{ flex: 1 }}
+                  />
+                  <input
+                    type="number" step="0.1" min="-180" max="180"
+                    value={georef.rotationDeg}
+                    onChange={e => setGeoref(g => ({ ...g, rotationDeg: e.target.value }))}
+                    style={{ width: 72 }}
+                  />
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>°</span>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Scale Factor</label>
+                <input
+                  id="georef-scale"
+                  type="number" step="0.00001" min="0.0001" max="100"
+                  value={georef.scaleFactor}
+                  onChange={e => setGeoref(g => ({ ...g, scaleFactor: e.target.value }))}
+                  placeholder="1.000000"
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setGeoref({ pobLat: '', pobLng: '', rotationDeg: '0', scaleFactor: '1.000' })}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ── Course Entry ─────────────────────────────────────────────── */}
       <div className="card">
         <div className="card-header">
@@ -384,13 +771,18 @@ export default function TraverseTab() {
         </div>
 
         {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: '32px 80px 1fr 110px 36px', gap: '0.5rem', padding: '0 0.75rem 0.5rem', fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          <span>#</span><span>Type</span><span>Bearing / Chord Brg</span><span>Distance / Arc Len</span><span></span>
+        <div style={{ display: 'grid', gridTemplateColumns: '32px 80px 1fr 110px 72px', gap: '0.5rem', padding: '0 0.75rem 0.5rem', fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <span>#</span><span>Type</span><span>Bearing / Chord Brg</span><span>Distance / Arc Len</span><span>Actions</span>
         </div>
 
         <div className="course-list">
           {courses.map((c, i) => (
-            <div key={i} className="course-row">
+            <div
+              key={i}
+              className={`course-row${selectedCourseIndex === i ? ' active' : ''}${hoveredCourseIndex === i ? ' hovered' : ''}`}
+              onMouseEnter={() => setHoveredCourseIndex(i)}
+              onMouseLeave={() => setHoveredCourseIndex(null)}
+            >
               <span className="course-num">{i + 1}</span>
               <select value={c.type} onChange={e => updateCourse(i, 'type', e.target.value)}>
                 <option>Line</option>
@@ -407,7 +799,7 @@ export default function TraverseTab() {
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
                     <input type="text" placeholder="Chord Bearing" value={c.chordBearing}
-                      onChange={e => updateCourse(i, 'chordBearing', e.target.value)} />
+                       onChange={e => updateCourse(i, 'chordBearing', e.target.value)} />
                     <input type="number" placeholder="Delta (DMS)" value={c.delta}
                       onChange={e => updateCourse(i, 'delta', e.target.value)} />
                     <input type="number" placeholder="Radius" value={c.radius}
@@ -417,7 +809,23 @@ export default function TraverseTab() {
                     onChange={e => updateCourse(i, 'chordDistance', e.target.value)} />
                 </>
               )}
-              <button className="btn btn-danger btn-icon btn-sm" onClick={() => removeCourse(i)}>✕</button>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <button
+                  className="btn btn-ghost btn-icon btn-sm"
+                  title="Edit in Drawer"
+                  onClick={() => setSelectedCourseIndex(i)}
+                  style={{ fontSize: '0.85rem', width: 28, height: 28, minWidth: 28, padding: 0 }}
+                >
+                  ✏️
+                </button>
+                <button
+                  className="btn btn-danger btn-icon btn-sm"
+                  onClick={() => removeCourse(i)}
+                  style={{ width: 28, height: 28, minWidth: 28, padding: 0 }}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -435,13 +843,38 @@ export default function TraverseTab() {
       {/* ── Results ──────────────────────────────────────────────────── */}
       {result && (
         <>
-          {/* Closure Summary */}
+          {/* Closure Summary — Feature 1: Bowditch toggle + Feature 5: Export button */}
           <div className="card">
             <div className="card-header">
               <div className="card-title">📊 Closure Report</div>
-              <span className={`status-badge ${isPassing ? 'pass' : 'fail'}`}>
-                {isPassing ? '✓ Passes' : '✗ Fails'} &nbsp;{result.closure.precisionRatio}
-              </span>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Feature 1 – Bowditch toggle */}
+                {result.adjustedStations?.length > 0 && (
+                  <button
+                    id="bowditch-toggle-btn"
+                    className={`btn btn-sm ${showAdjusted ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setShowAdjusted(v => !v)}
+                    title={showAdjusted ? 'Showing Compass-Rule adjusted traverse' : 'Showing raw unadjusted traverse'}
+                    style={{ fontSize: '0.72rem', fontWeight: 600 }}
+                  >
+                    {showAdjusted ? '🧭 Bowditch ON' : '🧭 Bowditch OFF'}
+                  </button>
+                )}
+                {/* Feature 5 – Export */}
+                {isPassing && (
+                  <button
+                    id="export-btn"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowExport(true)}
+                    style={{ fontSize: '0.72rem' }}
+                  >
+                    📤 Export
+                  </button>
+                )}
+                <span className={`status-badge ${isPassing ? 'pass' : 'fail'}`}>
+                  {isPassing ? '✓ Passes' : '✗ Fails'} &nbsp;{result.closure.precisionRatio}
+                </span>
+              </div>
             </div>
             <div className="closure-grid">
               <div className="closure-stat">
@@ -469,6 +902,51 @@ export default function TraverseTab() {
                 <div className="value neutral">{result.areaAcres.toFixed(4)} ac</div>
               </div>
             </div>
+            {/* Feature 1 – Bowditch per-course correction table */}
+            {showAdjusted && result.adjustedStations?.length > 0 && result.stations?.length > 0 && (
+              <details style={{ padding: '0 1rem 0.75rem' }}>
+                <summary style={{ fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginBottom: '0.5rem' }}>
+                  ▸ Bowditch Corrections per course
+                </summary>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ fontSize: '0.76rem' }}>
+                    <thead>
+                      <tr>
+                        <th>#</th><th>Course</th>
+                        <th>ΔN raw</th><th>ΔE raw</th>
+                        <th>ΔN adj</th><th>ΔE adj</th>
+                        <th>ΔN corr</th><th>ΔE corr</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.stations.map((s, i) => {
+                        const adj = result.adjustedStations[i];
+                        if (!adj) return null;
+                        const rawN = s.northing - (result.stations[i - 1]?.northing ?? parseFloat(pob.northing));
+                        const rawE = s.easting  - (result.stations[i - 1]?.easting  ?? parseFloat(pob.easting));
+                        const adjN = adj.northing - (result.adjustedStations[i - 1]?.northing ?? parseFloat(pob.northing));
+                        const adjE = adj.easting  - (result.adjustedStations[i - 1]?.easting  ?? parseFloat(pob.easting));
+                        const corrN = adjN - rawN;
+                        const corrE = adjE - rawE;
+                        if (i === 0) return null; // skip POB itself
+                        return (
+                          <tr key={i}>
+                            <td>{i}</td>
+                            <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.72rem' }}>{s.course || `C${i}`}</td>
+                            <td>{rawN.toFixed(4)}</td>
+                            <td>{rawE.toFixed(4)}</td>
+                            <td>{adjN.toFixed(4)}</td>
+                            <td>{adjE.toFixed(4)}</td>
+                            <td style={{ color: Math.abs(corrN) > 0.0001 ? '#c97a00' : 'var(--text-muted)' }}>{corrN >= 0 ? '+' : ''}{corrN.toFixed(5)}</td>
+                            <td style={{ color: Math.abs(corrE) > 0.0001 ? '#c97a00' : 'var(--text-muted)' }}>{corrE >= 0 ? '+' : ''}{corrE.toFixed(5)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
           </div>
 
           {/* ── Typo Assist ─────────────────────────────────────────── */}
@@ -515,19 +993,33 @@ export default function TraverseTab() {
             </div>
           )}
 
-          {/* Map */}
+          {/* Map — Feature 1: showAdjusted passed through */}
           <div className="card">
             <div className="card-header">
               <div className="card-title">🗺 Traverse Map</div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowPrint(true)}>
-                🖨 Print Blueprint
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                {result.adjustedStations?.length > 0 && (
+                  <span style={{ fontSize: '0.72rem', color: showAdjusted ? '#00d4a8' : 'var(--text-muted)' }}>
+                    {showAdjusted ? 'Adjusted' : 'Raw'}
+                  </span>
+                )}
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowPrint(true)}>
+                  🖨 Print Blueprint
+                </button>
+              </div>
             </div>
             <TraverseMap
-              key={`${result.stations?.length || 0}_${result.closure?.linearError || 0}`}
+              key={`${activeTractIndex}_${result.stations?.length || 0}_${result.closure?.linearError || 0}_${showAdjusted}`}
               stations={result.stations}
-              adjusted={result.adjustedStations}
+              adjusted={showAdjusted ? result.adjustedStations : []}
               courses={courses}
+              pob={{ northing: parseFloat(pob.northing), easting: parseFloat(pob.easting) }}
+              hoveredCourseIndex={hoveredCourseIndex}
+              setHoveredCourseIndex={setHoveredCourseIndex}
+              selectedCourseIndex={selectedCourseIndex}
+              setSelectedCourseIndex={setSelectedCourseIndex}
+              activeTractIndex={activeTractIndex}
+              tracts={result.tracts || []}
             />
           </div>
 
@@ -582,6 +1074,45 @@ export default function TraverseTab() {
           onClose={() => setShowPrint(false)}
         />
       )}
+      {/* Feature 5: Export Modal */}
+      {showExport && result && (
+        <ExportModal
+          stations={showAdjusted && result.adjustedStations?.length ? result.adjustedStations : result.stations}
+          courses={courses}
+          meta={{
+            parcel: pob.parcel || 'Subject Parcel',
+            county: result.county || '',
+            state: result.state || '',
+            units,
+            areaAcres: result.areaAcres,
+            perimeter: result.perimeter,
+            precisionRatio: result.closure?.precisionRatio,
+          }}
+          geoRef={georef.pobLat && georef.pobLng ? {
+            ...georef,
+            pobNorthing: parseFloat(pob.northing),
+            pobEasting:  parseFloat(pob.easting),
+            units,
+          } : null}
+          onClose={() => setShowExport(false)}
+        />
+      )}
+      <CourseDrawer
+        index={selectedCourseIndex}
+        courses={courses}
+        onSave={(updatedCourses) => {
+          setCourses(updatedCourses);
+          compute(updatedCourses);
+          setSelectedCourseIndex(null);
+        }}
+        onDelete={(idx) => {
+          const updated = courses.filter((_, i) => i !== idx);
+          setCourses(updated);
+          compute(updated);
+          setSelectedCourseIndex(null);
+        }}
+        onClose={() => setSelectedCourseIndex(null)}
+      />
       <ToastPortal />
     </div>
   );

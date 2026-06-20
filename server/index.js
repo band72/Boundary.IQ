@@ -52,6 +52,7 @@ import settingsRouter from './routes/settings.js';
 import deedRouter from './routes/deed.js';
 import authRouter from './routes/auth.js';
 import billingRouter from './routes/billing.js';
+import exportRouter from './routes/export.js';
 
 const app = express();
 
@@ -178,6 +179,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/deed', deedRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/billing', billingRouter);
+app.use('/api/export', exportRouter);
 
 // Serve static client assets in production
 if (IS_PROD) {

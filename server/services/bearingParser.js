@@ -60,6 +60,29 @@ function assessConfidence(deg, min, sec, format) {
 export function parse(bearing) {
   // Pre-normalize bearing string to handle non-standard characters from OCR or Word conversions
   let clean = bearing.trim()
+    // Normalize double-decimal formats e.g. 12.34.56.78 -> 12°34'56.78", 12.34.56 -> 12°34'56"
+    .replace(/(\d+)\.(\d{1,2})\.(\d{1,2})\.(\d+)/g, '$1°$2\'$3.$4"')
+    .replace(/(\d+)\.(\d{1,2})\.(\d{1,2})/g, '$1°$2\'$3"')
+    // Normalize smashed bearings, e.g. S743907W -> S74°39'07"W
+    .replace(/(?:([NSns])\s*)?(\d{5,6}(?:\.\d+)?)(?:\s*([EWew]))?/gi, (match, ns, digits, ew) => {
+      if (!ns && !ew) return match;
+      const dotIdx = digits.indexOf('.');
+      const intPart = dotIdx !== -1 ? digits.slice(0, dotIdx) : digits;
+      const decPart = dotIdx !== -1 ? digits.slice(dotIdx) : '';
+      let deg, min, sec;
+      if (intPart.length === 6) {
+        deg = intPart.slice(0, 2);
+        min = intPart.slice(2, 4);
+        sec = intPart.slice(4) + decPart;
+      } else if (intPart.length === 5) {
+        deg = intPart.slice(0, 1);
+        min = intPart.slice(1, 3);
+        sec = intPart.slice(3) + decPart;
+      } else {
+        return match;
+      }
+      return `${ns || ''}${deg}°${min}'${sec}"${ew || ''}`;
+    })
     // Normalize Unicode prime marks (from Word typographic fonts)
     .replace(/\u2032/g, "'"  )    // U+2032 PRIME → minutes apostrophe
     .replace(/\u2033/g, '"'  )    // U+2033 DOUBLE PRIME → seconds quote

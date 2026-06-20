@@ -1,0 +1,16 @@
+County: Unknown County
+State: Unknown State
+================================================================================
+BEGINNING at a point, the Point of Beginning (POB), having coordinates of
+Northing 5000.00, Easting 5000.00;
+
+THENCE along a curve to the Concave Southwesterly, R=924.93', Δ=08°29'36", L=137.11', to a corner;
+THENCE S74°39'07"W, a distance of 298.81 Feet, to a corner;
+THENCE N09°45'46"W, a distance of 281.70 Feet, to a corner;
+THENCE along a curve to the Concave Northerly, R=439.26', Δ=22°58'25", L=176.13', to a corner;
+THENCE N71°53'00"E, a distance of 30.77 Feet, to a corner;
+THENCE S07°34'03"E, a distance of 169.33 Feet, to a corner;
+THENCE S44°16'34"W, a distance of 173.16 Feet, to the Point of Beginning;
+
+Said parcel containing 1.8297 acres, more or less, and having a perimeter of 1267.01 feet.
+Bearings are grid bearings based on the deed of record.

@@ -1,0 +1,131 @@
+{
+  "sourceFile": "user_deed.txt",
+  "processedAt": "2026-06-19T23:45:57.030Z",
+  "status": "FAIL",
+  "hasSelfIntersection": false,
+  "selfIntersectionComment": null,
+  "traverse": {
+    "stations": [
+      {
+        "seq": 0,
+        "course": "POB",
+        "northing": 5000,
+        "easting": 5000,
+        "depDN": 0,
+        "depDE": 0
+      },
+      {
+        "seq": 1,
+        "course": "Curve R=924.93 Δ=8.4933°",
+        "northing": 4867.022837266769,
+        "easting": 5032.872398625894,
+        "depDN": -132.9771627332315,
+        "depDE": 32.87239862589383
+      },
+      {
+        "seq": 2,
+        "course": "S74°39'04.20\"W 298.81'",
+        "northing": 4787.929309771641,
+        "easting": 4744.720303356091,
+        "depDN": -79.09352749512837,
+        "depDE": -288.15209526980254
+      },
+      {
+        "seq": 3,
+        "course": "N09°45'27.60\"W 281.70'",
+        "northing": 5065.55406568369,
+        "easting": 4696.977399121272,
+        "depDN": 277.62475591204924,
+        "depDE": -47.74290423481869
+      },
+      {
+        "seq": 4,
+        "course": "Curve R=439.26 Δ=22.9736°",
+        "northing": 5085.756852463865,
+        "easting": 4870.757000646638,
+        "depDN": 20.20278678017394,
+        "depDE": 173.77960152536554
+      },
+      {
+        "seq": 5,
+        "course": "N71°53'00.00\"E 30.77'",
+        "northing": 5095.324873513833,
+        "easting": 4900.001587721639,
+        "depDN": 9.568021049968651,
+        "depDE": 29.244587075001707
+      },
+      {
+        "seq": 6,
+        "course": "S07°34'01.80\"E 169.33'",
+        "northing": 4927.469540207267,
+        "easting": 4922.300376490123,
+        "depDN": -167.8553333065665,
+        "depDE": 22.29878876848407
+      },
+      {
+        "seq": 7,
+        "course": "S44°16'20.40\"W 173.16'",
+        "northing": 4803.481803219761,
+        "easting": 4801.4226420775485,
+        "depDN": -123.98773698750601,
+        "depDE": -120.87773441257507
+      }
+    ],
+    "adjustedStations": [
+      {
+        "seq": 0,
+        "northing": 5000,
+        "easting": 5000
+      },
+      {
+        "seq": 1,
+        "northing": 4888.268969968924,
+        "easting": 5054.3411530068515
+      },
+      {
+        "seq": 2,
+        "northing": 4855.522039880212,
+        "easting": 4813.021285044495
+      },
+      {
+        "seq": 3,
+        "northing": 5176.839565409701,
+        "easting": 4809.42897293346
+      },
+      {
+        "seq": 4,
+        "northing": 5224.177780108127,
+        "easting": 5010.628333394061
+      },
+      {
+        "seq": 5,
+        "northing": 5238.518348268954,
+        "easting": 5044.695475384394
+      },
+      {
+        "seq": 6,
+        "northing": 5096.926758942937,
+        "easting": 5093.533205453269
+      },
+      {
+        "seq": 7,
+        "northing": 4999.796813886408,
+        "easting": 4999.794684857358
+      }
+    ],
+    "closure": {
+      "errorNorthing": 196.51819678023912,
+      "errorEasting": 198.57735792245148,
+      "linearError": 279.3785402374674,
+      "perimeter": 1267.01,
+      "precisionRatio": "1:5",
+      "status": "✗ FAILS   1:5  (min 1:10,000)",
+      "hasSelfIntersection": false
+    },
+    "perimeter": 1267.01,
+    "areaAcres": 1.8296975792286434,
+    "areaSqFt": 79701.6265511997
+  },
+  "legalDescription": "BEGINNING at a point, the Point of Beginning (POB), having coordinates of\nNorthing 5000.00, Easting 5000.00;\n\nTHENCE along a curve to the Concave Southwesterly, R=924.93', Δ=08°29'36\", L=137.11', to a corner;\nTHENCE S74°39'07\"W, a distance of 298.81 Feet, to a corner;\nTHENCE N09°45'46\"W, a distance of 281.70 Feet, to a corner;\nTHENCE along a curve to the Concave Northerly, R=439.26', Δ=22°58'25\", L=176.13', to a corner;\nTHENCE N71°53'00\"E, a distance of 30.77 Feet, to a corner;\nTHENCE S07°34'03\"E, a distance of 169.33 Feet, to a corner;\nTHENCE S44°16'34\"W, a distance of 173.16 Feet, to the Point of Beginning;\n\nSaid parcel containing 1.8297 acres, more or less, and having a perimeter of 1267.01 feet.\nBearings are grid bearings based on the deed of record.",
+  "conceptualAnalysis": null
+}

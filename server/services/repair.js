@@ -633,11 +633,17 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   }
 
   // ── Stage 2: Dual-Run Consensus (Generative Fallback) ───────────────────
-  console.log('Stage 2: Dual-run Gemini consensus voting.');
+  // Fix C: the second run now provides a short feedback hint to extractBoundary()
+  // so it uses a slightly different prompt path, producing genuine variance
+  // rather than a deterministic re-roll of the same temperature=0 call.
+  console.log('Stage 2: Dual-run Gemini consensus voting (with feedback variance).');
 
   let stage2Extraction = null, t2 = null;
   try {
-    stage2Extraction = await gemini.extractBoundary(imageBytes, mimeType);
+    const consensusFeedback = bestTraverse
+      ? `Previous extraction had LinearError=${bestTraverse.closure.linearError.toFixed(4)}ft. Re-read the document carefully and check for any OCR transcription errors, reversed bearing quadrants, or misread distances.`
+      : 'Please re-read the deed document carefully. Extract all bearing, distance, and curve values precisely.';
+    stage2Extraction = await gemini.extractBoundary(imageBytes, mimeType, consensusFeedback);
     [t2] = tryCompute(stage2Extraction.courses, pob, units, actualOpenEnded);
   } catch (ex) {
     console.warn('Stage 2: Second Gemini run failed, skipping consensus.', ex.message);

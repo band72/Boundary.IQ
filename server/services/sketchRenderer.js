@@ -504,15 +504,30 @@ function drawBoundaryGeometry(ctx, rawPts, adjPts, courses, region, opts = {}, m
     ctx.fillText('SE 1/4', tx(8960), ty(6320));
 
     // 5. Central section number badge
+    // FIX #7: Extract the section number from meta.parcel instead of hardcoding "SECTION 12".
+    // Tries three patterns in priority order:
+    //   1. "Section 12" / "Sec. 5" anywhere in the parcel string
+    //   2. "S12" abbreviation (e.g. "T2N R4E S7")
+    //   3. A standalone 1-2 digit number near the word "sec" (fallback)
+    const _secMatch =
+      (meta.parcel || '').match(/\bsec(?:tion)?\.?\s*(\d{1,3})\b/i) ||
+      (meta.parcel || '').match(/\bS(\d{1,3})\b/) ||
+      null;
+    const _secNum = _secMatch ? _secMatch[1] : null;
+    const _secLabel = _secNum ? `SECTION ${_secNum}` : 'SECTION';
+
     ctx.fillStyle = isBlueprint ? 'rgba(56, 189, 248, 0.06)' : 'rgba(26, 46, 68, 0.06)';
     ctx.strokeStyle = isBlueprint ? 'rgba(56, 189, 248, 0.2)' : 'rgba(26, 46, 68, 0.2)';
     ctx.lineWidth = 0.75;
     const midX = tx(7640), midY = ty(7640);
-    ctx.fillRect(midX - 35, midY - 9, 70, 18);
-    ctx.strokeRect(midX - 35, midY - 9, 70, 18);
-    ctx.fillStyle = isBlueprint ? '#38bdf8' : '#1a2e44';
+    // Widen the badge slightly so longer labels ("SECTION 123") fit
     ctx.font = 'bold 7.5px sans-serif';
-    ctx.fillText('SECTION 12', midX, midY);
+    const _badgeW = Math.max(70, ctx.measureText(_secLabel).width + 14);
+    ctx.fillRect(midX - _badgeW / 2, midY - 9, _badgeW, 18);
+    ctx.strokeRect(midX - _badgeW / 2, midY - 9, _badgeW, 18);
+    ctx.fillStyle = isBlueprint ? '#38bdf8' : '#1a2e44';
+    ctx.fillText(_secLabel, midX, midY);
+
 
     // 6. Label our actual 40-acre parcel in its center
     // Our parcel NW 1/4 of SE 1/4 lies in easting 7640-8960, northing 6320-7640

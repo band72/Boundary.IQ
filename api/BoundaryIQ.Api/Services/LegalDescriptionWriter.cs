@@ -98,13 +98,20 @@ public class LegalDescriptionWriter
         return $"{ns} {mid} {ew}";
     }
 
-    private static string FormatDMS(double dms)
+    /// <summary>
+    /// Format decimal degrees as a DMS string.
+    /// FIX #4: The JS traverse engine writes delta as plain decimal degrees (e.g. 93.385278).
+    /// The previous implementation assumed packed DMS format (DDD.MMSS), which converted
+    /// 93.385278 → 93°38'52.78" instead of the correct 93°23'06.99".
+    /// This version performs proper decimal-degree → DMS conversion.
+    /// </summary>
+    private static string FormatDMS(double decDeg)
     {
-        // dms is in DDD.MMSS packed format
-        int d = (int)Math.Abs(dms);
-        double rem = (Math.Abs(dms) - d) * 100;
-        int m = (int)rem;
-        double s = (rem - m) * 100;
-        return $"{d:D2}°{m:D2}'{s:00.00}\"";
+        double abs = Math.Abs(decDeg);
+        int d = (int)abs;
+        double minFrac = (abs - d) * 60.0;
+        int m = (int)minFrac;
+        double s = (minFrac - m) * 60.0;
+        return $"{d:D2}\u00b0{m:D2}'{s:00.00}\"";
     }
 }

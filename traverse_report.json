@@ -1,0 +1,58 @@
+{
+  "deedText": "A PART OF SECTION 8, TOWNSHIP 7 SOUTH, RANGE 27 EAST, CLAY COUNTY, FLORIDA: COMMENCING AT THE SOUTHWESTERLY CORNER OF SAID SECTION 8; THENCE N.13\u00ba29\u201915\u201dW 937.78 FEET TO THE POINT OF BEGINNING; THENCE CONTINUE N.13\u00ba29\u201915\u201dW 105.05 FEET; THENCE N.89\u00ba05\u201920\u201dE 471.00 FEET MORE OR LESS; THENCE SOUTHEASTERLY ALONG THE ST. JOHNS RIVER CHORD S.33\u00ba36\u201900\u201dE 121.82 FEET; THENCE S.89\u00ba05\u201920\u201dW 514.00 FEET MORE OR LESS TO THE POINT OF BEGINNING.",
+  "courses": [
+    {
+      "type": "Line",
+      "bearing": "N 13\u00b029'15\" W",
+      "distance": 937.78
+    },
+    {
+      "type": "Line",
+      "bearing": "N 13\u00b029'15\" W",
+      "distance": 105.05
+    },
+    {
+      "type": "Line",
+      "bearing": "N 89\u00ba05\u201920\u201dE",
+      "distance": 471.0
+    },
+    {
+      "type": "Curve",
+      "radius": null,
+      "arcLength": 121.82,
+      "curveDirection": "Right",
+      "distance": 121.82
+    },
+    {
+      "type": "Line",
+      "bearing": "S 89\u00ba05\u201920\u201dW",
+      "distance": 514.0
+    }
+  ],
+  "traverse": {
+    "vertices": [
+      [
+        5000.0,
+        5000.0
+      ],
+      [
+        4781.278550860462,
+        5911.916803270068
+      ],
+      [
+        4756.777401089611,
+        6014.069611160534
+      ],
+      [
+        5227.717851444059,
+        6021.559085103985
+      ],
+      [
+        4713.782837681456,
+        6013.385858762299
+      ]
+    ],
+    "misclosure": 1053.0295165592852,
+    "acreage": 0.5023620779687219
+  }
+}

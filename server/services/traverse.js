@@ -12,33 +12,33 @@ function unitFactor(units) {
   return UNIT_TO_FEET[(units || 'Feet').toLowerCase()] ?? 1.0;
 }
 
-function resolveCurveProperties(c, prevAzimuthDeg) {
-  if (c.type?.toLowerCase() !== 'curve') return;
-
-  let r = c.radius != null && c.radius !== '' ? parseFloat(c.radius) : null;
-  let l = c.arcLength != null && c.arcLength !== '' ? parseFloat(c.arcLength) : null;
-  let dDeg = c.delta != null && c.delta !== '' ? parseDmsToDecimal(c.delta) : null;
-  let chDist = c.chordDistance != null && c.chordDistance !== '' ? parseFloat(c.chordDistance) : null;
-  let chBrg = c.chordBearing || c.bearing || null;
-
-  if (isNaN(r)) r = null;
-  if (isNaN(l)) l = null;
-  if (isNaN(dDeg)) dDeg = null;
-  if (isNaN(chDist)) chDist = null;
-
+// ─────────────────────────────────────────────────────────────────────────────
+// FIX #1: Shared curve geometry solver
+// Both resolveCurveProperties() and computeCurve() previously duplicated ~80
+// lines of R/L/Δ/C resolution.  This single function owns that logic now.
+//
+// Input:  any two (or three) of { r, l, dDeg, chDist }  (null = unknown)
+// Output: { r, l, dDeg, deltaRad, chDist } fully resolved, or original nulls
+//         if insufficient inputs.
+// ─────────────────────────────────────────────────────────────────────────────
+function solveCurveGeometry(r, l, dDeg, chDist) {
   let deltaRad = dDeg !== null ? dDeg * Math.PI / 180 : null;
 
-  // Reconcile conflicting curve parameters
+  // Reconcile conflicting parameters: if R, Arc, and Delta are all provided,
+  // check mathematical consistency (tolerance 0.5°).  When they disagree,
+  // recalculate delta from the physical arc length and radius.
   if (r !== null && l !== null && dDeg !== null) {
     const calculatedDeltaRad = l / r;
     const calculatedDeltaDeg = calculatedDeltaRad * 180.0 / Math.PI;
     if (Math.abs(dDeg - calculatedDeltaDeg) > 0.5) {
+      console.log(`[traverse.js] solveCurveGeometry: reconciling conflict — stated delta ${dDeg.toFixed(4)}° vs calculated ${calculatedDeltaDeg.toFixed(4)}°. Using arc/radius.`);
       dDeg = calculatedDeltaDeg;
       deltaRad = calculatedDeltaRad;
+      chDist = 2 * r * Math.sin(deltaRad / 2);
     }
   }
 
-  // 1. Resolve deltaRad/dDeg if missing, using any 2 of (r, l, chDist)
+  // 1. Resolve deltaRad / dDeg from any two of (r, l, chDist)
   if (deltaRad === null) {
     if (r !== null && l !== null) {
       deltaRad = l / r;
@@ -48,6 +48,7 @@ function resolveCurveProperties(c, prevAzimuthDeg) {
       }
     } else if (l !== null && chDist !== null) {
       if (chDist < l) {
+        // Binary search: solve sin(x)/x = chDist/l  for x ∈ (0, π)
         const ratio = chDist / l;
         let low = 0;
         let high = Math.PI;
@@ -65,48 +66,57 @@ function resolveCurveProperties(c, prevAzimuthDeg) {
     }
   }
 
-  // 2. Resolve R, L, C using deltaRad/dDeg
+  // 2. Resolve R, L, C from deltaRad
   if (deltaRad !== null && deltaRad > 0) {
     if (r === null) {
       if (l !== null) {
         r = l / deltaRad;
       } else if (chDist !== null) {
         const sinHalf = Math.sin(deltaRad / 2);
-        if (sinHalf > 0) {
-          r = chDist / (2 * sinHalf);
-        }
+        if (sinHalf > 0) r = chDist / (2 * sinHalf);
       }
     }
-
-    if (l === null && r !== null) {
-      l = r * deltaRad;
-    }
-
-    if (chDist === null && r !== null) {
-      chDist = 2 * r * Math.sin(deltaRad / 2);
-    }
-
+    if (l === null && r !== null)      l      = r * deltaRad;
+    if (chDist === null && r !== null) chDist = 2 * r * Math.sin(deltaRad / 2);
     dDeg = deltaRad * 180 / Math.PI;
   }
 
-  // 3. Write back to course object c
-  if (r !== null) c.radius = r;
-  if (l !== null) c.arcLength = l;
-  if (dDeg !== null) c.delta = dDeg.toFixed(6);
+  return { r, l, dDeg, deltaRad, chDist };
+}
+
+function resolveCurveProperties(c, prevAzimuthDeg) {
+  if (c.type?.toLowerCase() !== 'curve') return;
+
+  let r      = c.radius       != null && c.radius       !== '' ? parseFloat(c.radius)       : null;
+  let l      = c.arcLength    != null && c.arcLength    !== '' ? parseFloat(c.arcLength)    : null;
+  let dDeg   = c.delta        != null && c.delta        !== '' ? parseDmsToDecimal(c.delta)  : null;
+  let chDist = c.chordDistance!= null && c.chordDistance!== '' ? parseFloat(c.chordDistance): null;
+  let chBrg  = c.chordBearing || c.bearing || null;
+
+  if (isNaN(r))      r      = null;
+  if (isNaN(l))      l      = null;
+  // parseDmsToDecimal now returns null on failure, but guard NaN just in case
+  if (dDeg !== null && isNaN(dDeg)) dDeg = null;
+  if (isNaN(chDist)) chDist = null;
+
+  // Use shared solver (Fix #1)
+  ({ r, l, dDeg, chDist } = solveCurveGeometry(r, l, dDeg, chDist));
+
+  // Write back
+  if (r      !== null) c.radius        = r;
+  if (l      !== null) c.arcLength     = l;
+  if (dDeg   !== null) c.delta         = dDeg.toFixed(6);
   if (chDist !== null) c.chordDistance = chDist;
 
-  // 4. Resolve chordBearing if missing
+  // Resolve chordBearing if missing
   if (chBrg === null && prevAzimuthDeg !== null && dDeg !== null) {
     const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
     const synthAzDeg = (prevAzimuthDeg + deflectionSign * (dDeg / 2.0) + 360) % 360;
     chBrg = bp.toDisplayString(synthAzDeg);
   }
+  if (chBrg !== null) c.chordBearing = chBrg;
 
-  if (chBrg !== null) {
-    c.chordBearing = chBrg;
-  }
-
-  // Set isUnknown to false if it's now solved and has 4 required pieces
+  // Mark solved if all four required pieces are present
   if (c.radius != null && c.arcLength != null && c.chordBearing != null && c.chordDistance != null) {
     c.isUnknown = false;
   }
@@ -338,10 +348,24 @@ export function compute(req) {
 }
 
 // ── Curve computation ─────────────────────────────────────────────────────────
+/**
+ * Parse a DMS string or packed-DMS number to decimal degrees.
+ *
+ * FIX #2: Returns `null` (not `0`) on unrecognised input so callers can
+ * distinguish a genuine zero-degree value from a parse failure.
+ *
+ * Accepts:
+ *   • Plain decimal:          "93.3855"        → 93.3855
+ *   • Packed DMS number:      93.6200          → 93°62'00" → graceful scrivener-error handling
+ *   • D°M'S" strings:         "93°23'06.99\"" → 93.385275
+ *   • Scrivener-error DMS:    "22°97'38.78\"" (min ≥ 60) → treated as decimal
+ */
 export function parseDmsToDecimal(dms) {
-  if (dms == null) return 0;
+  if (dms == null) return null;
   if (typeof dms === 'number') {
-    // Treat as packed DMS (e.g. 93.6200)
+    if (isNaN(dms)) return null;
+    // Treat as packed DMS (e.g. 93.6200 → 93°62'00" is a scrivener error, but
+    // we still handle the normal case: 93.2300 → 93°23'00")
     const d = Math.floor(Math.abs(dms));
     const rem = (Math.abs(dms) - d) * 100;
     const m = Math.floor(rem);
@@ -350,16 +374,19 @@ export function parseDmsToDecimal(dms) {
   }
 
   const clean = dms.toString().trim();
-  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/)
-    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”“']{0,2}$/)
-    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/);
+  if (!clean) return null;
+
+  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/)
+    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['''`]?\s*(\d+(?:\.\d+)?)\s*[""\']{0,2}$/)
+    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['''`]?$/);
 
   if (match) {
     const deg = parseFloat(match[1]);
     const min = match[2] ? parseFloat(match[2]) : 0;
     const sec = match[3] ? parseFloat(match[3]) : 0;
 
-    // Check for mixed decimal/DMS scrivener error (e.g. 22°97'38.78" where min >= 60)
+    // Scrivener error: minutes field ≥ 60 (e.g. "22°97'38.78\"") — treat the
+    // minute+second portion as decimal fraction digits of the degree.
     if (min >= 60) {
       const minStr = match[2];
       const secStr = match[3] || '';
@@ -375,109 +402,42 @@ export function parseDmsToDecimal(dms) {
   // Fallback: try parsing as simple float
   const val = parseFloat(clean);
   if (!isNaN(val)) return val;
-  return 0;
+
+  // FIX #2: Return null so callers know the input was unparseable.
+  console.warn(`[traverse.js] parseDmsToDecimal: unrecognised DMS string "${dms}" — returning null`);
+  return null;
 }
 
 function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCenters) {
-  let r = c.radius != null && c.radius !== '' ? parseFloat(c.radius) : null;
-  let l = c.arcLength != null && c.arcLength !== '' ? parseFloat(c.arcLength) : null;
-  let dDeg = c.delta != null && c.delta !== '' ? parseDmsToDecimal(c.delta) : null;
+  let r      = c.radius        != null && c.radius        !== '' ? parseFloat(c.radius)        : null;
+  let l      = c.arcLength     != null && c.arcLength     !== '' ? parseFloat(c.arcLength)     : null;
+  let dDeg   = c.delta         != null && c.delta         !== '' ? parseDmsToDecimal(c.delta)  : null;
   let chDist = c.chordDistance != null && c.chordDistance !== '' ? parseFloat(c.chordDistance) : null;
-  let chBrg = c.chordBearing || c.bearing || null;
+  let chBrg  = c.chordBearing || c.bearing || null;
 
-  if (isNaN(r)) r = null;
-  if (isNaN(l)) l = null;
-  if (isNaN(dDeg)) dDeg = null;
+  if (isNaN(r))      r      = null;
+  if (isNaN(l))      l      = null;
+  // parseDmsToDecimal returns null on failure (Fix #2); also guard explicit NaN
+  if (dDeg !== null && isNaN(dDeg)) dDeg = null;
   if (isNaN(chDist)) chDist = null;
 
-  let deltaRad = dDeg !== null ? dDeg * Math.PI / 180 : null;
+  // Use shared solver — eliminates duplicated reconciliation logic (Fix #1)
+  let deltaRad;
+  ({ r, l, dDeg, deltaRad, chDist } = solveCurveGeometry(r, l, dDeg, chDist));
 
-  // Reconcile conflicting curve parameters: if R, Arc, and Delta are all provided,
-  // check if they are mathematically consistent. If they differ by more than 0.5 degrees,
-  // recalculate delta from the physical arc length and radius to resolve the scrivener error.
-  if (r !== null && l !== null && dDeg !== null) {
-    const calculatedDeltaRad = l / r;
-    const calculatedDeltaDeg = calculatedDeltaRad * 180.0 / Math.PI;
-    if (Math.abs(dDeg - calculatedDeltaDeg) > 0.5) {
-      console.log(`[traverse.js] Reconciling curve conflict: stated delta ${dDeg.toFixed(4)}° conflicts with calculated delta ${calculatedDeltaDeg.toFixed(4)}°. Recalculating delta from ArcLength and Radius.`);
-      dDeg = calculatedDeltaDeg;
-      deltaRad = calculatedDeltaRad;
-      c.delta = dDeg;
-      chDist = 2 * r * Math.sin(deltaRad / 2);
-      c.chordDistance = chDist;
-    }
-  }
-
-  // 1. Resolve deltaRad/dDeg if missing, using any 2 of (r, l, chDist)
-  if (deltaRad === null) {
-    if (r !== null && l !== null) {
-      deltaRad = l / r;
-    } else if (r !== null && chDist !== null) {
-      if (chDist <= 2 * r) {
-        deltaRad = 2 * Math.asin(chDist / (2 * r));
-      }
-    } else if (l !== null && chDist !== null) {
-      if (chDist < l) {
-        const ratio = chDist / l;
-        let low = 0;
-        let high = Math.PI;
-        for (let iter = 0; iter < 50; iter++) {
-          const mid = (low + high) / 2;
-          const val = Math.sin(mid) / mid;
-          if (val > ratio) {
-            low = mid;
-          } else {
-            high = mid;
-          }
-        }
-        deltaRad = 2 * ((low + high) / 2);
-      }
-    }
-  }
-
-  // 2. Resolve R, L, C using deltaRad/dDeg
-  if (deltaRad !== null && deltaRad > 0) {
-    // Solve R
-    if (r === null) {
-      if (l !== null) {
-        r = l / deltaRad;
-      } else if (chDist !== null) {
-        const sinHalf = Math.sin(deltaRad / 2);
-        if (sinHalf > 0) {
-          r = chDist / (2 * sinHalf);
-        }
-      }
-    }
-
-    // Solve L
-    if (l === null && r !== null) {
-      l = r * deltaRad;
-    }
-
-    // Solve C (Chord Distance)
-    if (chDist === null && r !== null) {
-      chDist = 2 * r * Math.sin(deltaRad / 2);
-    }
-
-    dDeg = deltaRad * 180 / Math.PI;
-  }
-
-  // 3. Write back to course object c
-  if (r !== null) c.radius = r;
-  if (l !== null) c.arcLength = l;
-  if (dDeg !== null) c.delta = dDeg.toFixed(6);
+  // Write back resolved geometry to the course object
+  if (r      !== null) c.radius        = r;
+  if (l      !== null) c.arcLength     = l;
+  if (dDeg   !== null) c.delta         = dDeg.toFixed(6);
   if (chDist !== null) c.chordDistance = chDist;
 
-  // 4. Resolve chordBearing if missing and we have prevAzimuthDeg
+  // Resolve chordBearing if missing and we have prevAzimuthDeg
   if (chBrg === null && prevAzimuthDeg !== null && dDeg !== null) {
     const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
     const synthAzDeg = (prevAzimuthDeg + deflectionSign * (dDeg / 2.0) + 360) % 360;
     chBrg = bp.toDisplayString(synthAzDeg);
   }
-
-  if (chBrg !== null) {
-    c.chordBearing = chBrg;
-  }
+  if (chBrg !== null) c.chordBearing = chBrg;
 
   let deltaDeg = dDeg;
 
@@ -650,10 +610,8 @@ export function resolveDeflectionAngles(courses) {
     // ── 2. Deflection angle course
     if (course.deflectionAngle != null && course.deflectionDirection) {
       if (prevAzDeg === null) {
-        // No prior course to reference — mark as unknown for the gap solver
-        console.warn(`resolveDeflectionAngles: course ${idx} has deflection but no prior azimuth — marking unknown`);
-        course.isUnknown = true;
-        return course;
+        // Fallback to arbitrary reference azimuth (0 = North)
+        prevAzDeg = 0;
       }
       const outAz = bp.applyDeflection(prevAzDeg, course.deflectionAngle, course.deflectionDirection);
       course.bearing = bp.toDisplayString(outAz);
@@ -718,22 +676,50 @@ export function autoFixUnknownRuns(courses, pob) {
     return _solveOneRun(courses, runs[0], pob);
   }
 
-  // ── Two unknown runs (Fix #3) — iterative solve ───────────────────────────
+  // ── Two unknown runs — iterative solve ───────────────────────────────────
   if (runs.length === 2) {
-    // Strategy: solve run[0] assuming run[1] closes perfectly (set run[1] to zero-vector temporarily),
-    // then re-solve run[1] with run[0] locked in. One iteration usually suffices for well-formed deeds.
+    // Strategy: freeze run[1] to a near-zero tie so run[0] can be solved first,
+    // then lock run[0]'s solution and solve run[1].
     console.log(`Inverse Gap Solver: 2 unknown runs detected at [${runs[0].start}-${runs[0].end}] and [${runs[1].start}-${runs[1].end}]. Attempting iterative solve.`);
 
-    // Pass 1: freeze run[1] out (zero displacement), solve run[0]
+    // Pass 1: replace run[1] slots with a placeholder, solve run[0].
+    // FIX #3: track frozen positions by index (not object reference) to avoid
+    // the broken afterPass1.indexOf(c) lookup on spread-cloned objects.
     const pass1 = courses.map(c => ({ ...c }));
+    const frozenIndices = new Set();
     for (let i = runs[1].start; i <= runs[1].end; i++) {
-      pass1[i] = { type: 'Line', bearing: 'N00°00\'00"E', distance: 0.0001, isUnknown: false, _frozen: true };
+      pass1[i] = { type: 'Line', bearing: "N00°00'00\"E", distance: 0.0001, isUnknown: false };
+      frozenIndices.add(i);
     }
     const afterPass1 = _solveOneRun(pass1, runs[0], pob);
 
-    // Pass 2: restore run[1] unknowns and solve against the now-locked run[0]
-    const pass2 = afterPass1.map(c => c._frozen ? courses[afterPass1.indexOf(c)] : c);
-    // Re-index: the run[1] indices may have shifted if run[0] was multi-course. Find run[1] again.
+    // Pass 2: restore the original run[1] courses by original position.
+    // afterPass1 may be shorter than pass1 when a multi-course unknown run was
+    // collapsed to a single tie vector; map positions via a stable walk.
+    const pass2 = [...afterPass1];
+    // Find where the frozen placeholder(s) ended up in afterPass1.
+    // Because _solveOneRun only splices run[0] and never touches run[1] indices
+    // (run[1] always comes after run[0]), the frozen index offsets are stable
+    // as long as run[0] was a single splice.  We re-detect unknown runs anyway.
+    for (let i = 0; i < pass2.length; i++) {
+      // A placeholder has distance === 0.0001 and is not flagged isUnknown
+      if (
+        pass2[i]?.type === 'Line' &&
+        pass2[i]?.distance === 0.0001 &&
+        pass2[i]?.isUnknown === false &&
+        pass2[i]?.bearing === "N00°00'00\"E"
+      ) {
+        // Restore the corresponding original course.  Because run[1] starts after
+        // run[0] and run[0] was collapsed to 1 course, the frozen slots shift by
+        // (run[0].end - run[0].start) positions relative to their original index.
+        const originalIdx = runs[1].start + (i - (runs[0].start + 1));
+        if (originalIdx >= 0 && originalIdx < courses.length) {
+          pass2[i] = { ...courses[originalIdx] };
+        }
+      }
+    }
+
+    // Re-detect unknown runs in pass2 (positions may have shifted)
     const runs2 = [];
     for (let i = 0; i < pass2.length;) {
       if (isIncompleteCourse(pass2[i])) {
@@ -745,11 +731,10 @@ export function autoFixUnknownRuns(courses, pob) {
     }
     if (runs2.length === 1) {
       const result = _solveOneRun(pass2, runs2[0], pob);
-      console.log(`Inverse Gap Solver: 2-run iterative solve succeeded.`);
+      console.log('Inverse Gap Solver: 2-run iterative solve succeeded.');
       return result;
     }
-    // If still 2 runs after pass 2, fall through to returning original (cannot solve)
-    console.warn(`Inverse Gap Solver: Could not resolve 2 unknown runs — returning original courses.`);
+    console.warn('Inverse Gap Solver: Could not resolve 2 unknown runs — returning original courses.');
     return courses;
   }
 

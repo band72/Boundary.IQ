@@ -3,7 +3,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import * as lockService from '../services/lockService.js';
 import crypto from 'crypto';
-import { execSync } from 'child_process';
+import { createChildLogger } from '../logger.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -27,6 +27,7 @@ import * as ollamaSvc from '../services/ollamaVision.js';
 import pdfParse from 'pdf-parse';
 import { requireAuth } from '../middleware/auth.js';
 import { SCAN_RATE_LIMIT, GEMINI_API_KEY } from '../config.js';
+import { ocrFile as ocrDaemonFile } from '../services/ocrDaemon.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -113,17 +114,20 @@ async function ensureExtractedText(filePath, fileName, fileBytes, validPath, for
           console.warn('Failed to parse from disk OCR cache:', cacheErr.message);
         }
       } else {
-        // Run python OCR
+        // Run Python OCR via persistent daemon (model stays in RAM between calls)
         try {
-          console.log(`🔍 Running OCR on ${fileName}...`);
-          const baseDir = process.cwd();
-          const serverDir = fs.existsSync(path.join(baseDir, 'server')) ? path.join(baseDir, 'server') : baseDir;
-          const ocrScriptPath = path.join(serverDir, 'scripts', 'ocr_pdf.py');
-          const cmd = `python3 "${ocrScriptPath}" "${filePath}"`;
-          const result = execSync(cmd, { encoding: 'utf-8' });
-          text = result.trim();
+          console.log(`🔍 Running OCR on ${fileName} via persistent daemon...`);
+          const ocrText = await ocrDaemonFile(filePath);
+          text = (ocrText || '').trim();
+          if (text) {
+            if (!fs.existsSync(ocrCacheDir)) {
+              fs.mkdirSync(ocrCacheDir, { recursive: true });
+            }
+            fs.writeFileSync(metaPath, JSON.stringify({ combinedOcrText: text, fileName }), 'utf8');
+            console.log(`💾 Saved daemon OCR text to persistent global OCR cache at ${metaPath}`);
+          }
         } catch (e) {
-          console.error(`OCR failed for ${fileName}:`, e.message);
+          console.error(`OCR daemon failed for ${fileName}:`, e.message);
         }
       }
     }

@@ -55,7 +55,7 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
 }
 
 // Helper functions to compute intermediate curve coordinates
-function getCurvePoints(p1, p2, course, steps = 20) {
+function getCurvePoints(p1, p2, course, steps = 40) {
   const R = parseFloat(course.radius || course.Radius);
   if (!R || isNaN(R)) return [p1, p2];
 
@@ -99,6 +99,41 @@ function getCurvePoints(p1, p2, course, steps = 20) {
     });
   }
   return pts;
+}
+
+/** Compute the center-of-curvature (cx, cy) for a curve segment. Returns null if not computable. */
+function getCurveCenter(p1, p2, course) {
+  const R = parseFloat(course.radius || course.Radius);
+  if (!R || isNaN(R)) return null;
+  const dx = p2.easting - p1.easting;
+  const dy = p2.northing - p1.northing;
+  const chord = Math.hypot(dx, dy);
+  if (chord < 0.01) return null;
+  const rSq = R * R;
+  const halfChordSq = (chord / 2) * (chord / 2);
+  if (rSq < halfChordSq) return null;
+  const h = Math.sqrt(rSq - halfChordSq);
+  const mx = (p1.easting + p2.easting) / 2;
+  const my = (p1.northing + p2.northing) / 2;
+  const ux = -dy / chord;
+  const uy = dx / chord;
+  const isLeft = (course.curveDirection || course.CurveDirection || '').toLowerCase() === 'left';
+  return {
+    easting:  isLeft ? mx + h * ux : mx - h * ux,
+    northing: isLeft ? my + h * uy : my - h * uy,
+  };
+}
+
+function getDistanceToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
 }
 
 function getDensePoints(pts, coursesList) {
@@ -279,8 +314,24 @@ function resolveCurvePropertiesClient(c, prevAzimuthDeg) {
   };
 }
 
-export default function TraverseMap({ stations, adjusted, courses, pob }) {
+export default function TraverseMap({
+  stations,
+  adjusted,
+  courses,
+  pob,
+  hoveredCourseIndex: hoveredCourseIndexProp,
+  setHoveredCourseIndex: setHoveredCourseIndexProp,
+  selectedCourseIndex: selectedCourseIndexProp,
+  setSelectedCourseIndex: setSelectedCourseIndexProp,
+  activeTractIndex = 0,
+  tracts = []
+}) {
   const [canvasElement, setCanvasElement] = useState(null);
+  const [hoveredCourseIndex, setHoveredCourseIndexLocal] = useState(null);
+  const [hoveredVertexIndexLocal, setHoveredVertexIndexLocal] = useState(null);
+
+  const activeHoveredIndex = hoveredCourseIndexProp !== undefined ? hoveredCourseIndexProp : hoveredCourseIndex;
+  const activeSelectedIndex = selectedCourseIndexProp !== undefined ? selectedCourseIndexProp : null;
   
   const getPts = () => {
     if (adjusted?.length) return adjusted;
@@ -291,6 +342,19 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
 
   const pts = getPts();
 
+  const getAllPoints = () => {
+    let all = [...pts];
+    if (tracts && tracts.length > 0) {
+      tracts.forEach(t => {
+        const tPts = t.traverse?.adjustedStations || t.traverse?.stations || computePointsFromCourses(t.originalCourses || t.courses, t.pob);
+        all.push(...tPts);
+      });
+    }
+    return all;
+  };
+
+  const allPtsForBounds = getAllPoints();
+
   useEffect(() => {
     if (!canvasElement || !pts || pts.length < 2) return;
     const canvas = canvasElement;
@@ -300,10 +364,12 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
     // Clear
     ctx.clearRect(0, 0, W, H);
 
-    // Compute bounds
-    const ns = pts.map(p => p.northing), es = pts.map(p => p.easting);
-    const minN = Math.min(...ns), maxN = Math.max(...ns);
-    const minE = Math.min(...es), maxE = Math.max(...es);
+    // Compute bounds encompassing all tracts
+    const ns = allPtsForBounds.map(p => p.northing), es = allPtsForBounds.map(p => p.easting);
+    const minN = ns.length ? Math.min(...ns) : 5000;
+    const maxN = ns.length ? Math.max(...ns) : 5000;
+    const minE = es.length ? Math.min(...es) : 5000;
+    const maxE = es.length ? Math.max(...es) : 5000;
     const rangeN = maxN - minN || 1, rangeE = maxE - minE || 1;
 
     const scaleX = (W - PAD * 2) / rangeE;
@@ -323,9 +389,31 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
       ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
     }
 
-    const densePts = getDensePoints(pts, courses);
+    // Draw INACTIVE tracts in faded background color
+    if (tracts && tracts.length > 1) {
+      tracts.forEach((t, tIdx) => {
+        if (tIdx === activeTractIndex) return;
+        const tPts = t.traverse?.adjustedStations || t.traverse?.stations || computePointsFromCourses(t.originalCourses || t.courses, t.pob);
+        if (tPts.length < 2) return;
 
-    // Fill polygon interior
+        ctx.beginPath();
+        const tDense = getDensePoints(tPts, t.originalCourses || t.courses);
+        ctx.moveTo(tx(tDense[0].easting), ty(tDense[0].northing));
+        for (let k = 1; k < tDense.length; k++) {
+          ctx.lineTo(tx(tDense[k].easting), ty(tDense[k].northing));
+        }
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(61, 127, 255, 0.2)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(61, 127, 255, 0.02)';
+        ctx.fill();
+      });
+    }
+
+    // Draw active tract interior
+    const densePts = getDensePoints(pts, courses);
     ctx.beginPath();
     ctx.moveTo(tx(densePts[0].easting), ty(densePts[0].northing));
     for (let i = 1; i < densePts.length; i++) ctx.lineTo(tx(densePts[i].easting), ty(densePts[i].northing));
@@ -333,13 +421,83 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
     ctx.fillStyle = 'rgba(61,127,255,0.06)';
     ctx.fill();
 
-    // Draw boundary lines
-    ctx.strokeStyle = '#3d7fff';
-    ctx.lineWidth = 2.5;
-    ctx.moveTo(tx(densePts[0].easting), ty(densePts[0].northing));
-    for (let i = 1; i < densePts.length; i++) ctx.lineTo(tx(densePts[i].easting), ty(densePts[i].northing));
-    ctx.closePath();
-    ctx.stroke();
+      // Draw boundary lines course-by-course for individual highlighting
+      for (let i = 0; i < courses.length; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1] || pts[0];
+        const c = courses[i];
+        if (!p1 || !p2 || !c) continue;
+
+        const isCurve = c.type?.toLowerCase() === 'curve';
+        const isHovered = (activeHoveredIndex === i);
+        const isSelected = (activeSelectedIndex === i);
+
+        ctx.beginPath();
+        const segPts = isCurve ? getCurvePoints(p1, p2, c, 40) : [p1, p2];
+        ctx.moveTo(tx(segPts[0].easting), ty(segPts[0].northing));
+        for (let k = 1; k < segPts.length; k++) {
+          ctx.lineTo(tx(segPts[k].easting), ty(segPts[k].northing));
+        }
+
+        if (isSelected) {
+          ctx.strokeStyle = '#ff4d6d';
+          ctx.lineWidth = 4.5;
+          ctx.shadowColor = 'rgba(255, 77, 109, 0.5)';
+          ctx.shadowBlur = 8;
+        } else if (isHovered) {
+          ctx.strokeStyle = '#00d4a8';
+          ctx.lineWidth = 3.5;
+          ctx.shadowColor = 'rgba(0, 212, 168, 0.4)';
+          ctx.shadowBlur = 6;
+        } else {
+          ctx.strokeStyle = isCurve ? '#ff9f43' : '#3d7fff';
+          ctx.lineWidth = 2.5;
+          ctx.shadowBlur = 0;
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Feature 4: When a curve segment is hovered, draw chord + center-of-curvature
+        if (isCurve && (isHovered || isSelected)) {
+          // Chord line (thin dashed)
+          ctx.save();
+          ctx.setLineDash([5, 4]);
+          ctx.strokeStyle = 'rgba(255,159,67,0.45)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(tx(p1.easting), ty(p1.northing));
+          ctx.lineTo(tx(p2.easting), ty(p2.northing));
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          // Center-of-curvature dot
+          const center = getCurveCenter(p1, p2, c);
+          if (center) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(tx(center.easting), ty(center.northing), 4, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,159,67,0.75)';
+            ctx.strokeStyle = '#ff9f43';
+            ctx.lineWidth = 1;
+            ctx.fill();
+            ctx.stroke();
+
+            // Radius lines to endpoints
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = 'rgba(255,159,67,0.25)';
+            ctx.lineWidth = 0.75;
+            ctx.beginPath();
+            ctx.moveTo(tx(center.easting), ty(center.northing));
+            ctx.lineTo(tx(p1.easting), ty(p1.northing));
+            ctx.moveTo(tx(center.easting), ty(center.northing));
+            ctx.lineTo(tx(p2.easting), ty(p2.northing));
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+          }
+        }
+      }
 
     const leaderStyle = localStorage.getItem('boundaryiq_leader_style') || 'arc';
     const labelContentMode = localStorage.getItem('boundaryiq_label_content_mode') || 'auto';
@@ -377,7 +535,6 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Label the misclosure line
       ctx.fillStyle = '#ff4d6d';
       ctx.font = 'bold 9px Inter, sans-serif';
       ctx.textAlign = 'left';
@@ -387,16 +544,17 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
     // Draw station nodes
     pts.forEach((p, i) => {
       const px = tx(p.easting), py = ty(p.northing);
+      const isVertexHovered = (hoveredVertexIndexLocal === i);
       ctx.beginPath();
-      ctx.arc(px, py, i === 0 ? 5 : 3, 0, Math.PI * 2);
-      ctx.fillStyle = i === 0 ? '#00d4a8' : '#3d7fff';
+      ctx.arc(px, py, isVertexHovered ? 6.5 : (i === 0 ? 5.5 : 3.8), 0, Math.PI * 2);
+      ctx.fillStyle = isVertexHovered ? '#ff4d6d' : (i === 0 ? '#00d4a8' : '#3d7fff');
       ctx.fill();
       ctx.strokeStyle = '#090e1a';
       ctx.lineWidth = 1.8;
       ctx.stroke();
     });
 
-    // Draw all resolved labels (both stations and segments resolved without overlaps)
+    // Draw labels
     resolvedLabels.forEach(lbl => {
       if (lbl.type === 'station') {
         if (lbl.needsLeader) {
@@ -512,7 +670,6 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
       }
     });
 
-
     // North arrow graphic
     ctx.save();
     ctx.translate(W - 35, 55);
@@ -529,7 +686,119 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
     ctx.fill();
     ctx.restore();
 
-  }, [canvasElement, pts, courses]);
+  }, [canvasElement, pts, courses, activeHoveredIndex, activeSelectedIndex, hoveredVertexIndexLocal, tracts, activeTractIndex]);
+
+  const handleMouseMove = (e) => {
+    if (!canvasElement || pts.length < 2) return;
+    const canvas = canvasElement;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * canvas.width;
+    const mouseY = ((e.clientY - rect.top) / rect.height) * canvas.height;
+
+    // Scale calculation matching draw function
+    const ns = allPtsForBounds.map(p => p.northing), es = allPtsForBounds.map(p => p.easting);
+    const minN = ns.length ? Math.min(...ns) : 5000;
+    const maxN = ns.length ? Math.max(...ns) : 5000;
+    const minE = es.length ? Math.min(...es) : 5000;
+    const maxE = es.length ? Math.max(...es) : 5000;
+    const rangeN = maxN - minN || 1, rangeE = maxE - minE || 1;
+
+    const scaleX = (canvas.width - PAD * 2) / rangeE;
+    const scaleY = (canvas.height - PAD * 2) / rangeN;
+    const scale = Math.min(scaleX, scaleY);
+
+    const tx = e => PAD + (e - minE) * scale;
+    const ty = n => canvas.height - PAD - (n - minN) * scale;
+
+    // 1. Vertex hit-testing
+    let closestVertex = null;
+    let minVertexDist = 10; // pixels
+    pts.forEach((p, idx) => {
+      const px = tx(p.easting);
+      const py = ty(p.northing);
+      const dist = Math.hypot(mouseX - px, mouseY - py);
+      if (dist < minVertexDist) {
+        minVertexDist = dist;
+        closestVertex = idx;
+      }
+    });
+
+    // 2. Segment hit-testing
+    let closestCourse = null;
+    let minCourseDist = 12; // pixels
+    for (let i = 0; i < courses.length; i++) {
+      const p1 = pts[i];
+      const p2 = pts[i + 1] || pts[0];
+      const course = courses[i];
+      if (!p1 || !p2 || !course) continue;
+      const d = getDistanceToCourse(mouseX, mouseY, p1, p2, course, tx, ty);
+      if (d < minCourseDist) {
+        minCourseDist = d;
+        closestCourse = i;
+      }
+    }
+
+    if (closestVertex !== null) {
+      setHoveredVertexIndexLocal(closestVertex);
+      setHoveredCourseIndexLocal(null);
+      if (setHoveredCourseIndexProp) setHoveredCourseIndexProp(null);
+    } else if (closestCourse !== null) {
+      setHoveredVertexIndexLocal(null);
+      setHoveredCourseIndexLocal(closestCourse);
+      if (setHoveredCourseIndexProp) setHoveredCourseIndexProp(closestCourse);
+    } else {
+      setHoveredVertexIndexLocal(null);
+      setHoveredCourseIndexLocal(null);
+      if (setHoveredCourseIndexProp) setHoveredCourseIndexProp(null);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredVertexIndexLocal(null);
+    setHoveredCourseIndexLocal(null);
+    if (setHoveredCourseIndexProp) setHoveredCourseIndexProp(null);
+  };
+
+  const handleCanvasClick = () => {
+    if (hoveredVertexIndexLocal !== null) {
+      const selectIdx = hoveredVertexIndexLocal === pts.length - 1 ? hoveredVertexIndexLocal - 1 : hoveredVertexIndexLocal;
+      const finalSelectIdx = Math.max(0, selectIdx);
+      if (setSelectedCourseIndexProp) {
+        setSelectedCourseIndexProp(finalSelectIdx);
+      }
+    } else if (hoveredCourseIndexLocal !== null) {
+      if (setSelectedCourseIndexProp) {
+        setSelectedCourseIndexProp(hoveredCourseIndexLocal);
+      }
+    } else {
+      if (setSelectedCourseIndexProp) {
+        setSelectedCourseIndexProp(null);
+      }
+    }
+  };
+
+  function getDistanceToCourse(mx, my, p1, p2, course, tx, ty) {
+    const isCurve = (course.type || course.Type || '').toLowerCase() === 'curve';
+    if (isCurve) {
+      const curvePts = getCurvePoints(p1, p2, course, 20);
+      let minDist = Infinity;
+      for (let k = 0; k < curvePts.length - 1; k++) {
+        const dist = getDistanceToSegment(
+          mx, my,
+          tx(curvePts[k].easting), ty(curvePts[k].northing),
+          tx(curvePts[k + 1].easting), ty(curvePts[k + 1].northing)
+        );
+        if (dist < minDist) minDist = dist;
+      }
+      return minDist;
+    } else {
+      return getDistanceToSegment(
+        mx, my,
+        tx(p1.easting), ty(p1.northing),
+        tx(p2.easting), ty(p2.northing)
+      );
+    }
+  }
 
   const getTablesData = () => {
     const linesList = [];
@@ -593,7 +862,16 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <div className="map-container" style={{ height: 340 }}>
-        <canvas ref={setCanvasElement} className="map-canvas" width={700} height={340} />
+        <canvas
+          ref={setCanvasElement}
+          className="map-canvas"
+          width={700}
+          height={340}
+          style={{ cursor: (hoveredCourseIndexLocal !== null || hoveredVertexIndexLocal !== null) ? 'pointer' : 'default' }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          onClick={handleCanvasClick}
+        />
         <div className="map-legend">
           <span style={{ color: 'var(--success)', fontWeight: 600 }}>● POB</span>
           {'  '}
