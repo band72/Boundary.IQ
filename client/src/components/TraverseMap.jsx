@@ -122,6 +122,153 @@ function getDensePoints(pts, coursesList) {
   return dense;
 }
 
+function parseDmsToDecimal(dms) {
+  if (dms == null) return 0;
+  const clean = dms.toString().trim();
+  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/)
+    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”“']{0,2}$/)
+    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/);
+
+  if (match) {
+    const deg = parseFloat(match[1]);
+    const min = match[2] ? parseFloat(match[2]) : 0;
+    const sec = match[3] ? parseFloat(match[3]) : 0;
+    const sign = deg < 0 ? -1 : 1;
+    return (Math.abs(deg) + min / 60.0 + sec / 3600.0) * sign;
+  }
+  const val = parseFloat(clean);
+  if (!isNaN(val)) return val;
+  return 0;
+}
+
+function parseBearingToDegrees(b) {
+  if (!b) return null;
+  const clean = b.toUpperCase().trim().replace(/[^0-9NSEW°'"\-\.\s]/g, '');
+  const m = clean.match(/^([NS])\s*(\d+(?:\.\d+)?)(?:[°\-\s](\d+(?:\.\d+)?))?(?:['\-\s](\d+(?:\.\d+)?))?["'\s]*([EW])/);
+  if (m) {
+    const [, ns, degStr, minStr, secStr, ew] = m;
+    const deg = parseFloat(degStr || 0);
+    const min = parseFloat(minStr || 0);
+    const sec = parseFloat(secStr || 0);
+    const decDeg = deg + min / 60 + sec / 3600;
+    if (ns === 'N' && ew === 'E') return decDeg;
+    if (ns === 'S' && ew === 'E') return 180 - decDeg;
+    if (ns === 'S' && ew === 'W') return 180 + decDeg;
+    if (ns === 'N' && ew === 'W') return 360 - decDeg;
+  }
+  if (clean === 'N' || clean === 'NORTH') return 0;
+  if (clean === 'S' || clean === 'SOUTH') return 180;
+  if (clean === 'E' || clean === 'EAST') return 90;
+  if (clean === 'W' || clean === 'WEST') return 270;
+  return null;
+}
+
+function azimuthToBearingString(azDeg) {
+  let ns, ew, brg;
+  if (azDeg <= 90)       { ns = 'N'; ew = 'E'; brg = azDeg; }
+  else if (azDeg <= 180) { ns = 'S'; ew = 'E'; brg = 180 - azDeg; }
+  else if (azDeg <= 270) { ns = 'S'; ew = 'W'; brg = azDeg - 180; }
+  else                   { ns = 'N'; ew = 'W'; brg = 360 - azDeg; }
+
+  let totalSec = Math.round(brg * 3600 * 100) / 100;
+  let d = Math.floor(totalSec / 3600);
+  let remSec = totalSec - d * 3600;
+  let mn = Math.floor(remSec / 60);
+  let sec = remSec - mn * 60;
+
+  const dd = String(d).padStart(2, '0');
+  const mm = String(mn).padStart(2, '0');
+  const ss = sec.toFixed(2).padStart(5, '0');
+  return `${ns}${dd}°${mm}'${ss}"${ew}`;
+}
+
+function resolveCurvePropertiesClient(c, prevAzimuthDeg) {
+  let r = c.radius != null && c.radius !== '' ? parseFloat(c.radius) : null;
+  let l = c.arcLength != null && c.arcLength !== '' ? parseFloat(c.arcLength) : null;
+  let dDeg = c.delta != null && c.delta !== '' ? parseDmsToDecimal(c.delta) : null;
+  let chDist = c.chordDistance != null && c.chordDistance !== '' ? parseFloat(c.chordDistance) : null;
+  let chBrg = c.chordBearing || c.bearing || null;
+
+  if (isNaN(r)) r = null;
+  if (isNaN(l)) l = null;
+  if (isNaN(dDeg)) dDeg = null;
+  if (isNaN(chDist)) chDist = null;
+
+  let deltaRad = dDeg !== null ? dDeg * Math.PI / 180 : null;
+
+  if (r !== null && l !== null && dDeg !== null) {
+    const calculatedDeltaRad = l / r;
+    const calculatedDeltaDeg = calculatedDeltaRad * 180.0 / Math.PI;
+    if (Math.abs(dDeg - calculatedDeltaDeg) > 0.5) {
+      dDeg = calculatedDeltaDeg;
+      deltaRad = calculatedDeltaRad;
+    }
+  }
+
+  if (deltaRad === null) {
+    if (r !== null && l !== null) {
+      deltaRad = l / r;
+    } else if (r !== null && chDist !== null) {
+      if (chDist <= 2 * r) {
+        deltaRad = 2 * Math.asin(chDist / (2 * r));
+      }
+    } else if (l !== null && chDist !== null) {
+      if (chDist < l) {
+        const ratio = chDist / l;
+        let low = 0;
+        let high = Math.PI;
+        for (let iter = 0; iter < 50; iter++) {
+          const mid = (low + high) / 2;
+          const val = Math.sin(mid) / mid;
+          if (val > ratio) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+        deltaRad = 2 * ((low + high) / 2);
+      }
+    }
+  }
+
+  if (deltaRad !== null && deltaRad > 0) {
+    if (r === null) {
+      if (l !== null) {
+        r = l / deltaRad;
+      } else if (chDist !== null) {
+        const sinHalf = Math.sin(deltaRad / 2);
+        if (sinHalf > 0) {
+          r = chDist / (2 * sinHalf);
+        }
+      }
+    }
+
+    if (l === null && r !== null) {
+      l = r * deltaRad;
+    }
+
+    if (chDist === null && r !== null) {
+      chDist = 2 * r * Math.sin(deltaRad / 2);
+    }
+
+    dDeg = deltaRad * 180 / Math.PI;
+  }
+
+  if (chBrg === null && prevAzimuthDeg !== null && dDeg !== null) {
+    const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
+    const synthAzDeg = (prevAzimuthDeg + deflectionSign * (dDeg / 2.0) + 360) % 360;
+    chBrg = azimuthToBearingString(synthAzDeg);
+  }
+
+  return {
+    radius: r,
+    arcLength: l,
+    delta: dDeg,
+    chordDistance: chDist,
+    chordBearing: chBrg
+  };
+}
+
 export default function TraverseMap({ stations, adjusted, courses, pob }) {
   const [canvasElement, setCanvasElement] = useState(null);
   
@@ -381,22 +528,45 @@ export default function TraverseMap({ stations, adjusted, courses, pob }) {
 
     let lineIndex = 1;
     let curveIndex = 1;
+    let prevAzimuthDeg = null;
 
     courses.forEach(c => {
-      let dist = parseFloat(c.distance ?? c.chordDistance ?? c.arcLength ?? 0);
-      if (dist <= 0) return;
-
       const isCurve = (c.type || '').toLowerCase() === 'curve';
       if (isCurve) {
+        const resolvedCurve = resolveCurvePropertiesClient(c, prevAzimuthDeg);
+        
+        if (resolvedCurve.radius === null && resolvedCurve.arcLength === null && resolvedCurve.chordDistance === null) {
+          return;
+        }
+
         curvesList.push({
           tag: `C${curveIndex++}`,
-          radius: c.radius != null && c.radius !== '' ? `${parseFloat(c.radius).toFixed(2)}'` : '-',
-          arcLength: c.arcLength != null && c.arcLength !== '' ? `${parseFloat(c.arcLength).toFixed(2)}'` : (c.distance != null && c.distance !== '' ? `${parseFloat(c.distance).toFixed(2)}'` : '-'),
-          chordBearing: c.chordBearing || c.bearing || '-',
-          chordDistance: c.chordDistance != null && c.chordDistance !== '' ? `${parseFloat(c.chordDistance).toFixed(2)}'` : '-',
-          delta: c.delta || '-'
+          radius: resolvedCurve.radius != null ? `${resolvedCurve.radius.toFixed(2)}'` : '-',
+          arcLength: resolvedCurve.arcLength != null ? `${resolvedCurve.arcLength.toFixed(2)}'` : '-',
+          chordBearing: resolvedCurve.chordBearing || '-',
+          chordDistance: resolvedCurve.chordDistance != null ? `${resolvedCurve.chordDistance.toFixed(2)}'` : '-',
+          delta: resolvedCurve.delta != null ? `${resolvedCurve.delta.toFixed(4)}°` : '-'
         });
+
+        if (resolvedCurve.delta !== null) {
+          const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
+          if (prevAzimuthDeg !== null) {
+            prevAzimuthDeg = (prevAzimuthDeg + deflectionSign * resolvedCurve.delta + 360) % 360;
+          } else if (resolvedCurve.chordBearing) {
+            const parsed = parseBearingToDegrees(resolvedCurve.chordBearing);
+            if (parsed !== null) prevAzimuthDeg = parsed;
+          }
+        }
       } else {
+        let dist = parseFloat(c.distance ?? 0);
+        if (dist <= 0) return;
+
+        const bearingStr = c.bearing || '';
+        const parsed = parseBearingToDegrees(bearingStr);
+        if (parsed !== null) {
+          prevAzimuthDeg = parsed;
+        }
+
         linesList.push({
           tag: `L${lineIndex++}`,
           bearing: c.bearing || '-',

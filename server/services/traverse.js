@@ -12,6 +12,106 @@ function unitFactor(units) {
   return UNIT_TO_FEET[(units || 'Feet').toLowerCase()] ?? 1.0;
 }
 
+function resolveCurveProperties(c, prevAzimuthDeg) {
+  if (c.type?.toLowerCase() !== 'curve') return;
+
+  let r = c.radius != null && c.radius !== '' ? parseFloat(c.radius) : null;
+  let l = c.arcLength != null && c.arcLength !== '' ? parseFloat(c.arcLength) : null;
+  let dDeg = c.delta != null && c.delta !== '' ? parseDmsToDecimal(c.delta) : null;
+  let chDist = c.chordDistance != null && c.chordDistance !== '' ? parseFloat(c.chordDistance) : null;
+  let chBrg = c.chordBearing || c.bearing || null;
+
+  if (isNaN(r)) r = null;
+  if (isNaN(l)) l = null;
+  if (isNaN(dDeg)) dDeg = null;
+  if (isNaN(chDist)) chDist = null;
+
+  let deltaRad = dDeg !== null ? dDeg * Math.PI / 180 : null;
+
+  // Reconcile conflicting curve parameters
+  if (r !== null && l !== null && dDeg !== null) {
+    const calculatedDeltaRad = l / r;
+    const calculatedDeltaDeg = calculatedDeltaRad * 180.0 / Math.PI;
+    if (Math.abs(dDeg - calculatedDeltaDeg) > 0.5) {
+      dDeg = calculatedDeltaDeg;
+      deltaRad = calculatedDeltaRad;
+    }
+  }
+
+  // 1. Resolve deltaRad/dDeg if missing, using any 2 of (r, l, chDist)
+  if (deltaRad === null) {
+    if (r !== null && l !== null) {
+      deltaRad = l / r;
+    } else if (r !== null && chDist !== null) {
+      if (chDist <= 2 * r) {
+        deltaRad = 2 * Math.asin(chDist / (2 * r));
+      }
+    } else if (l !== null && chDist !== null) {
+      if (chDist < l) {
+        const ratio = chDist / l;
+        let low = 0;
+        let high = Math.PI;
+        for (let iter = 0; iter < 50; iter++) {
+          const mid = (low + high) / 2;
+          const val = Math.sin(mid) / mid;
+          if (val > ratio) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+        deltaRad = 2 * ((low + high) / 2);
+      }
+    }
+  }
+
+  // 2. Resolve R, L, C using deltaRad/dDeg
+  if (deltaRad !== null && deltaRad > 0) {
+    if (r === null) {
+      if (l !== null) {
+        r = l / deltaRad;
+      } else if (chDist !== null) {
+        const sinHalf = Math.sin(deltaRad / 2);
+        if (sinHalf > 0) {
+          r = chDist / (2 * sinHalf);
+        }
+      }
+    }
+
+    if (l === null && r !== null) {
+      l = r * deltaRad;
+    }
+
+    if (chDist === null && r !== null) {
+      chDist = 2 * r * Math.sin(deltaRad / 2);
+    }
+
+    dDeg = deltaRad * 180 / Math.PI;
+  }
+
+  // 3. Write back to course object c
+  if (r !== null) c.radius = r;
+  if (l !== null) c.arcLength = l;
+  if (dDeg !== null) c.delta = dDeg.toFixed(6);
+  if (chDist !== null) c.chordDistance = chDist;
+
+  // 4. Resolve chordBearing if missing
+  if (chBrg === null && prevAzimuthDeg !== null && dDeg !== null) {
+    const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
+    const synthAzDeg = (prevAzimuthDeg + deflectionSign * (dDeg / 2.0) + 360) % 360;
+    chBrg = bp.toDisplayString(synthAzDeg);
+  }
+
+  if (chBrg !== null) {
+    c.chordBearing = chBrg;
+  }
+
+  // Set isUnknown to false if it's now solved and has 4 required pieces
+  if (c.radius != null && c.arcLength != null && c.chordBearing != null && c.chordDistance != null) {
+    c.isUnknown = false;
+  }
+}
+
 /**
  * Compute a full traverse: raw coords → closure → compass rule → area.
  * @param {object} req - { pointOfBeginning: {northing, easting}, courses: [...], units, isOpenEnded }
@@ -21,10 +121,47 @@ export function compute(req) {
   // ── Step 0: Resolve deflection angles → absolute bearings
   const resolved = resolveDeflectionAngles(req.courses);
 
+  const uf = unitFactor(req.units);
+
+  // ── Step 0.5: Pre-resolve/fill missing curve parameters
+  let tempAz = null;
+  if (req.commencementSegments && req.commencementSegments.length > 0) {
+    for (const comm of req.commencementSegments) {
+      if (comm.type?.toLowerCase() === 'line' && comm.bearing) {
+        try { tempAz = bp.parse(comm.bearing).azimuthDeg; } catch {}
+      } else if (comm.type?.toLowerCase() === 'curve') {
+        resolveCurveProperties(comm, tempAz);
+        if (tempAz !== null && comm.delta) {
+          const deflectionSign = (comm.curveDirection || comm.direction || '').toLowerCase() === 'left' ? -1 : 1;
+          tempAz = (tempAz + deflectionSign * comm.delta + 360) % 360;
+        } else if (comm.chordBearing) {
+          try { tempAz = bp.parse(comm.chordBearing).azimuthDeg; } catch {}
+        }
+      }
+    }
+  }
+
+  for (const course of resolved) {
+    if (course.type?.toLowerCase() === 'line') {
+      if (course.bearing) {
+        try { tempAz = bp.parse(course.bearing).azimuthDeg; } catch {}
+      }
+    } else if (course.type?.toLowerCase() === 'curve') {
+      resolveCurveProperties(course, tempAz);
+      if (course.delta) {
+        const deflectionSign = (course.curveDirection || course.direction || '').toLowerCase() === 'left' ? -1 : 1;
+        if (tempAz !== null) {
+          tempAz = (tempAz + deflectionSign * course.delta + 360) % 360;
+        } else if (course.chordBearing) {
+          try { tempAz = bp.parse(course.chordBearing).azimuthDeg; } catch {}
+        }
+      }
+    }
+  }
+
   // ── Inverse Gap Solver: auto-fix meander/unknown runs
   const courses = autoFixUnknownRuns(resolved, req.pointOfBeginning);
 
-  const uf = unitFactor(req.units);
   const pobN = req.pointOfBeginning.northing;
   const pobE = req.pointOfBeginning.easting;
   const stations = [];
@@ -213,10 +350,9 @@ export function parseDmsToDecimal(dms) {
   }
 
   const clean = dms.toString().trim();
-  // Match degrees, minutes, seconds
-  const match = clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”“']{0,2}$/)
-    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/)
-    || clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/);
+  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/)
+    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”“']{0,2}$/)
+    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/);
 
   if (match) {
     const deg = parseFloat(match[1]);
@@ -233,34 +369,113 @@ export function parseDmsToDecimal(dms) {
 }
 
 function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCenters) {
-  let deltaDeg = parseDmsToDecimal(c.delta);
+  let r = c.radius != null && c.radius !== '' ? parseFloat(c.radius) : null;
+  let l = c.arcLength != null && c.arcLength !== '' ? parseFloat(c.arcLength) : null;
+  let dDeg = c.delta != null && c.delta !== '' ? parseDmsToDecimal(c.delta) : null;
+  let chDist = c.chordDistance != null && c.chordDistance !== '' ? parseFloat(c.chordDistance) : null;
+  let chBrg = c.chordBearing || c.bearing || null;
+
+  if (isNaN(r)) r = null;
+  if (isNaN(l)) l = null;
+  if (isNaN(dDeg)) dDeg = null;
+  if (isNaN(chDist)) chDist = null;
+
+  let deltaRad = dDeg !== null ? dDeg * Math.PI / 180 : null;
 
   // Reconcile conflicting curve parameters: if R, Arc, and Delta are all provided,
   // check if they are mathematically consistent. If they differ by more than 0.5 degrees,
   // recalculate delta from the physical arc length and radius to resolve the scrivener error.
-  if (c.radius && c.arcLength && deltaDeg) {
-    const calculatedDeltaRad = c.arcLength / c.radius;
+  if (r !== null && l !== null && dDeg !== null) {
+    const calculatedDeltaRad = l / r;
     const calculatedDeltaDeg = calculatedDeltaRad * 180.0 / Math.PI;
-    if (Math.abs(deltaDeg - calculatedDeltaDeg) > 0.5) {
-      console.log(`[traverse.js] Reconciling curve conflict: stated delta ${deltaDeg.toFixed(4)}° conflicts with calculated delta ${calculatedDeltaDeg.toFixed(4)}°. Recalculating delta from ArcLength and Radius.`);
-      deltaDeg = calculatedDeltaDeg;
-      c.delta = deltaDeg;
+    if (Math.abs(dDeg - calculatedDeltaDeg) > 0.5) {
+      console.log(`[traverse.js] Reconciling curve conflict: stated delta ${dDeg.toFixed(4)}° conflicts with calculated delta ${calculatedDeltaDeg.toFixed(4)}°. Recalculating delta from ArcLength and Radius.`);
+      dDeg = calculatedDeltaDeg;
+      deltaRad = calculatedDeltaRad;
+      c.delta = dDeg;
+      chDist = 2 * r * Math.sin(deltaRad / 2);
+      c.chordDistance = chDist;
     }
   }
 
-  // Synthesize missing delta from Radius & Arc Length
-  if ((c.delta == null || c.delta === 0) && c.radius && c.arcLength) {
-    const deltaRad = c.arcLength / c.radius;
-    deltaDeg = deltaRad * 180.0 / Math.PI;
-    c.delta = deltaDeg;
+  // 1. Resolve deltaRad/dDeg if missing, using any 2 of (r, l, chDist)
+  if (deltaRad === null) {
+    if (r !== null && l !== null) {
+      deltaRad = l / r;
+    } else if (r !== null && chDist !== null) {
+      if (chDist <= 2 * r) {
+        deltaRad = 2 * Math.asin(chDist / (2 * r));
+      }
+    } else if (l !== null && chDist !== null) {
+      if (chDist < l) {
+        const ratio = chDist / l;
+        let low = 0;
+        let high = Math.PI;
+        for (let iter = 0; iter < 50; iter++) {
+          const mid = (low + high) / 2;
+          const val = Math.sin(mid) / mid;
+          if (val > ratio) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+        deltaRad = 2 * ((low + high) / 2);
+      }
+    }
   }
 
+  // 2. Resolve R, L, C using deltaRad/dDeg
+  if (deltaRad !== null && deltaRad > 0) {
+    // Solve R
+    if (r === null) {
+      if (l !== null) {
+        r = l / deltaRad;
+      } else if (chDist !== null) {
+        const sinHalf = Math.sin(deltaRad / 2);
+        if (sinHalf > 0) {
+          r = chDist / (2 * sinHalf);
+        }
+      }
+    }
+
+    // Solve L
+    if (l === null && r !== null) {
+      l = r * deltaRad;
+    }
+
+    // Solve C (Chord Distance)
+    if (chDist === null && r !== null) {
+      chDist = 2 * r * Math.sin(deltaRad / 2);
+    }
+
+    dDeg = deltaRad * 180 / Math.PI;
+  }
+
+  // 3. Write back to course object c
+  if (r !== null) c.radius = r;
+  if (l !== null) c.arcLength = l;
+  if (dDeg !== null) c.delta = dDeg.toFixed(6);
+  if (chDist !== null) c.chordDistance = chDist;
+
+  // 4. Resolve chordBearing if missing and we have prevAzimuthDeg
+  if (chBrg === null && prevAzimuthDeg !== null && dDeg !== null) {
+    const deflectionSign = (c.curveDirection || c.direction || '').toLowerCase() === 'left' ? -1 : 1;
+    const synthAzDeg = (prevAzimuthDeg + deflectionSign * (dDeg / 2.0) + 360) % 360;
+    chBrg = bp.toDisplayString(synthAzDeg);
+  }
+
+  if (chBrg !== null) {
+    c.chordBearing = chBrg;
+  }
+
+  let deltaDeg = dDeg;
 
   // Arc length: prefer given, else compute from R × Δ
-  let arcLen = c.arcLength;
-  if (arcLen == null && c.radius && c.delta) {
+  let arcLen = l;
+  if (arcLen == null && r && deltaDeg) {
     const deltaRad = deltaDeg * Math.PI / 180.0;
-    arcLen = c.radius * deltaRad;
+    arcLen = r * deltaRad;
   }
   if (arcLen == null) arcLen = 0;
   perim += (arcLen * uf);
