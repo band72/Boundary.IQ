@@ -1360,15 +1360,27 @@ export function solveFromText(deedText, options = {}) {
 
   const courses = [];
   const commencementSegments = [];
-  let reachedPob = false;
   let lastMentionedRadius = null;
+
+  // Early POB detection: if the text segment BEFORE the first THENCE/COMMENCE contains
+  // "FOR A POINT OF BEGINNING", "BEGINNING AT", "BEGIN AT" or "POINT OF BEGINNING",
+  // then the traverse starts immediately without a commencement phase.
+  const preText = rawSegments[0] || '';
+  const hasEarlyPob = /\b(BEGIN(?:NING)?\s+AT\b|FOR\s+A\s+POINT\s+OF\s+BEGINNING\b|AS\s+A\s+POINT\s+OF\s+BEGINNING\b)/i.test(preText);
+  // Also: if the FIRST keyword is THENCE (not COMMENCE) and preText is short → immediate start
+  const firstKeyword = (rawSegments[1] || '').toUpperCase();
+  const isImmediate = firstKeyword === 'THENCE' && preText.length < 200 && !hasEarlyPob;
+  let reachedPob = hasEarlyPob || isImmediate;
 
   for (let i = 1; i < rawSegments.length; i += 2) {
     const keyword = rawSegments[i].toUpperCase();
     const content = rawSegments[i + 1] || '';
     const cleanContent = content.replace(/\(.*?\)/g, ' ').trim();
 
-    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)|SAID\s+POINT\s+OF\s+BEGINNING)\b/i.test(cleanContent);
+    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)|SAID\s+POINT\s+OF\s+BEGINNING|FOR\s+(?:THE\s+|A\s+)?POINT\s+OF\s+BEGINNING)\b/i.test(cleanContent);
+    // Detect 'FROM THE POINT OF BEGINNING THUS ESTABLISHED' — means we're at the POB now
+    const isFromPob = /\bFROM\s+(?:THE\s+)?POINT\s+OF\s+BEGINNING\b/i.test(cleanContent);
+
 
     // ── Segment Type Classification ──────────────────────────────────────────
     // Suppress curve detection ONLY when this is a line arriving AT the Point of Curve (PC)
@@ -1522,7 +1534,11 @@ export function solveFromText(deedText, options = {}) {
     } else {
       commencementSegments.push(segmentObj);
       if (isPobDest) reachedPob = true;
+      // "FROM THE POINT OF BEGINNING THUS ESTABLISHED..." means this segment ends at POB
+      // The NEXT segment after this one is the first real traverse course
+      if (isFromPob && !isPobDest) reachedPob = true;
     }
+
   }
 
   if (courses.length === 0 && commencementSegments.length > 0) {
