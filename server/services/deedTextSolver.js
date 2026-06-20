@@ -1366,11 +1366,9 @@ export function solveFromText(deedText, options = {}) {
   // "FOR A POINT OF BEGINNING", "BEGINNING AT", "BEGIN AT" or "POINT OF BEGINNING",
   // then the traverse starts immediately without a commencement phase.
   const preText = rawSegments[0] || '';
-  const hasEarlyPob = /\b(BEGIN(?:NING)?\s+AT\b|FOR\s+A\s+POINT\s+OF\s+BEGINNING\b|AS\s+A\s+POINT\s+OF\s+BEGINNING\b)/i.test(preText);
-  // Also: if the FIRST keyword is THENCE (not COMMENCE) and preText is short → immediate start
-  const firstKeyword = (rawSegments[1] || '').toUpperCase();
-  const isImmediate = firstKeyword === 'THENCE' && preText.length < 200 && !hasEarlyPob;
-  let reachedPob = hasEarlyPob || isImmediate;
+  const hasEarlyPob = /\b(BEGIN(?:NING)?\s+AT\b|FOR\s+A\s+POINT\s+OF\s+BEGINNING\b|AS\s+A\s+POINT\s+OF\s+BEGINNING\b)\b/i.test(preText);
+  let reachedPob = hasEarlyPob;
+
 
   for (let i = 1; i < rawSegments.length; i += 2) {
     const keyword = rawSegments[i].toUpperCase();
@@ -1529,13 +1527,19 @@ export function solveFromText(deedText, options = {}) {
       segmentObj.isUnknown      = !segmentObj.radius || (!segmentObj.arcLength && !segmentObj.delta && !segmentObj.chordDistance);
     }
 
-    if (reachedPob) {
+    // COMMENCE keyword always marks a commencement leg, never a traverse course.
+    // Even if hasEarlyPob pre-set reachedPob=true, a COMMENCE block resets to
+    // commencement state until we see a POB destination inside it.
+    if (keyword === 'COMMENCE') {
+      commencementSegments.push(segmentObj);
+      if (isPobDest) reachedPob = true;
+      if (isFromPob && !isPobDest) reachedPob = true;
+    } else if (reachedPob) {
       courses.push(segmentObj);
     } else {
       commencementSegments.push(segmentObj);
       if (isPobDest) reachedPob = true;
       // "FROM THE POINT OF BEGINNING THUS ESTABLISHED..." means this segment ends at POB
-      // The NEXT segment after this one is the first real traverse course
       if (isFromPob && !isPobDest) reachedPob = true;
     }
 
