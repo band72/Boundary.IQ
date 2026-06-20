@@ -599,7 +599,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
       return acc;
     }, []);
     steps.push({ hypothesis: 'INVERSE_GAP_SOLVER', solvedIndices });
-    return { courses: withGapSolved, result: r0, steps };
+    return { courses: r0.courses || withGapSolved, result: r0, steps };
   }
 
   // ── Steps 3 & 4: Bearing flip + re-solve unknowns ────────────────────────
@@ -633,7 +633,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
       const r1Bowtie = r1 && (r1.areaAcres == null || r1.areaAcres < 0.0001) && !isOpenEnded;
       if (r1 && isPassing(r1) && !r1Bowtie && isSensible(testSolved)) {
         steps.push({ hypothesis: `SINGLE_${label}`, courseIndex: i, originalBearing: c.bearing, correctedBearing: flipped });
-        return { courses: testSolved, result: r1, steps };
+        return { courses: r1.courses || testSolved, result: r1, steps };
       }
     }
   }
@@ -652,7 +652,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
       const r2Bowtie = r2 && (r2.areaAcres == null || r2.areaAcres < 0.0001) && !isOpenEnded;
       if (r2 && isPassing(r2) && !r2Bowtie && isSensible(testSolved)) {
         steps.push({ hypothesis: 'DOUBLE_QUADRANT_FLIP', courseIndices: [i, j] });
-        return { courses: testSolved, result: r2, steps };
+        return { courses: r2.courses || testSolved, result: r2, steps };
       }
     }
   }
@@ -660,7 +660,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
   // ── Step 5: Return best-effort even if not closed ─────────────────────────
   const { result: rFinal } = tryCompute(withGapSolved, pob, units, isOpenEnded, commencementSegments);
   steps.push({ hypothesis: 'UNCLOSED', note: 'No repair hypothesis achieved passing closure.' });
-  return { courses: withGapSolved, result: rFinal, steps };
+  return { courses: rFinal?.courses || withGapSolved, result: rFinal, steps };
 }
 
 // ── Legal description writer ──────────────────────────────────────────────────
@@ -1287,10 +1287,22 @@ export function solveFromText(deedText, options = {}) {
       const dirMatch = cleanContent.match(/CURVE\s+TO\s+THE\s+(RIGHT|LEFT)/i);
       const curveDirection = dirMatch ? (dirMatch[1].toUpperCase() === 'RIGHT' ? 'Right' : 'Left') : 'Right';
 
+      const chordDistMatch = cleanContent.match(/CHORD\s+DIST(?:ANCE)?\s+(?:OF\s+)?([\d,]+\.?\d*)/i);
+      const chordDistance = chordDistMatch ? parseFloat(chordDistMatch[1].replace(/,/g, '')) : null;
+
+      const deltaMatch = cleanContent.match(/(?:CENTRAL\s+ANGLE|DELTA)\s+(?:OF\s+)?([^\s,;]+)/i);
+      let delta = deltaMatch ? deltaMatch[1].trim() : null;
+      if (delta) {
+        delta = delta.replace(/[,\s;]+$/, '');
+      }
+
       segmentObj.radius = lastMentionedRadius;
       segmentObj.arcLength = arcLength;
       segmentObj.curveDirection = curveDirection;
-      segmentObj.isUnknown = !segmentObj.radius || !segmentObj.arcLength;
+      segmentObj.chordBearing = bearing;
+      segmentObj.chordDistance = chordDistance;
+      segmentObj.delta = delta;
+      segmentObj.isUnknown = !segmentObj.radius || (!segmentObj.arcLength && !segmentObj.delta && !segmentObj.chordDistance);
     }
 
     if (reachedPob) {

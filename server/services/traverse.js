@@ -358,6 +358,16 @@ export function parseDmsToDecimal(dms) {
     const deg = parseFloat(match[1]);
     const min = match[2] ? parseFloat(match[2]) : 0;
     const sec = match[3] ? parseFloat(match[3]) : 0;
+
+    // Check for mixed decimal/DMS scrivener error (e.g. 22°97'38.78" where min >= 60)
+    if (min >= 60) {
+      const minStr = match[2];
+      const secStr = match[3] || '';
+      const combinedDecStr = `${minStr}${secStr}`.replace(/\./g, '');
+      const decValue = parseFloat(`${deg}.${combinedDecStr}`);
+      return decValue * (deg < 0 ? -1 : 1);
+    }
+
     const sign = deg < 0 ? -1 : 1;
     return (Math.abs(deg) + min / 60.0 + sec / 3600.0) * sign;
   }
