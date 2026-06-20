@@ -89,6 +89,13 @@ export function parse(bearing) {
     .replace(/\u2034/g, '"'  )    // U+2034 TRIPLE PRIME → seconds fallback
     .replace(/\u02B9/g, "'"  )    // U+02B9 MODIFIER LETTER PRIME
     .replace(/\u02BA/g, '"'  )    // U+02BA MODIFIER LETTER DOUBLE PRIME
+    // Windows Symbol / Wingdings PUA characters (Word legacy font encoding)
+    .replace(/\uF0B0/g, '°'  )    // U+F0B0 Symbol-font DEGREE SIGN → °
+    .replace(/\uF0B2/g, "'"  )    // U+F0B2 Symbol-font PRIME → '
+    .replace(/\uFEFF/g, ''   )    // BOM
+    // Common degree symbol lookalikes / OCR substitutions
+    .replace(/\u00BA/g, '°'  )    // U+00BA MASCULINE ORDINAL INDICATOR º → °
+    .replace(/\u02DA/g, '°'  )    // U+02DA RING ABOVE ˚ → °
     // Normalize Greek lookalike letters OCR sometimes produces in all-caps docs
     .replace(/\u039D/g, 'N'  )    // Ν (Greek Nu) → N
     .replace(/\u0391/g, 'A'  )    // Α (Greek Alpha) → A

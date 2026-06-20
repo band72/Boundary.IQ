@@ -1319,10 +1319,44 @@ export function solveFromText(deedText, options = {}) {
   }
 
   // Normalize spaces and strip breaks
-  const normalizedText = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+  let normalizedText = text
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    // Normalize smart/curly quotes to standard ASCII punctuation
+    .replace(/[\u2018\u2019\u201A\u02BC\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    // Normalize prime/double-prime marks
+    .replace(/\u2032/g, "'")
+    .replace(/\u2034/g, '"')
+    // Normalize Windows Symbol PUA degree symbol (U+F0B0) → °
+    // This appears in Word documents using Symbol/Wingdings fonts
+    .replace(/\uF0B0/g, '°')
+    // Normalize masculine ordinal indicator º (U+00BA) → ° (degree)
+    // Very common Word/OCR confusion — surveyors use it in place of degree symbol
+    .replace(/\u00BA/g, '°')
+    // Normalize ring above ˚ (U+02DA) → °
+    .replace(/\u02DA/g, '°')
+    // Remove BOM
+    .replace(/\uFEFF/g, '');
 
-  // Split into tokens based on COMMENCE or THENCE
-  const rawSegments = normalizedText.split(/\b(THENCE|COMMENCE)\b/i);
+
+  // Pre-normalize surveyor dot-notation bearings: N.89°43'05"E. → N89°43'05"E
+  // Pattern: cardinal letter (N/S) followed by a literal dot then digits
+  normalizedText = normalizedText
+    .replace(/\b([NSns])\.([0-9])/g, '$1$2')   // N.00° → N00°
+    .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2') // 47".E → 47"E  or  47".W → 47"W
+    .replace(/([EWew])\.(?=\s|,|;|$)/g, '$1')   // strip trailing dot after E/W
+    .replace(/°'/g, '°');                          // fix °' typo (extra apostrophe after degree symbol)
+
+  // Pre-normalize text: "RUN THENCE", "THENCE CONTINUE", "THEN" → all become THENCE
+  const preparedText = normalizedText
+    .replace(/\bTHENCE\s+CONTINUE(?:ING)?\b/gi, 'THENCE')
+    .replace(/\bRUN\s+THENCE\b/gi, 'THENCE')
+    .replace(/\bTHEN\s+(?=[NSns]\s*[.\d])/gi, 'THENCE ')
+    // "CONTINUING...bearing" and "CONTINUE...bearing" -> THENCE
+    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=[NSns]\s*[.\d°])/gi, 'THENCE ');
+
+  const rawSegments = preparedText.split(/\b(THENCE|COMMENCE)\b/i);
 
   const courses = [];
   const commencementSegments = [];
@@ -1334,96 +1368,160 @@ export function solveFromText(deedText, options = {}) {
     const content = rawSegments[i + 1] || '';
     const cleanContent = content.replace(/\(.*?\)/g, ' ').trim();
 
-    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+BEGINNING|TO\s+(?:THE\s+)?P\.?\s*O\.?\s*B\.?)\b/i.test(cleanContent);
+    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)|SAID\s+POINT\s+OF\s+BEGINNING)\b/i.test(cleanContent);
 
-    // Classification of Segment Type
-    const hasToPointOfCurve = /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+(?:CURVE|CURVATURE))\b/i.test(cleanContent);
+    // ── Segment Type Classification ──────────────────────────────────────────
+    // Suppress curve detection ONLY when this is a line arriving AT the Point of Curve (PC)
+    // — i.e., the segment ends at the START of the next curve. 
+    // Do NOT suppress if the destination is the Point of Tangency (PT) — that's the END of a curve.
+    const hasToPointOfCurve = /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+(?:CURVE|CURVATURE))\b/i.test(cleanContent)
+                           && !/\b(POINT\s+OF\s+TANGENCY|POINT\s+OF\s+TANGENT)\b/i.test(cleanContent);
     let type = 'Line';
     if (!hasToPointOfCurve) {
-      if (/\b(ALONG\s+THE\s+ARC|ALONG\s+A\s+CURVE|CONTINUE\s+ALONG|ALONG\s+SAID\s+CURVE|WESTERLY\s+ALONG\s+THE\s+ARC|ALONG\s+THE\s+NORTHERLY\s+RIGHT|ALONG\s+SAID\s+NORTHERLY\s+RIGHT)\b/i.test(cleanContent) && /\b(CURVE|ARC)\b/i.test(cleanContent)) {
-        type = 'Curve';
-      } else if (/\b(CURVE|ARC|RADIUS)\b/i.test(cleanContent) && !/\b(TO\s+AN?\s+INTERSECTION|INTERSECTING)\b/i.test(cleanContent)) {
+      const hasCurveKeywords = /\b(CURVE|ARC|RADIUS)\b/i.test(cleanContent);
+      const hasAlongArc      = /\b(ALONG\s+(?:THE\s+|SAID\s+)?ARC|AROUND\s+SAID\s+CURVE|ALONG\s+(?:AND\s+AROUND\s+)?SAID\s+CURVE|AROUND\s+THE\s+ARC)\b/i.test(cleanContent);
+      const hasArcDist       = /\bARC\s+(?:DISTANCE|LENGTH)\b/i.test(cleanContent);
+      const hasConcave       = /\bCONCAVE\b/i.test(cleanContent);
+      const hasCentralAngle  = /\bCENTRAL\s+ANGLE\b/i.test(cleanContent);
+      if (hasAlongArc || hasArcDist || hasConcave || hasCentralAngle
+          || (hasCurveKeywords && !/\b(TO\s+AN?\s+INTERSECTION|INTERSECTING)\b/i.test(cleanContent))) {
         type = 'Curve';
       }
     }
 
-    // Distance parsing
-    const distMatch = cleanContent.match(/\b([\d,]+\.?\d*)\s*(?:FEET|FT|METERS|M)\b/i);
-    const distance = distMatch ? parseFloat(distMatch[1].replace(/,/g, '')) : null;
+    // ── Meander / open-ended line detection ──────────────────────────────────
+    const isMeander = /\b(MEANDER(?:ING)?|ALONG\s+(?:SAID\s+)?(?:BANK|SHORE|EDGE)|FOLLOWING\s+THE\s+MEANDER)\b/i.test(cleanContent)
+                   && !(/\b\d+\.\d+\s*FEET\b/i.test(cleanContent));
 
-    // Bearing parsing
+    // ── Distance parsing ─────────────────────────────────────────────────────
+    // Match ALL distances in the segment; select the appropriate one per type.
+    // For curves, skip the first number if it immediately follows RADIUS
+    const allDistMatches = [...cleanContent.matchAll(/\b([\d,]+\.?\d*)\s*(?:FEET|FT\.?|METERS|M\.)\b/gi)];
+    const allDistValues  = allDistMatches.map(m => parseFloat(m[1].replace(/,/g, '')));
+
+    // For Line: use first non-radius distance
+    const radiusInLine = cleanContent.match(/(?:RADIUS)\s+(?:OF\s+)?([\d,]+\.?\d*)\s*FEET/i);
+    let distance = null;
+    if (type === 'Line') {
+      if (radiusInLine) {
+        // Skip the radius value and take the next distance
+        const skipVal = parseFloat(radiusInLine[1].replace(/,/g, ''));
+        distance = allDistValues.find(v => v !== skipVal) ?? allDistValues[0] ?? null;
+      } else {
+        distance = allDistValues[0] ?? null;
+      }
+    }
+
+    // ── Bearing parsing ──────────────────────────────────────────────────────
+    const bearingContent = cleanContent
+      .replace(/\b([NSns])\.([0-9])/g, '$1$2')
+      .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2');
+
     let bearing = null;
     let isUnknown = false;
-    const bearingMatch = cleanContent.match(/\b(N|S|NORTH|SOUTH)\s*(\d{1,3}(?:\s*DEGREES?|\s*°|\s*\-)?\s*(?:\d{1,2}\s*(?:MINUTES?|'|\s*\-))?\s*(?:\d{1,2}(?:\.\d+)?\s*(?:SECONDS?|"|\s*\-))?)\s*(E|W|EAST|WEST)\b/i);
 
-    if (bearingMatch) {
+    const bearingMatch = bearingContent.match(
+      /\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,6}\s*(?:DEGREES?|°|-)?\s*(?:\d{1,2}\s*(?:MINUTES?|'|-)?\s*(?:\d{1,2}(?:\.\d+)?\s*(?:SECONDS?|"))?)?(?:\d{1,2}(?:\.\d+)?)?)\s*\.?\s*(E|W|EAST|WEST)\b/i
+    );
+
+    const chordBearingMatch = !bearingMatch && type === 'Curve'
+      ? bearingContent.match(/CHORD\s+BEARING\s+(?:AND\s+DISTANCE\s+)?(?:OF\s+)?([NSns]\s*\.?\s*\d[^,;]{3,30}?[EWew])/i)
+      : null;
+
+    const rawBearingStr = chordBearingMatch ? chordBearingMatch[1] : (bearingMatch ? bearingMatch[0] : null);
+
+    if (rawBearingStr) {
       try {
-        const parsedBrg = bp.parse(bearingMatch[0]);
+        const parsedBrg = bp.parse(rawBearingStr);
         bearing = bp.toDisplayString(parsedBrg.azimuthDeg);
       } catch {
         isUnknown = true;
       }
     } else {
-      const cardMatch = cleanContent.match(/\b(NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b/i);
+      const cardMatch = bearingContent.match(
+        /\b(NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b/i
+      );
       if (cardMatch) {
         const az = bp.parseCardinalAzimuth(cardMatch[1]);
-        if (az !== null) {
-          bearing = bp.toDisplayString(az);
-        } else {
-          isUnknown = true;
-        }
+        if (az !== null) bearing = bp.toDisplayString(az);
+        else isUnknown = true;
       } else {
         isUnknown = true;
       }
     }
 
-    // Radius tracking
-    const radiusMatch = cleanContent.match(/RADIUS\s+OF\s+([\d,]+\.?\d*)/i);
+    // ── Radius tracking ──────────────────────────────────────────────────────
+    // Match 'RADIUS OF X', 'HAVING A RADIUS OF X', or 'RADIUS X' (bare)
+    const radiusMatch = cleanContent.match(/(?:HAVING\s+A\s+)?RADIUS\s+(?:OF\s+)?([\d,]+\.?\d*)/i);
     if (radiusMatch) {
       lastMentionedRadius = parseFloat(radiusMatch[1].replace(/,/g, ''));
     }
 
+    // ── Build segment object ─────────────────────────────────────────────────
     const segmentObj = {
       type,
       description: keyword + ' ' + content.trim(),
     };
 
     if (type === 'Line') {
-      segmentObj.bearing = bearing;
-      segmentObj.distance = distance;
-      segmentObj.isUnknown = isUnknown || distance === null;
+      segmentObj.bearing    = bearing;
+      segmentObj.distance   = isMeander ? null : distance;
+      segmentObj.isUnknown  = isMeander || isUnknown || distance === null;
+      if (isMeander) segmentObj.isMeander = true;
     } else {
-      const arcMatch = cleanContent.match(/(?:ARC\s+DISTANCE|ARC\s+LENGTH|ARC)\s+OF\s+([\d,]+\.?\d*)/i);
-      const arcLength = arcMatch ? parseFloat(arcMatch[1].replace(/,/g, '')) : distance;
-
-      const dirMatch = cleanContent.match(/CURVE\s+TO\s+THE\s+(RIGHT|LEFT)/i);
-      const curveDirection = dirMatch ? (dirMatch[1].toUpperCase() === 'RIGHT' ? 'Right' : 'Left') : 'Right';
-
-      const chordDistMatch = cleanContent.match(/CHORD\s+DIST(?:ANCE)?\s+(?:OF\s+)?([\d,]+\.?\d*)/i);
-      const chordDistance = chordDistMatch ? parseFloat(chordDistMatch[1].replace(/,/g, '')) : null;
-
-      const deltaMatch = cleanContent.match(/(?:CENTRAL\s+ANGLE|DELTA)\s+(?:OF\s+)?([^\s,;]+)/i);
-      let delta = deltaMatch ? deltaMatch[1].trim() : null;
-      if (delta) {
-        delta = delta.replace(/[,\s;]+$/, '');
+      // ── Arc length: ARC DISTANCE/LENGTH OF X  or  ARC OF X  or  last dist value
+      const arcMatch = cleanContent.match(/(?:ARC\s+(?:DISTANCE|LENGTH)|\bARC)\s+(?:DISTANCE\s+)?OF\s+([\d,]+\.?\d*)/i)
+                    || cleanContent.match(/DISTANCE\s+OF\s+([\d,]+\.?\d*)\s*FEET.*ARC/i);
+      let arcLength = arcMatch ? parseFloat(arcMatch[1].replace(/,/g, '')) : null;
+      if (!arcLength) {
+        // fallback: last distance value in the segment (arc is usually last)
+        arcLength = allDistValues[allDistValues.length - 1] ?? distance;
       }
 
-      segmentObj.radius = lastMentionedRadius;
-      segmentObj.arcLength = arcLength;
+      // ── Curve direction: explicit RIGHT/LEFT, or derive from CONCAVE language
+      // Florida deeds often say "CONCAVE NORTHERLY" or "CONCAVE TO THE NORTH"
+      // If concave to N/NE/NW → curve is to the right heading E; derive from bearing
+      let curveDirection = 'Right'; // default
+      const dirMatch = cleanContent.match(/CURVE\s+TO\s+THE\s+(RIGHT|LEFT)/i)
+                    || cleanContent.match(/\b(RIGHT|LEFT)(?:\s+CURVE)?\b/i);
+      if (dirMatch) {
+        curveDirection = dirMatch[1].toUpperCase() === 'RIGHT' ? 'Right' : 'Left';
+      } else {
+        // Concave language: concave + side → infer direction
+        const concaveMatch = cleanContent.match(/CONCAVE\s+(?:TO\s+THE\s+)?(NORTH(?:EAST|WEST)?|SOUTH(?:EAST|WEST)?|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY)/i);
+        if (concaveMatch) {
+          // We can't derive exact L/R without knowing incoming bearing, so mark unknown
+          curveDirection = 'Right'; // placeholder — downstream COGO handles via chord
+        }
+      }
+
+      // ── Chord distance
+      const chordDistMatch = cleanContent.match(/CHORD\s+(?:DIST(?:ANCE)?|LENGTH)\s+(?:OF\s+)?([\d,]+\.?\d*)/i)
+                          || cleanContent.match(/CHORD(?:AL)?\s+DISTANCE\s+OF\s+([\d,]+\.?\d*)/i);
+      const chordDistance = chordDistMatch ? parseFloat(chordDistMatch[1].replace(/,/g, '')) : null;
+
+      // ── Delta (central angle) — stored as DMS string or decimal degrees string
+      const deltaMatch = cleanContent.match(/(?:CENTRAL\s+ANGLE|DELTA)\s+(?:OF\s+)?([0-9°'"\s.]+?)(?:\s*[,;]|\s+(?:ARC|CHORD|RADIUS|FEET|TO|AND|$))/i);
+      let delta = null;
+      if (deltaMatch) {
+        delta = deltaMatch[1].trim().replace(/\s+/g, '');
+        if (!delta) delta = null;
+      }
+
+      segmentObj.radius         = lastMentionedRadius;
+      segmentObj.arcLength      = arcLength;
       segmentObj.curveDirection = curveDirection;
-      segmentObj.chordBearing = bearing;
-      segmentObj.chordDistance = chordDistance;
-      segmentObj.delta = delta;
-      segmentObj.isUnknown = !segmentObj.radius || (!segmentObj.arcLength && !segmentObj.delta && !segmentObj.chordDistance);
+      segmentObj.chordBearing   = bearing;
+      segmentObj.chordDistance  = chordDistance;
+      segmentObj.delta          = delta;
+      segmentObj.isUnknown      = !segmentObj.radius || (!segmentObj.arcLength && !segmentObj.delta && !segmentObj.chordDistance);
     }
 
     if (reachedPob) {
       courses.push(segmentObj);
     } else {
       commencementSegments.push(segmentObj);
-      if (isPobDest) {
-        reachedPob = true;
-      }
+      if (isPobDest) reachedPob = true;
     }
   }
 
