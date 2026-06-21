@@ -807,8 +807,11 @@ function buildCorrectionTable(originalCourses, repairedCourses, steps) {
     }
     return {
       courseNumber: i + 1,
+      type: c.type || 'Line',
       bearing: c.bearing || null,
       distance: c.distance,
+      arcLength: c.arcLength || null,
+      radius: c.radius || null,
       status,
       originalBearing: orig?.bearing || null,
       originalDistance: orig?.distance || null,
@@ -1387,8 +1390,11 @@ export function solveFromText(deedText, options = {}) {
     // Suppress curve detection ONLY when this is a line arriving AT the Point of Curve (PC)
     // — i.e., the segment ends at the START of the next curve. 
     // Do NOT suppress if the destination is the Point of Tangency (PT) — that's the END of a curve.
-    const hasToPointOfCurve = /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+(?:CURVE|CURVATURE))\b/i.test(cleanContent)
-                           && !/\b(POINT\s+OF\s+TANGENCY|POINT\s+OF\s+TANGENT)\b/i.test(cleanContent);
+    const hasToPointOfCurve = (
+      /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+(?:CURVE|CURVATURE))\b/i.test(cleanContent)
+      // "TO ITS INTERSECTION WITH A CURVE ... HAVING A RADIUS" = arriving at PC
+      || /\bTO\s+(?:ITS\s+)?INTERSECTION\s+WITH\s+(?:A|SAID|THE)?\s*CURVE\b/i.test(cleanContent)
+    ) && !/\b(POINT\s+OF\s+TANGENCY|POINT\s+OF\s+TANGENT)\b/i.test(cleanContent);
     let type = 'Line';
     if (!hasToPointOfCurve) {
       const hasCurveKeywords = /\b(CURVE|ARC|RADIUS)\b/i.test(cleanContent);

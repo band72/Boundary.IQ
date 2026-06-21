@@ -688,49 +688,82 @@ export default function TraverseTab() {
                 </div>
 
                 {/* Correction table */}
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="data-table" style={{ fontSize: '0.8rem' }}>
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Status</th>
-                        <th>Corrected Bearing</th>
-                        <th>Distance</th>
-                        <th>Original Bearing</th>
+                {/* Build per-type sequential counters for L# / C# labels */}
+                {(() => {
+                  let lineIdx = 1, curveIdx = 1;
+                  const rows = fixDeedResult.correctionTable?.map((c, i) => {
+                    const isCurve   = (c.type || '').toLowerCase() === 'curve';
+                    const tag       = isCurve ? `C${curveIdx++}` : `L${lineIdx++}`;
+                    const isFixed   = c.status === 'CORRECTED';
+                    const isSolved  = c.status === 'SOLVED-BY-INVERSE';
+                    const rowColor  = isFixed ? 'rgba(255,170,0,0.10)' : isSolved ? 'rgba(0,180,255,0.10)' : undefined;
+
+                    // Main display value — bearing+dist for lines, R= / arc= for curves
+                    const mainDisplay = isCurve
+                      ? [
+                          c.radius   != null ? `R=${c.radius.toFixed(2)}'`   : null,
+                          c.arcLength != null ? `arc=${c.arcLength.toFixed(2)}'` : (c.distance != null ? `arc=${c.distance.toFixed(2)}'` : null),
+                        ].filter(Boolean).join('  ')
+                      : (c.bearing || '??');
+
+                    const distDisplay = isCurve
+                      ? (c.arcLength != null ? `${c.arcLength.toFixed(2)}'` : c.distance != null ? `${c.distance.toFixed(2)}'` : '??')
+                      : (c.distance  != null ? `${c.distance.toFixed(2)}'`  : '??');
+
+                    return (
+                      <tr key={i} style={{ background: rowColor }}>
+                        <td style={{ fontWeight: 600, fontFamily: 'JetBrains Mono, monospace' }}>
+                          <span style={{
+                            display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: '0.72rem',
+                            background: isCurve ? 'rgba(0,180,255,0.15)' : 'rgba(100,100,255,0.12)',
+                            color: isCurve ? '#007acc' : 'var(--text-secondary)',
+                            fontWeight: 700,
+                          }}>{tag}</span>
+                        </td>
+                        <td>
+                          <span style={{
+                            padding: '2px 7px', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700,
+                            background: isFixed ? 'rgba(255,140,0,0.2)' : isSolved ? 'rgba(0,140,255,0.2)' : 'rgba(0,200,80,0.2)',
+                            color: isFixed ? '#c97a00' : isSolved ? '#007acc' : 'var(--success)',
+                          }}>
+                            {isFixed ? '✎ CORRECTED' : isSolved ? '⊕ SOLVED' : '✓ OK'}
+                          </span>
+                        </td>
+                        <td style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: isFixed ? '#c97a00' : isSolved ? '#007acc' : undefined }}>
+                          {isCurve
+                            ? <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{mainDisplay || '??'}</span>
+                            : (c.bearing || <span style={{ color: 'var(--text-muted)' }}>??</span>)
+                          }
+                        </td>
+                        <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                          {distDisplay === '??' ? <span style={{ color: 'var(--text-muted)' }}>??</span> : distDisplay}
+                        </td>
+                        <td style={{ fontFamily: 'JetBrains Mono, monospace', color: isFixed ? 'var(--danger)' : 'var(--text-muted)', textDecoration: isFixed ? 'line-through' : undefined, fontSize: '0.75rem' }}>
+                          {isCurve
+                            ? <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>curve</span>
+                            : (c.originalBearing || (c.status === 'SOLVED-BY-INVERSE' ? <em>unknown</em> : '—'))
+                          }
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {fixDeedResult.correctionTable?.map((c, i) => {
-                        const isFixed   = c.status === 'CORRECTED';
-                        const isSolved  = c.status === 'SOLVED-BY-INVERSE';
-                        const rowColor  = isFixed ? 'rgba(255,170,0,0.10)' : isSolved ? 'rgba(0,180,255,0.10)' : undefined;
-                        return (
-                          <tr key={i} style={{ background: rowColor }}>
-                            <td style={{ fontWeight: 600 }}>C{c.courseNumber}</td>
-                            <td>
-                              <span style={{
-                                padding: '2px 7px', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700,
-                                background: isFixed ? 'rgba(255,140,0,0.2)' : isSolved ? 'rgba(0,140,255,0.2)' : 'rgba(0,200,80,0.2)',
-                                color: isFixed ? '#c97a00' : isSolved ? '#007acc' : 'var(--success)',
-                              }}>
-                                {isFixed ? '✎ CORRECTED' : isSolved ? '⊕ SOLVED' : '✓ OK'}
-                              </span>
-                            </td>
-                            <td style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: isFixed ? '#c97a00' : isSolved ? '#007acc' : undefined }}>
-                              {c.bearing || <span style={{ color: 'var(--text-muted)' }}>??</span>}
-                            </td>
-                            <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                              {c.distance != null ? `${c.distance.toFixed(2)}'` : <span style={{ color: 'var(--text-muted)' }}>??</span>}
-                            </td>
-                            <td style={{ fontFamily: 'JetBrains Mono, monospace', color: isFixed ? 'var(--danger)' : 'var(--text-muted)', textDecoration: isFixed ? 'line-through' : undefined, fontSize: '0.75rem' }}>
-                              {c.originalBearing || (c.status === 'SOLVED-BY-INVERSE' ? <em>unknown</em> : '—')}
-                            </td>
+                    );
+                  });
+                  return (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Status</th>
+                            <th>Bearing / Curve</th>
+                            <th>Distance / Arc</th>
+                            <th>Original Bearing</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody>{rows}</tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
 
                 {/* Apply button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
@@ -1023,7 +1056,7 @@ export default function TraverseTab() {
                         return (
                           <tr key={i}>
                             <td>{i}</td>
-                            <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.72rem' }}>{s.course || `C${i}`}</td>
+                            <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.72rem' }}>{s.course || `L${i}`}</td>
                             <td>{rawN.toFixed(4)}</td>
                             <td>{rawE.toFixed(4)}</td>
                             <td>{adjN.toFixed(4)}</td>
