@@ -140,42 +140,35 @@ function AppShell() {
 
   const visibleTabs = useMemo(() => {
     return TABS.filter(t => {
+      if (!hasRoleAccess(user, t.minRole)) return false;
+      if (!isPanelAllowed(t.id)) return false;
+      
       if (isAdmin) {
-        if (!hasRoleAccess(user, t.minRole)) return false;
-        if (!isPanelAllowed(t.id)) return false;
         if (t.id === 'traverse' && hideTraverse) return false;
         if (t.id === 'plat'     && hidePlat)     return false;
         if (t.id === 'writer'   && hideWriter)   return false;
-        return true;
+      } else {
+        if (t.id === 'traverse' && hideTraverse) return false;
       }
-      return t.id === 'writer';
+      return true;
     });
   }, [isAdmin, user, isPanelAllowed, hideTraverse, hidePlat, hideWriter]);
 
-  // Auto-redirect to first visible tab if the active tab disappears
-  useEffect(() => {
-    if (!isAdmin) {
-      if (tab !== 'writer') setTimeout(() => setTab('writer'), 0);
-    } else {
-      const firstId = visibleTabs[0]?.id || 'settings';
-      const currentDef = TABS.find(t => t.id === tab);
-      const roleBlocked = currentDef && !hasRoleAccess(user, currentDef.minRole);
-      if (
-        (hideTraverse && tab === 'traverse') ||
-        (hidePlat     && tab === 'plat')     ||
-        (hideWriter   && tab === 'writer')   ||
-        (!isPanelAllowed(tab) && tab !== 'settings') ||
-        (roleBlocked          && tab !== 'settings')
-      ) {
-        setTimeout(() => setTab(firstId), 0);
-      }
-    }
-  }, [hideTraverse, hidePlat, hideWriter, tab, isPanelAllowed, user, isAdmin, visibleTabs]);
-
-  const extraTabs = isAdmin ? [
+  const extraTabs = useMemo(() => isAdmin ? [
     { id: 'billing', icon: '💳', label: 'Billing' },
     { id: 'admin',   icon: '👥', label: 'Users'   },
-  ] : [];
+  ] : [], [isAdmin]);
+
+  // Auto-redirect to first visible tab if the active tab disappears or is unauthorized
+  useEffect(() => {
+    const isTabInVisible = visibleTabs.some(t => t.id === tab);
+    const isTabInExtra = extraTabs.some(t => t.id === tab);
+
+    if (!isTabInVisible && !isTabInExtra) {
+      const firstId = visibleTabs[0]?.id || 'settings';
+      setTimeout(() => setTab(firstId), 0);
+    }
+  }, [tab, visibleTabs, extraTabs]);
 
   // ── Loading screen ──────────────────────────────────────────────────────────
   if (authLoading) {

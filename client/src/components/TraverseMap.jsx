@@ -327,10 +327,10 @@ export default function TraverseMap({
   tracts = []
 }) {
   const [canvasElement, setCanvasElement] = useState(null);
-  const [hoveredCourseIndex, setHoveredCourseIndexLocal] = useState(null);
+  const [hoveredCourseIndexLocal, setHoveredCourseIndexLocal] = useState(null);
   const [hoveredVertexIndexLocal, setHoveredVertexIndexLocal] = useState(null);
 
-  const activeHoveredIndex = hoveredCourseIndexProp !== undefined ? hoveredCourseIndexProp : hoveredCourseIndex;
+  const activeHoveredIndex = hoveredCourseIndexProp !== undefined ? hoveredCourseIndexProp : hoveredCourseIndexLocal;
   const activeSelectedIndex = selectedCourseIndexProp !== undefined ? selectedCourseIndexProp : null;
   
   const getPts = () => {

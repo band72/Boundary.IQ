@@ -1838,4 +1838,32 @@ select option { background: var(--bg-elevated); }
   border-color: var(--accent2) !important;
 }
 
+/* ── Split Layout for live-mapping screens ── */
+.split-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.sticky-column {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 80px; /* Offset to clear the 60px app header */
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1200px) {
+  .split-layout {
+    grid-template-columns: 1fr;
+  }
+  .sticky-column {
+    position: static;
+  }
+}
+
+
 
