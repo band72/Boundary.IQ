@@ -3,6 +3,9 @@
 // Replaces RCS.Cogo.Core with pure JS math (bearingParser.js).
 
 import * as bp from './bearingParser.js';
+import { createChildLogger } from '../logger.js';
+
+const log = createChildLogger('traverse');
 
 // ── Unit Scale Factors (Fix #10) ─────────────────────────────────────────────
 // All internal math is in feet. Metric deed distances are converted on input.
@@ -31,7 +34,7 @@ function solveCurveGeometry(r, l, dDeg, chDist) {
     const calculatedDeltaRad = l / r;
     const calculatedDeltaDeg = calculatedDeltaRad * 180.0 / Math.PI;
     if (Math.abs(dDeg - calculatedDeltaDeg) > 0.5) {
-      console.log(`[traverse.js] solveCurveGeometry: reconciling conflict — stated delta ${dDeg.toFixed(4)}° vs calculated ${calculatedDeltaDeg.toFixed(4)}°. Using arc/radius.`);
+      log.debug({ statedDelta: dDeg.toFixed(4), calculatedDelta: calculatedDeltaDeg.toFixed(4) }, 'solveCurveGeometry: reconciling conflict — using arc/radius');
       dDeg = calculatedDeltaDeg;
       deltaRad = calculatedDeltaRad;
       chDist = 2 * r * Math.sin(deltaRad / 2);
@@ -404,7 +407,7 @@ export function parseDmsToDecimal(dms) {
   if (!isNaN(val)) return val;
 
   // FIX #2: Return null so callers know the input was unparseable.
-  console.warn(`[traverse.js] parseDmsToDecimal: unrecognised DMS string "${dms}" — returning null`);
+  log.warn({ dms }, 'parseDmsToDecimal: unrecognised DMS string — returning null');
   return null;
 }
 
@@ -680,7 +683,7 @@ export function autoFixUnknownRuns(courses, pob) {
   if (runs.length === 2) {
     // Strategy: freeze run[1] to a near-zero tie so run[0] can be solved first,
     // then lock run[0]'s solution and solve run[1].
-    console.log(`Inverse Gap Solver: 2 unknown runs detected at [${runs[0].start}-${runs[0].end}] and [${runs[1].start}-${runs[1].end}]. Attempting iterative solve.`);
+    log.debug({ run0: `${runs[0].start}-${runs[0].end}`, run1: `${runs[1].start}-${runs[1].end}` }, 'Inverse Gap Solver: 2 unknown runs detected. Attempting iterative solve.');
 
     // Pass 1: replace run[1] slots with a placeholder, solve run[0].
     // FIX #3: track frozen positions by index (not object reference) to avoid
@@ -731,15 +734,15 @@ export function autoFixUnknownRuns(courses, pob) {
     }
     if (runs2.length === 1) {
       const result = _solveOneRun(pass2, runs2[0], pob);
-      console.log('Inverse Gap Solver: 2-run iterative solve succeeded.');
+      log.info('Inverse Gap Solver: 2-run iterative solve succeeded.');
       return result;
     }
-    console.warn('Inverse Gap Solver: Could not resolve 2 unknown runs — returning original courses.');
+    log.warn('Inverse Gap Solver: Could not resolve 2 unknown runs — returning original courses.');
     return courses;
   }
 
   // More than 2 unknown runs — cannot solve mathematically
-  console.warn(`Inverse Gap Solver: ${runs.length} unknown runs — cannot solve, returning original.`);
+  log.warn({ runCount: runs.length }, 'Inverse Gap Solver: multiple unknown runs — cannot solve, returning original.');
   return courses;
 }
 
@@ -774,7 +777,7 @@ function _solveOneRun(courses, run, pob) {
   const result = [...courses];
   result.splice(run.start, run.end - run.start + 1, replacement);
 
-  console.log(`Inverse Gap Solver: Solved run [${run.start} to ${run.end}] with tie: ${tieBearing} ${replacement.distance.toFixed(2)}'`);
+  log.info({ run: `${run.start}-${run.end}`, tieBearing, dist: replacement.distance.toFixed(2) }, 'Inverse Gap Solver: Solved run');
   return result;
 }
 

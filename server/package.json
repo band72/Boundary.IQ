@@ -13,7 +13,12 @@
     "test:server": "node tests/test_server_headless.js",
     "test:all": "node tests/test_headless_riddle.js && node tests/test_server_headless.js",
     "test:unit": "vitest run --config vitest.config.js",
-    "test:unit:watch": "vitest --config vitest.config.js"
+    "test:unit:watch": "vitest --config vitest.config.js",
+    "batch:all": "node scripts/batchHeadless.js",
+    "batch:fails": "node scripts/batchHeadless.js --fail-only",
+    "batch:ai": "node scripts/batchHeadless.js --use-ai --model=gemini-2.5-flash --fail-only",
+    "query:stats": "node tests/list_summaries.js",
+    "query:fails": "node tests/query_all_failed.js"
   },
   "dependencies": {
     "archiver": "^8.0.0",

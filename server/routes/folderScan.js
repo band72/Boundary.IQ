@@ -12,7 +12,7 @@ import { runRepairPipeline, extractNamedParcels, detectOpenEnded } from '../serv
 import { resolvePathCaseInsensitive } from '../services/pathUtils.js';
 import * as legalWriter from '../services/legalWriter.js';
 import * as db from '../services/diagnosticsDb.js';
-import { isWordDocument, convertToPdf, getMimeType } from '../services/docConversion.js';
+import { isWordDocument } from '../services/docConversion.js';
 import * as output from '../services/output.js';
 import * as geminiVision from '../services/geminiVision.js';
 // Module-level map: base deed name → last station {northing, easting} of Part A/B etc.
@@ -24,10 +24,16 @@ import * as resolver from '../services/chainedTraverseResolver.js';
 import * as plssParser from '../services/plssParser.js';
 import * as traverseSvc from '../services/traverse.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
-import pdfParse from 'pdf-parse';
 import { requireAuth } from '../middleware/auth.js';
 import { SCAN_RATE_LIMIT, GEMINI_API_KEY } from '../config.js';
-import { ocrFile as ocrDaemonFile } from '../services/ocrDaemon.js';
+
+// ── Decoupled service modules ─────────────────────────────────────────────────
+import {
+  SUPPORTED_EXTS, SKIP_KEYWORDS,
+  containsWord, classifyByFilename, getDocType,
+  getSupportedFiles, inferMimeType, parsePrecisionRatio, shouldInterceptPLSS,
+} from '../services/docClassifier.js';
+import { ensureExtractedText, readWordDocWithFallback } from '../services/textExtractor.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -42,6 +48,8 @@ const scanLimiter = rateLimit({
   skip: (req) => req.user?.role === 'admin',
   message: { error: `Too many scan requests. Maximum ${SCAN_RATE_LIMIT} per minute per user.` },
 });
+
+const log = createChildLogger('folderScan');
 
 // Helper to resolve county and state for metadata/legalWriter with caching fallback
 function getCountyVal(ex, fallback) {
@@ -60,127 +68,10 @@ function getStateVal(ex, fallback) {
   return 'Unknown';
 }
 
-// Helper to extract and cache raw text from PDF or Word doc if cache is missing
-async function ensureExtractedText(filePath, fileName, fileBytes, validPath, forceOcr = false) {
-  const ext = path.extname(fileName).toLowerCase();
-  if (ext === '.txt') {
-    try {
-      return fs.readFileSync(filePath, 'utf-8');
-    } catch {
-      return '';
-    }
-  }
-
-  const base = path.parse(fileName).name;
-  const extractedTxtPath = path.join(validPath, '_extracted', base + '.txt');
-
-  if (!forceOcr && fs.existsSync(extractedTxtPath)) {
-    try {
-      const cachedText = fs.readFileSync(extractedTxtPath, 'utf-8');
-      if (cachedText && cachedText.trim().length >= 80) {
-        return cachedText;
-      }
-    } catch {}
-  }
-
-  // If not cached, extract it
-  try {
-    let text = '';
-    if (ext === '.pdf') {
-      console.log(`Extracting text from PDF: ${fileName}`);
-      const data = await pdfParse(fileBytes);
-      text = data.text ? data.text.trim() : '';
-    } else if (isWordDocument(fileName)) {
-      console.log(`Extracting text from converted Word PDF: ${fileName}`);
-      const data = await pdfParse(fileBytes);
-      text = data.text ? data.text.trim() : '';
-    }
-
-    // Fallback: if digital text is empty or lacks boundary keywords, check the persistent disk OCR cache
-    if (forceOcr || !text || text.length < 80 || !geminiVision.hasBoundaryKeywords(text)) {
-      const fileHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
-      const defaultCacheBase = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-      const ocrCacheDir = process.env.OCR_CACHE_DIR || path.join(defaultCacheBase, 'BoundaryQC', 'OcrCache');
-      const metaPath = path.join(ocrCacheDir, `${fileHash}.json`);
-      
-      if (!forceOcr && fs.existsSync(metaPath)) {
-        try {
-          const metaJson = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-          if (metaJson.combinedOcrText) {
-            console.log(`💾 Disk OCR Cache Hit in ensureExtractedText for scanned PDF ${fileName} (hash=${fileHash})`);
-            text = metaJson.combinedOcrText;
-          }
-        } catch (cacheErr) {
-          console.warn('Failed to parse from disk OCR cache:', cacheErr.message);
-        }
-      } else {
-        // Run Python OCR via persistent daemon (model stays in RAM between calls)
-        try {
-          console.log(`🔍 Running OCR on ${fileName} via persistent daemon...`);
-          const ocrText = await ocrDaemonFile(filePath);
-          text = (ocrText || '').trim();
-          if (text) {
-            if (!fs.existsSync(ocrCacheDir)) {
-              fs.mkdirSync(ocrCacheDir, { recursive: true });
-            }
-            fs.writeFileSync(metaPath, JSON.stringify({ combinedOcrText: text, fileName }), 'utf8');
-            console.log(`💾 Saved daemon OCR text to persistent global OCR cache at ${metaPath}`);
-          }
-        } catch (e) {
-          console.error(`OCR daemon failed for ${fileName}:`, e.message);
-        }
-      }
-    }
-
-    if (text) {
-      const extractedDir = path.join(validPath, '_extracted');
-      if (!fs.existsSync(extractedDir)) {
-        fs.mkdirSync(extractedDir, { recursive: true });
-      }
-      fs.writeFileSync(extractedTxtPath, text, 'utf-8');
-      console.log(`Cached extracted text to ${extractedTxtPath}`);
-      return text;
-    }
-  } catch (err) {
-    console.warn(`Failed to extract/cache raw text for ${fileName}:`, err.message);
-  }
-
-  return '';
-}
-
-// Helper to verify if we should run PLSS offline intercept
-function shouldInterceptPLSS(text) {
-  if (!text) return false;
-  const upper = text.toUpperCase();
-
-  // If it's a subdivision plat reference, we should not intercept it as PLSS.
-  const lotBlockKeywords = ['PLAT BOOK', 'MAP BOOK', 'SUBDIVISION', 'CONDOMINIUM', 'ACCORDING TO THE PLAT', 'RECORDED IN PLAT', 'PLAT THEREOF', 'PLAT OF'];
-  if (lotBlockKeywords.some(kw => upper.includes(kw))) {
-    return false;
-  }
-  if (/\bBLOCK\s+([A-Z]|\d+)\b/i.test(text)) {
-    return false;
-  }
-
-  const mbTerms = ['THENCE', 'DEGREES', 'MINUTES', 'SECONDS', 'FEET', '°', '*', "'", '"', 'FT', 'CHORD', 'RADIUS'];
-  let mbCount = 0;
-  for (const term of mbTerms) {
-    if (upper.includes(term)) mbCount++;
-  }
-  if (mbCount >= 3) {
-    return false; // Metes-and-bounds deed, needs LLM processing
-  }
-
-  // Check if it parses as valid PLSS
-  const plss = plssParser.parsePlss(text);
-  if (!plss) return false;
-
-  return true;
-}
 
 const MAX_FILE_SIZE = 51 * 1024 * 1024;
 const BATCH_SIZE = 5;
-const SUPPORTED_EXTS = new Set(['.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.jpeg', '.webp', '.gif']);
+
 
 // ── Allowed roots (path traversal protection) ────────────────────────────────
 function getAllowedRoots() {
@@ -267,177 +158,6 @@ function validatePath(p) {
 }
 
 
-// Helper to convert Word document with pre-extracted text fallback
-async function readWordDocWithFallback(filePath, fileName, docBytes) {
-  try {
-    const pdfBytes = await convertToPdf(docBytes, fileName);
-    return { bytes: pdfBytes, mime: 'application/pdf' };
-  } catch (err) {
-    console.warn(`LibreOffice conversion failed for ${fileName}, checking for pre-extracted text fallback...`, err.message);
-    const base = path.parse(fileName).name;
-    const dir = path.dirname(filePath);
-    const extractedTxtPath = path.join(dir, '_extracted', base + '.txt');
-    if (fs.existsSync(extractedTxtPath)) {
-      console.log(`Found pre-extracted text fallback at ${extractedTxtPath}`);
-      const textBytes = fs.readFileSync(extractedTxtPath);
-      return { bytes: textBytes, mime: 'text/plain' };
-    }
-    throw err;
-  }
-}
-
-// ── Document classification ─────────────────────────────────────────────────
-const BOUNDARY_KEYWORDS = [' - WD', ' - SWD', ' - LWD', ' - QCD', 'Deed', 'Easement', 'Right of Way', 'Monument Road', 'Deed of Dedication', 'Grant of Easement', 'Utility Easement', 'Road', 'Blvd', 'Order of Taking', 'Closing of Pt'];
-
-const SKIP_KEYWORDS = [
-  // Legal instruments — no boundary geometry
-  'Memo of Lease', 'Short Form Lease', 'Operating Agreement', 'Administrative Fine',
-  'Adminstrative Fine', 'Lis Pendens', 'Bankruptcy', 'Letters of Administration',
-  'Order Admitting Will', 'Petition for Administration', 'Memo of Management',
-  'Memo of ROFR', 'Memo of Transfer', 'Affidavit', 'Aff-Cert', 'Electric Service',
-  'Assign & Assump', 'REA Assign', 'Agreement Concerning Lease', 'Fourth Amendment',
-  '2nd Amend', "Vendor_s Lien", 'Certificate', 'Contribution Agreement',
-  'Utility Agreement', 'Dec of Expiration',
-  // NOTE: 'CERT', 'CERTIFICATION' intentionally NOT in this list —
-  // a deed file may be named with CERT but still contain valid THENCE courses.
-  // Content-based filtering below handles pure cert-only documents.
-  'TITLE OPINION', 'ELEVATION CERT', 'FLOOD CERT', 'ENCROACHMENT',
-];
-
-function containsWord(source, word) {
-  let index = 0;
-  const upperSource = source.toUpperCase();
-  const upperWord = word.toUpperCase();
-  while ((index = upperSource.indexOf(upperWord, index)) !== -1) {
-    const prevOk = index === 0 || !/[a-zA-Z0-9]/.test(upperSource[index - 1]);
-    const nextOk = index + upperWord.length >= upperSource.length || !/[a-zA-Z0-9]/.test(upperSource[index + upperWord.length]);
-    if (prevOk && nextOk) return true;
-    index += upperWord.length;
-  }
-  return false;
-}
-
-function classifyByFilename(fileName) {
-  const upper = fileName.toUpperCase();
-  for (const skip of SKIP_KEYWORDS) if (upper.includes(skip.toUpperCase())) return 'SKIP';
-  if (containsWord(upper, 'WD') || containsWord(upper, 'SWD') || containsWord(upper, 'LWD')) return 'WARRANTY_DEED';
-  if (containsWord(upper, 'QCD') || containsWord(upper, 'QC')) return 'QUIT_CLAIM_DEED';
-  if (upper.includes('EASEMENT') || upper.includes('EAESMENT') || upper.includes('EASMENT')) return 'EASEMENT';
-  if (upper.includes('DEED OF DEDICATION') || upper.includes('DEDICATION')) return 'DEDICATION';
-  if (upper.includes('ORDER OF TAKING')) return 'CONDEMNATION';
-  if (upper.includes('ROAD') || upper.includes('BLVD')) return 'ROAD_CLOSING';
-  if (upper.includes('DEED') || upper.includes('GRANT')) return 'DEED';
-  if (upper.includes('COMMITMENT') || upper.includes('COMMITTMENT')) return 'DEED';
-  
-  // Generic or unknown filenames: if it's a PDF/Word/TXT/image file, let's treat it as a potential DEED 
-  // so we can inspect its content, rather than skipping it preemptively.
-  const ext = path.extname(fileName).toLowerCase();
-  if (['.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
-    return 'DEED';
-  }
-
-  return 'SKIP';
-}
-
-function getDocType(filePath, fileName) {
-  const dir = path.dirname(filePath);
-  const base = path.parse(fileName).name;
-  const ext = path.extname(fileName).toLowerCase();
-
-  let raw = '';
-  if (ext === '.txt') {
-    try {
-      raw = fs.readFileSync(filePath, 'utf-8');
-    } catch {}
-  } else {
-    const extractedTxt = path.join(dir, '_extracted', base + '.txt');
-    if (fs.existsSync(extractedTxt)) {
-      try {
-        raw = fs.readFileSync(extractedTxt, 'utf-8');
-      } catch {}
-    }
-  }
-
-  if (raw) {
-    try {
-      const txt = raw.toUpperCase();
-
-      // Filename-level skip takes priority — even if content contains THENCE,
-      // known non-boundary instrument types must be excluded first.
-      const upperFileName = fileName.toUpperCase();
-      for (const skip of SKIP_KEYWORDS) {
-        if (upperFileName.includes(skip.toUpperCase())) {
-          console.log(`classifyDocument: SKIP — filename matches skip keyword "${skip}": ${fileName}`);
-          return 'SKIP';
-        }
-      }
-
-      // Hard skip: stub documents (cover pages, stamps, annotations)
-      if (raw.trim().length < 80) {
-        console.log(`classifyDocument: SKIP — stub document (${raw.trim().length} chars): ${fileName}`);
-        return 'SKIP';
-      }
-
-      // Hard skip: pure certification docs with no boundary geometry
-      // A deed may contain certification language (surveyor's cert block) alongside THENCE courses —
-      // only skip if there are NO courses at all.
-      if ((txt.includes('DOES HEREBY CERTIFY') || txt.includes('I HEREBY CERTIFY') ||
-           txt.includes('ALTA/ACSM') || txt.includes('ELEVATION CERTIFICATE') ||
-           txt.includes('FLOOD INSURANCE')) && !txt.includes('THENCE')) {
-        console.log(`classifyDocument: SKIP — pure certification, no boundary courses: ${fileName}`);
-        return 'SKIP';
-      }
-
-      // Check if it has township/range/section/quarter for PLSS/aliquot deeds
-      const isPlss = txt.includes('SECTION') || txt.includes('SEC.') || txt.includes('TOWNSHIP') || txt.includes('RANGE');
-
-      // If the content explicitly contains boundary geometry or PLSS info, immediately return 'DEED'!
-      if (txt.includes('THENCE') || txt.includes('BEGINNING AT') || isPlss) {
-        return 'DEED';
-      }
-    } catch {}
-  }
-
-  // Word docs fallback
-  if (isWordDocument(fileName)) {
-    const upper = fileName.toUpperCase();
-    for (const skip of SKIP_KEYWORDS) if (upper.includes(skip.toUpperCase())) return 'SKIP';
-    return 'DEED';
-  }
-
-  return classifyByFilename(fileName);
-}
-
-function getSupportedFiles(dirPath) {
-  return fs.readdirSync(dirPath)
-    .filter(f => SUPPORTED_EXTS.has(path.extname(f).toLowerCase()))
-    .sort()
-    .map(f => path.join(dirPath, f));
-}
-
-function inferMimeType(fileName) {
-  const ext = path.extname(fileName).toLowerCase();
-  const map = {
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.webp': 'image/webp',
-    '.gif': 'image/gif',
-    '.doc': 'application/pdf',
-    '.docx': 'application/pdf',
-    '.txt': 'text/plain'
-  };
-  return map[ext] || 'application/pdf';
-}
-
-function parsePrecisionRatio(precisionStr) {
-  if (!precisionStr) return 0;
-  try {
-    const parts = precisionStr.split(':');
-    if (parts.length > 1) { const val = parseFloat(parts[1].replace(/,/g, '').replace('∞', '999999999').trim()); if (!isNaN(val)) return val; }
-  } catch {}
-  return 0;
-}
 
 /**
  * Rec 4 helper — Detect multi-part deed file families.

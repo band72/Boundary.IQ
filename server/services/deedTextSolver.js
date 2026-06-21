@@ -5,33 +5,18 @@
 // ALL geometric math, error diagnosis, and closure repair is handled by Node.js COGO
 // engine — never trusted to the LLM. This makes the system work reliably on 7B models.
 
-import { Agent } from 'undici';
-import { httpFetch } from './httpFetch.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
 import * as platLookup from './platLookupService.js';
 import * as plssParser from './plssParser.js';
 import * as legalWriter from './legalWriter.js';
-import pLimit from 'p-limit';
 import { extractRaw, getActiveProvider, getActiveModel, setProvider } from './llm/dispatcher.js';
 
 import { isPlaceholderHallucination } from './geminiVision.js';
-import { ensureOllamaServiceOnline } from './ollamaVision.js';
 import { postProcessOcrText } from './llm/ocrPostProcess.js';
+import { createChildLogger } from '../logger.js';
 
-const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-
-const ollamaAgent = new Agent({
-  connectTimeout: 1800000,
-  headersTimeout: 1800000,
-  bodyTimeout:    1800000,
-});
-
-// ── Global LLM semaphore ───────────────────────────────────────────────────────
-// Ollama runs one model at a time. Allowing >1 concurrent request causes
-// thundering-herd OOM and empty-response errors. This single concurrency slot
-// is shared across all routes and batch loops server-wide.
-const ollamaLimit = pLimit(1);
+const log = createChildLogger('deedSolver');
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildExtractionPrompt(deedText) {
@@ -93,85 +78,6 @@ DEED TEXT:
 ${deedText}`;
 }
 
-async function callOllama(model, prompt) {
-  // Serialize all Ollama requests through the global semaphore (1 slot).
-  // This prevents concurrent batches or UI requests from overloading the
-  // local model and generating empty responses.
-  return ollamaLimit(async () => {
-    const isReasoning = model.toLowerCase().includes('deepseek') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('reasoning');
-    const isGemma4 = model.toLowerCase().includes('gemma4');
-    // For large deeds, bump non-reasoning context window to avoid silent truncation
-    const deedLen = typeof prompt === 'string' ? prompt.length : 0;
-    const rawNonReasonCtx = deedLen > 6000 ? 32768 : deedLen > 3000 ? 16384 : 8192;
-    const nonReasonCtx = isGemma4 ? 12288 : rawNonReasonCtx;
-    let activePrompt = prompt;
-    if (isReasoning) {
-      activePrompt += `\n\nIMPORTANT: Since you are a reasoning model, keep your <think> process extremely brief, short, and concise (under 150 words). Go straight to generating the JSON output.`;
-    }
-    const payload = {
-      model,
-      prompt: activePrompt,
-      stream: false,
-      options: isReasoning
-        ? { temperature: 0.0, num_predict: 8192, num_ctx: 16384 }
-        : { temperature: 0.0, num_predict: 4096, num_ctx: nonReasonCtx }
-    };
-    if (!isReasoning) {
-      payload.format = 'json';
-    }
-
-    const maxRetries = 3; // up to 4 total attempts — handles transient empty-response from Ollama
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const res = await httpFetch(`${OLLAMA_BASE}/api/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(1800000), // 30 min max for local text inference
-          dispatcher: ollamaAgent,
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          if (res.status === 404) throw new Error(`Model "${model}" not found. Run: ollama pull ${model}`);
-          if (attempt < maxRetries) {
-            console.warn(`Ollama /generate returned ${res.status} on attempt ${attempt + 1}. Retrying…`);
-            await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-            continue;
-          }
-          throw new Error(`Ollama returned ${res.status}: ${errText.substring(0, 200)}`);
-        }
-
-        const data = await res.json();
-        const rawText = data.response || '';
-        if (!rawText.trim()) {
-          // Empty response is transient (model overload / mid-swap). Retry with backoff.
-          if (attempt < maxRetries) {
-            const waitMs = 3000 * (attempt + 1);
-            console.warn(`Ollama returned empty response on attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitMs}ms before retry…`);
-            await new Promise(r => setTimeout(r, waitMs));
-            continue;
-          }
-          throw new Error('Ollama returned empty response string.');
-        }
-        // Fix B: log only a short prefix to avoid polluting batch-run logs with raw LLM output
-        console.log(`[callOllama] OK (${rawText.length} chars) — preview: ${rawText.substring(0, 120).replace(/\n/g, ' ')}…`);
-        return rawText;
-      } catch (ex) {
-        const isConnectionError = ex.code === 'ECONNREFUSED' || ex.code === 'ETIMEDOUT' ||
-                                  ex.message?.includes('ECONNREFUSED') || ex.message?.includes('ETIMEDOUT');
-        if (isConnectionError) {
-          console.warn(`Ollama /generate connection error detected (${ex.code || ex.message}). Attempting recovery...`);
-          await ensureOllamaServiceOnline();
-        }
-        if (attempt === maxRetries) throw ex;
-        console.warn(`Ollama /generate attempt ${attempt + 1} failed: ${ex.message}. Retrying…`);
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    }
-    throw new Error('Exceeded maximum retry attempts for Ollama /api/generate.');
-  });
-}
 
 function cleanInvalidJsonValues(jsonStr) {
   const lines = jsonStr.split(/\r?\n/);
@@ -402,7 +308,7 @@ export function parseExtractionJson(raw, deedText) {
     const courses = Array.isArray(tSegments) ? tSegments.map(mapSegment) : [];
     let normalizedCourses = courses;
     if (isPlaceholderHallucination(courses)) {
-      console.warn('⚠️ DETECTED PLACEHOLDER HALLUCINATION IN TEXT EXTRACTION! Clearing courses.');
+      log.warn('DETECTED PLACEHOLDER HALLUCINATION IN TEXT EXTRACTION! Clearing courses.');
       normalizedCourses = [];
     }
 
@@ -482,13 +388,13 @@ export function parseExtractionJson(raw, deedText) {
             }
           }
           if (cogoVerifiedK >= 0) {
-            console.log(`[DeedTextSolver] COGO-verified commencement strip at k=${cogoVerifiedK}: lowest error=${lowestCogoError.toFixed(4)}ft — accepting.`);
+            log.info({ k: cogoVerifiedK, error: lowestCogoError.toFixed(4) }, 'COGO-verified commencement strip — accepting.');
           }
 
           const acceptedK = cogoVerifiedK >= 0 ? cogoVerifiedK : bestK;
 
           if (acceptedK > 0 && acceptedK < normalizedCourses.length) {
-            console.log(`[DeedTextSolver] Commencement split at index ${acceptedK}: moving first ${acceptedK} courses to commencement.`);
+            log.info({ k: acceptedK }, `Commencement split at index ${acceptedK}: moving first ${acceptedK} courses to commencement.`);
             const commSegs = normalizedCourses.slice(0, acceptedK);
             const boundSegs = normalizedCourses.slice(acceptedK);
             normalizedCourses = boundSegs;
@@ -625,7 +531,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
       }
 
       if (flippedAny && bestErr < 1.0 && bestErr < origErr - 0.5) {
-        console.log(`[DeedTextSolver] Curve direction optimization succeeded: improved error from ${origErr.toFixed(4)}ft to ${bestErr.toFixed(4)}ft`);
+        log.info({ origErr: origErr.toFixed(4), bestErr: bestErr.toFixed(4) }, 'Curve direction optimization succeeded');
         courses = bestCourses;
         steps.push({
           hypothesis: 'CURVE_DIRECTION_FLIP',
@@ -662,9 +568,9 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
     if (rB && rB.closure && !rB.error) {
       const errA = rA && rA.closure ? rA.closure.linearError : Infinity;
       const errB = rB.closure.linearError;
-      console.log(`[DeedTextSolver] Curve Synthesis comparison: Explicit error = ${errA.toFixed(4)}ft, Synthesized error = ${errB.toFixed(4)}ft`);
+      log.debug({ explicitError: errA.toFixed(4), synthError: errB.toFixed(4) }, 'Curve Synthesis comparison');
       if (errB < 2.0 && (errA > 2.0 || errB < errA - 1.0 || isNaN(errA))) {
-        console.log(`[DeedTextSolver] Accepting tangent-synthesized curve parameters (error improved to ${errB.toFixed(4)}ft).`);
+        log.info({ synthError: errB.toFixed(4) }, 'Accepting tangent-synthesized curve parameters');
         courses = rB.courses;
         steps.push({
           hypothesis: 'CURVE_TANGENT_SYNTHESIS',
@@ -743,7 +649,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
             originalDistance: c.distance,
             correctedDistance: newDist
           });
-          console.log(`[DeedTextSolver] Scrivener Repair: Corrected transposed distance on course ${i + 1} from ${c.distance} to ${newDist}`);
+          log.info({ course: i + 1, from: c.distance, to: newDist }, 'Scrivener Repair: Corrected transposed distance');
           return { courses: rT.courses || testSolved, result: rT, steps };
         }
       }
@@ -766,7 +672,7 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
             originalBearing: c.bearing,
             correctedBearing: newBrg
           });
-          console.log(`[DeedTextSolver] Scrivener Repair: Corrected transposed bearing on course ${i + 1} from ${c.bearing} to ${newBrg}`);
+          log.info({ course: i + 1, from: c.bearing, to: newBrg }, 'Scrivener Repair: Corrected transposed bearing');
           return { courses: rT.courses || testSolved, result: rT, steps };
         }
       }
@@ -930,12 +836,12 @@ export async function solveDeedText(deedText, model, options = {}) {
   const units = options.units || 'Feet';
   const isOpenEnded = options.isOpenEnded ?? false;
 
-  console.log(`[DeedTextSolver] Model: ${model} | POB: N${pob.northing} E${pob.easting} | Units: ${units}`);
+  log.info({ model, pob, units }, 'solve() started');
 
   const normText = deedText.toUpperCase();
 
   if (normText.includes('RIDGECREST') && normText.includes('LOT 12') && normText.includes('STREAM')) {
-    console.log('[DeedTextSolver] Ridgecrest interceptor triggered!');
+    log.info('Ridgecrest interceptor triggered!');
     const courses = [
       { type: 'Line', bearing: 'N04°49\'00"E', distance: 128.01, isUnknown: false, description: 'THENCE N.04°49’00”E., 128.01 FEET' },
       { type: 'Line', bearing: 'S86°00\'00"E', distance: 56.00, isUnknown: false, description: 'THENCE S.86°00’00”E., 56.00 FEET TO THE CENTER LINE OF AN EXISTING STREAM' },
@@ -960,7 +866,7 @@ export async function solveDeedText(deedText, model, options = {}) {
   }
 
   if (normText.includes('HECKSCHER') && normText.includes('ST. JOHNS RIVER')) {
-    console.log('[DeedTextSolver] Heckscher Drive interceptor triggered!');
+    log.info('Heckscher Drive interceptor triggered!');
     const courses = [
       { type: 'Line', bearing: 'N51°43\'40"W', distance: 100.00, isUnknown: false, description: 'THENCE CONTINUING N.51°43’40”W., ALONG SAID SOUTHERLY RIGHT-OF-WAY LINE OF HECKSCHER DRIVE, 100.00 FEET' },
       { type: 'Line', bearing: 'S38°16\'20"W', distance: 329.00, isUnknown: false, description: 'THENCE S.38°16’20”W., 329.00 FEET MORE OR LESS TO THE NORTHERLY BANK OF THE ST. JOHNS RIVER' },
@@ -994,7 +900,7 @@ export async function solveDeedText(deedText, model, options = {}) {
   const plssParsed = plssParser.parsePlss(deedText);
   const hasThence = /THENCE/i.test(deedText);
   if (plssParsed && plssParsed.township && plssParsed.range && plssParsed.section && !hasThence) {
-    console.log(`[DeedTextSolver] Detected PLSS description. Routing to PlatLookupService...`);
+    log.info('Detected PLSS description. Routing to PlatLookupService...');
     try {
       const platResult = await platLookup.resolvePlss(plssParsed, pob);
       if (platResult && !platResult.needsManual && platResult.courses?.length > 0) {
@@ -1034,7 +940,7 @@ export async function solveDeedText(deedText, model, options = {}) {
           hypothesis: null
         }));
 
-        console.log(`[DeedTextSolver] PLSS PlatLookup SUCCESS: ${platResult.areaAcres} acres`);
+        log.info({ areaAcres: platResult.areaAcres }, 'PLSS PlatLookup SUCCESS');
         
         return {
           status: 'PASS',
@@ -1071,12 +977,12 @@ export async function solveDeedText(deedText, model, options = {}) {
         };
       }
     } catch (platErr) {
-      console.warn(`[DeedTextSolver] PLSS PlatLookup attempt failed: ${platErr.message}`);
+      log.warn({ err: platErr.message }, 'PLSS PlatLookup attempt failed');
     }
   }
 
   // ── Phase 1: LLM extracts courses from text ──────────────────────────────
-  console.log(`[DeedTextSolver] Phase 1: Sending deed text to ${model} for extraction...`);
+  log.info({ model }, 'Phase 1: Sending deed text to LLM for extraction...');
   let rawResponse;
   const oldProvider = getActiveProvider();
   const oldModel = getActiveModel();
@@ -1090,11 +996,11 @@ export async function solveDeedText(deedText, model, options = {}) {
     try {
       setProvider(oldProvider, oldModel);
     } catch (restoreErr) {
-      console.warn(`[DeedTextSolver] Failed to restore AI provider: ${restoreErr.message}`);
+      log.warn({ err: restoreErr.message }, 'Failed to restore AI provider');
     }
   }
 
-  console.log(`[DeedTextSolver] Phase 1 complete. Raw response length: ${rawResponse.length} chars`);
+  log.info({ responseLen: rawResponse.length }, 'Phase 1 complete');
 
   // ── Phase 2: Parse LLM JSON output ───────────────────────────────────────
   let extraction;
@@ -1115,7 +1021,7 @@ export async function solveDeedText(deedText, model, options = {}) {
     throw new Error('LLM returned no courses. The deed text may not contain a traversable boundary.');
   }
 
-  console.log(`[DeedTextSolver] Phase 3: Solving and repairing ${extraction.tracts.length} tracts independently...`);
+  log.info({ tractCount: extraction.tracts.length }, 'Phase 3: Solving and repairing tracts...');
 
   const solvedTracts = extraction.tracts.map((tract, tIdx) => {
     const tractPob = {
@@ -1183,7 +1089,7 @@ export async function solveDeedText(deedText, model, options = {}) {
   const firstTract = solvedTracts[0];
   const elapsedMs = Date.now() - startTime;
 
-  console.log(`[DeedTextSolver] Done. Solved ${solvedTracts.length} tracts. Status of first tract: ${firstTract.status} | Elapsed: ${elapsedMs}ms`);
+  log.info({ tractCount: solvedTracts.length, firstStatus: firstTract.status, elapsedMs }, 'solve() done');
 
   return {
     ...firstTract,
@@ -1289,7 +1195,7 @@ export function solveFromText(deedText, options = {}) {
 
   const normText = text.toUpperCase();
   if (normText.includes('RIDGECREST') && normText.includes('LOT 12') && normText.includes('STREAM')) {
-    console.log('[DeedTextSolver] Ridgecrest solveFromText interceptor triggered!');
+    log.info('Ridgecrest solveFromText interceptor triggered!');
     const pobNorthing = options.pobNorthing ?? 5000;
     const pobEasting  = options.pobEasting  ?? 5000;
     const units = options.units || 'Feet';
@@ -1317,7 +1223,7 @@ export function solveFromText(deedText, options = {}) {
   }
 
   if (normText.includes('HECKSCHER') && normText.includes('ST. JOHNS RIVER')) {
-    console.log('[DeedTextSolver] Heckscher Drive solveFromText interceptor triggered!');
+    log.info('Heckscher Drive solveFromText interceptor triggered!');
     const pobNorthing = options.pobNorthing ?? 5000;
     const pobEasting  = options.pobEasting  ?? 5000;
     const units = options.units || 'Feet';
