@@ -1316,6 +1316,34 @@ export function solveFromText(deedText, options = {}) {
     .replace(/\b[IlL|!](?=\d+(?:\.\d+)?\s*(?:FEET|FOOT|FT|METERS|M\b))/gi, '1')
     .replace(/\b[OoQq](?=\d+(?:\.\d+)?\s*(?:FEET|FOOT|FT|METERS|M\b))/gi, '0');
 
+  // Normalize tildes used for degree symbol between digits: 15~45 -> 15°45
+  normalizedText = normalizedText.replace(/(\d)\s*~\s*(\d)/g, '$1°$2');
+
+  // Fix degree sign read as 0 when followed by minutes and a minute mark: N51047' -> N51°47'
+  normalizedText = normalizedText.replace(/([NSns]\s*\.?\s*\d{1,2})0(\d{1,2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
+
+  // Fix letters-to-digits in minutes/seconds fields:
+  // Minutes + minute mark + seconds + second mark (e.g. 47'OO")
+  normalizedText = normalizedText.replace(/(\d{1,2})\s*([\u2018\u2019\u201A\u02BC\u00B4\u2032'])\s*([0-9OLolI|!]{1,2})\s*(["\u201C\u201D\u201E\u2033\u2034'])/gi, (m, mins, minMark, secs, secMark) => {
+    let cleanSecs = secs
+      .replace(/[OoqQ]/g, '0')
+      .replace(/[Il|!]/g, '1')
+      .replace(/[L]/g, '1');
+    return `${mins}${minMark}${cleanSecs}${secMark}`;
+  });
+
+  // Degree + degree mark + minutes + minute mark (where minutes might have letters)
+  normalizedText = normalizedText.replace(/(\d{1,2})\s*(°)\s*([0-9OLolI|!]{1,2})\s*([\u2018\u2019\u201A\u02BC\u00B4\u2032'])/gi, (m, degs, degMark, mins, minMark) => {
+    let cleanMins = mins
+      .replace(/[OoqQ]/g, '0')
+      .replace(/[Il|!]/g, '1')
+      .replace(/[L]/g, '1');
+    return `${degs}${degMark}${cleanMins}${minMark}`;
+  });
+
+  // Fix single quote used as second mark: 60°43'20' -> 60°43'20"
+  normalizedText = normalizedText.replace(/(\d{1,3}°\s*\d{1,2}'\s*\d{1,2})'/g, '$1"');
+
 
   // Pre-normalize surveyor dot-notation bearings: N.89°43'05"E. → N89°43'05"E
   // Pattern: cardinal letter (N/S) followed by a literal dot then digits

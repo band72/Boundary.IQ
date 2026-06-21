@@ -74,8 +74,9 @@ console.log(`📂 Found ${allFiles.length} deed files total. Processing ${filesT
 
 // ── Text extraction ───────────────────────────────────────────────────────────
 function extractText(filePath, fileName) {
-  const ext  = path.extname(fileName).toLowerCase();
-  const base = path.basename(fileName, ext);
+  const rawExt = path.extname(fileName);
+  const ext  = rawExt.toLowerCase();
+  const base = path.basename(fileName, rawExt);
   const cachedPath = path.join(EXTRACT_DIR, base + '.txt');
 
   // Return cache if it exists and is non-empty
