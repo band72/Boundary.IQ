@@ -582,10 +582,58 @@ function flipNS(bearing) {
   return bearing.replace(/^N/i, '__NS__').replace(/^S/i, 'N').replace(/^__NS__/, 'S');
 }
 
-
 function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencementSegments = []) {
   let courses = traverseSvc.resolveDeflectionAngles(rawCourses);
   const steps = [];
+
+  // Try flipping curve directions if there are any curves and error is high
+  const curveIndices = [];
+  courses.forEach((c, idx) => {
+    if (c.type?.toLowerCase() === 'curve') {
+      curveIndices.push(idx);
+    }
+  });
+
+  if (curveIndices.length > 0 && curveIndices.length <= 4) {
+    const { result: rOrig } = tryCompute(courses, pob, units, isOpenEnded, commencementSegments);
+    const origErr = rOrig && rOrig.closure ? rOrig.closure.linearError : Infinity;
+    
+    if (origErr > 1.0) {
+      let bestCourses = courses;
+      let bestErr = origErr;
+      let flippedAny = false;
+
+      // Generate all left/right combinations for the curves
+      const combinationsCount = 1 << curveIndices.length;
+      for (let i = 0; i < combinationsCount; i++) {
+        const testCourses = courses.map((c, idx) => {
+          if (c.type?.toLowerCase() === 'curve') {
+            const curveIdx = curveIndices.indexOf(idx);
+            const shouldBeLeft = (i & (1 << curveIdx)) !== 0;
+            return { ...c, curveDirection: shouldBeLeft ? 'Left' : 'Right' };
+          }
+          return c;
+        });
+
+        const { result: rTest } = tryCompute(testCourses, pob, units, isOpenEnded, commencementSegments);
+        const testErr = rTest && rTest.closure ? rTest.closure.linearError : Infinity;
+        if (testErr < bestErr) {
+          bestErr = testErr;
+          bestCourses = testCourses;
+          flippedAny = true;
+        }
+      }
+
+      if (flippedAny && bestErr < 1.0 && bestErr < origErr - 0.5) {
+        console.log(`[DeedTextSolver] Curve direction optimization succeeded: improved error from ${origErr.toFixed(4)}ft to ${bestErr.toFixed(4)}ft`);
+        courses = bestCourses;
+        steps.push({
+          hypothesis: 'CURVE_DIRECTION_FLIP',
+          note: `Adjusted curve directions to minimize closure error (new error: ${bestErr.toFixed(2)}ft)`
+        });
+      }
+    }
+  }
 
   // Evaluate synthesized curve chord bearings vs explicit chord bearings
   let hasCandidates = false;
@@ -1357,7 +1405,37 @@ export function solveFromText(deedText, options = {}) {
     .replace(/\b([NSns])\.([0-9])/g, '$1$2')   // N.00° → N00°
     .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2') // 47".E → 47"E  or  47".W → 47"W
     .replace(/([EWew])\.(?=\s|,|;|$)/g, '$1')   // strip trailing dot after E/W
-    .replace(/°'/g, '°');                          // fix °' typo (extra apostrophe after degree symbol)
+    .replace(/°['\u2018\u2019\u201A\u02BC\u00B4]/g, '°'); // fix °' typo (extra apostrophe after degree symbol)
+
+  // Inject THENCE before bearings that are followed by a distance, but lack THENCE/COMMENCE/RUN keywords in the preceding 35 characters.
+  let textWithInjectedThence = '';
+  let lastIdx = 0;
+  const bearingMatchRegex = /\b(?:NORTH|SOUTH|[NSns])\s*\d+(?:[\s°\-d:]+\d+)?(?:[\s'\-m:]+\d+)?[\s"\-s:]*(?:EAST|WEST|[EWew])\b/gi;
+  const distCheckRegex = /\b\d+(?:\.\d+)?\s*(?:FEET|FT|METERS|M\b)/i;
+  
+  let match;
+  while ((match = bearingMatchRegex.exec(normalizedText)) !== null) {
+    const start = match.index;
+    const end = bearingMatchRegex.lastIndex;
+    
+    // Grab preceding 35 characters
+    const preceding = normalizedText.substring(Math.max(0, start - 35), start).toUpperCase();
+    // Grab succeeding 120 characters
+    const succeeding = normalizedText.substring(end, Math.min(normalizedText.length, end + 120)).toUpperCase();
+    
+    const hasPrecedingKeyword = /\b(THENCE|COMMENCE|RUN)\b/.test(preceding) || preceding.includes('CHORD');
+    const hasSucceedingDistance = distCheckRegex.test(succeeding);
+    
+    textWithInjectedThence += normalizedText.substring(lastIdx, start);
+    if (!hasPrecedingKeyword && hasSucceedingDistance) {
+      textWithInjectedThence += 'THENCE ' + match[0];
+    } else {
+      textWithInjectedThence += match[0];
+    }
+    lastIdx = end;
+  }
+  textWithInjectedThence += normalizedText.substring(lastIdx);
+  normalizedText = textWithInjectedThence;
 
   // Pre-normalize text: "RUN THENCE", "THENCE CONTINUE", "THEN" → all become THENCE
   const preparedText = normalizedText
@@ -1411,6 +1489,13 @@ export function solveFromText(deedText, options = {}) {
       if (hasAlongArc || hasArcDist || hasConcave || hasCentralAngle
           || (hasCurveKeywords && !/\b(TO\s+AN?\s+INTERSECTION|INTERSECTING)\b/i.test(cleanContent))) {
         type = 'Curve';
+        
+        // Intercept false-positive curves where the current run is a straight line ending at/on a curve
+        const isDestinationCurve = /\bTO\s+[^;.]+?\b(?:LINE|POINT|CORNER|RIGHT-OF-WAY|R\/W|ROAD|STREET|AVENUE|BOULEVARD|LOT)\b.+?\b(?:CURVE|CURVED|RADIUS)\b/i.test(cleanContent);
+        const hasCurveRunVerb = /\b(?:ALONG|AROUND|FOLLOWING|WITH|CURVING|DEVIATING|ARC)\b/i.test(cleanContent);
+        if (isDestinationCurve && !hasCurveRunVerb) {
+          type = 'Line';
+        }
       }
     }
 
@@ -1423,6 +1508,18 @@ export function solveFromText(deedText, options = {}) {
     // For curves, skip the first number if it immediately follows RADIUS
     const allDistMatches = [...cleanContent.matchAll(/\b([\d,]+\.?\d*)\s*(?:FEET|FT\.?|METERS|M\.)\b/gi)];
     const allDistValues  = allDistMatches.map(m => parseFloat(m[1].replace(/,/g, '')));
+
+    if (allDistValues.length === 0) {
+      // Fallback: look for bare decimal distances (e.g. ", 118.76;") at the end of a clause
+      const bareMatch = cleanContent.match(/,\s*([\d,]+\.?\d*)\s*(?:;|\.|THENCE|$)/i)
+                     || cleanContent.match(/\b(?:DISTANCE\s+OF|MEASURING|RUNNING|RUNS)\s+([\d,]+\.?\d*)\b/i);
+      if (bareMatch) {
+        const val = parseFloat(bareMatch[1].replace(/,/g, ''));
+        if (!isNaN(val) && val > 0 && val < 50000) {
+          allDistValues.push(val);
+        }
+      }
+    }
 
     // For Line: use first non-radius distance
     const radiusInLine = cleanContent.match(/(?:RADIUS)\s+(?:OF\s+)?([\d,]+\.?\d*)\s*FEET/i);
@@ -1523,7 +1620,15 @@ export function solveFromText(deedText, options = {}) {
       // ── Chord distance
       const chordDistMatch = cleanContent.match(/CHORD\s+(?:DIST(?:ANCE)?|LENGTH)\s+(?:OF\s+)?([\d,]+\.?\d*)/i)
                           || cleanContent.match(/CHORD(?:AL)?\s+DISTANCE\s+OF\s+([\d,]+\.?\d*)/i);
-      const chordDistance = chordDistMatch ? parseFloat(chordDistMatch[1].replace(/,/g, '')) : null;
+      let chordDistance = chordDistMatch ? parseFloat(chordDistMatch[1].replace(/,/g, '')) : null;
+
+      if (!chordDistance && content.toUpperCase().includes('CHORD')) {
+        const nonRadiusDists = allDistValues.filter(v => v !== lastMentionedRadius);
+        if (nonRadiusDists.length === 1) {
+          chordDistance = nonRadiusDists[0];
+          arcLength = null; // the distance is the chord, so clear default arcLength
+        }
+      }
 
       // ── Delta (central angle) — stored as DMS string or decimal degrees string
       const deltaMatch = cleanContent.match(/(?:CENTRAL\s+ANGLE|DELTA)\s+(?:OF\s+)?([0-9°'"\s.]+?)(?:\s*[,;]|\s+(?:ARC|CHORD|RADIUS|FEET|TO|AND|$))/i);
