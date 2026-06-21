@@ -164,6 +164,7 @@ export default function BatchDeedTab() {
   const [, setExpanded] = useState({});
   const [activeIdx, setActiveIdx] = useState(0);
   const [showPrint, setShowPrint] = useState(false);
+  const [filterFailedOnly, setFilterFailedOnly] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
   const [editCourses, setEditCourses] = useState([]);
@@ -1118,6 +1119,12 @@ export default function BatchDeedTab() {
     }
   };
 
+  const filteredResults = results?.results
+    ? results.results
+        .map((r, originalIdx) => ({ ...r, originalIdx }))
+        .filter(r => !filterFailedOnly || r.status !== 'success')
+    : [];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
@@ -1712,6 +1719,39 @@ export default function BatchDeedTab() {
             <div className="flex-row">
               <span className="status-badge pass">✓ {results.succeeded} OK</span>
               {results.failed > 0 && <span className="status-badge fail">✗ {results.failed} failed</span>}
+              {results.failed > 0 && (
+                <label style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  background: filterFailedOnly ? 'rgba(255, 77, 109, 0.12)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${filterFailedOnly ? 'var(--danger)' : 'var(--border)'}`,
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '4px',
+                  color: filterFailedOnly ? '#ff4d6d' : 'var(--text-secondary)',
+                  transition: 'all 0.15s',
+                  height: '28px',
+                  boxSizing: 'border-box'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={filterFailedOnly}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setFilterFailedOnly(checked);
+                      if (checked && results.results[activeIdx]?.status === 'success') {
+                        const firstFail = results.results.findIndex(rx => rx.status !== 'success');
+                        if (firstFail >= 0) setActiveIdx(firstFail);
+                      }
+                    }}
+                    style={{ width: 13, height: 13, cursor: 'pointer', margin: 0 }}
+                  />
+                  <span>Show Failed Only ({results.failed})</span>
+                </label>
+              )}
               <button className="btn btn-ghost btn-sm" onClick={downloadJson}>⬇ Export JSON</button>
               {results.results[activeIdx]?.traverse && (
                 <button className="btn btn-ghost btn-sm" onClick={downloadDxf} style={{ color: '#c97a00', border: '1px solid rgba(201,122,0,0.4)' }}>⬇ DXF</button>
@@ -1745,16 +1785,16 @@ export default function BatchDeedTab() {
             borderBottom: '1px solid var(--border)',
             marginBottom: '1.25rem'
           }}>
-            {results.results.map((r, i) => {
+            {filteredResults.map((r) => {
               const success = r.status === 'success';
               const ts = r.trustScore;
               const trustLevel = r.trustLevel || (ts >= 80 ? 'HIGH' : ts >= 55 ? 'MED' : 'LOW');
               const trustColor = trustLevel === 'HIGH' ? '#00d4a8' : trustLevel === 'MED' ? '#c97a00' : '#dc3232';
               return (
                 <button
-                  key={i}
-                  className={`btn ${activeIdx === i ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setActiveIdx(i)}
+                  key={r.originalIdx}
+                  className={`btn ${activeIdx === r.originalIdx ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setActiveIdx(r.originalIdx)}
                   title={r.trustFlags?.length > 0 ? r.trustFlags.join('\n') : undefined}
                   style={{
                     whiteSpace: 'nowrap',
@@ -1763,9 +1803,9 @@ export default function BatchDeedTab() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.4rem',
-                    border: activeIdx === i ? '1px solid var(--accent)' : '1px solid transparent',
-                    background: activeIdx === i ? 'var(--accent)' : 'var(--bg-elevated)',
-                    color: activeIdx === i ? '#fff' : 'var(--text-secondary)',
+                    border: activeIdx === r.originalIdx ? '1px solid var(--accent)' : '1px solid transparent',
+                    background: activeIdx === r.originalIdx ? 'var(--accent)' : 'var(--bg-elevated)',
+                    color: activeIdx === r.originalIdx ? '#fff' : 'var(--text-secondary)',
                     borderRadius: 'var(--radius-sm)'
                   }}
                 >

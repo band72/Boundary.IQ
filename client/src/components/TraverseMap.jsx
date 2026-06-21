@@ -3,6 +3,261 @@ import { resolveLabels, getLeaderIntersection } from '../utils/labelLayout';
 
 const PAD = 50;
 
+function parseCardinalAzimuthClient(word) {
+  if (!word || /\d/.test(word)) return null;
+  const CARDINAL_MAP = {
+    'N': 0,   'NORTH': 0,     'NORTHERLY': 0,
+    'NE': 45, 'NORTHEAST': 45, 'NORTHEASTERLY': 45,
+    'E': 90,  'EAST': 90,     'EASTERLY': 90,
+    'SE': 135,'SOUTHEAST': 135,'SOUTHEASTERLY': 135,
+    'S': 180, 'SOUTH': 180,   'SOUTHERLY': 180,
+    'SW': 225,'SOUTHWEST': 225,'SOUTHWESTERLY': 225,
+    'W': 270, 'WEST': 270,    'WESTERLY': 270,
+    'NW': 315,'NORTHWEST': 315,'NORTHWESTERLY': 315,
+    'NNE': 22.5,  'NORTHNORTHEAST': 22.5,
+    'ENE': 67.5,  'EASTNORTHEAST': 67.5,
+    'ESE': 112.5, 'EASTSOUTHEAST': 112.5,
+    'SSE': 157.5, 'SOUTHSOUTHEAST': 157.5,
+    'SSW': 202.5, 'SOUTHSOUTHWEST': 202.5,
+    'WSW': 247.5, 'WESTSOUTHWEST': 247.5,
+    'WNW': 292.5, 'WESTNORTHWEST': 292.5,
+    'NNW': 337.5, 'NORTHNORTHWEST': 337.5,
+  };
+  const key = word.toUpperCase().replace(/[^A-Z]/g, '');
+  return key in CARDINAL_MAP ? CARDINAL_MAP[key] : null;
+}
+
+export function parseBearingToAzimuthDegrees(bearing) {
+  if (!bearing) return null;
+  let clean = bearing.toString().trim()
+    .replace(/(\d+)\.(\d{1,2})\.(\d{1,2})\.(\d+)/g, '$1°$2\'$3.$4"')
+    .replace(/(\d+)\.(\d{1,2})\.(\d{1,2})/g, '$1°$2\'$3"')
+    .replace(/(?:([NSns])\s*\.?\s*)?([0-8]\d)[89](\d{2})[*'\-\s]+(\d{2}(?:\.\d+)?)\s*["\u201D\u2033]?\s*([EWew])?/gi, (match, ns, deg, min, sec, ew) => {
+      return `${ns || ''}${deg}°${min}'${sec}"${ew || ''}`;
+    })
+    .replace(/(?:([NSns])\s*)?(\d{5,6}(?:\.\d+)?)(?:\s*([EWew]))?/gi, (match, ns, digits, ew) => {
+      if (!ns && !ew) return match;
+      const dotIdx = digits.indexOf('.');
+      const intPart = dotIdx !== -1 ? digits.slice(0, dotIdx) : digits;
+      const decPart = dotIdx !== -1 ? digits.slice(dotIdx) : '';
+      let deg, min, sec;
+      if (intPart.length === 6) {
+        deg = intPart.slice(0, 2);
+        min = intPart.slice(2, 4);
+        sec = intPart.slice(4) + decPart;
+      } else if (intPart.length === 5) {
+        deg = intPart.slice(0, 1);
+        min = intPart.slice(1, 3);
+        sec = intPart.slice(3) + decPart;
+      } else {
+        return match;
+      }
+      return `${ns || ''}${deg}°${min}'${sec}"${ew || ''}`;
+    })
+    .replace(/\u2032/g, "'"  )
+    .replace(/\u2033/g, '"'  )
+    .replace(/\u2034/g, '"'  )
+    .replace(/\u02B9/g, "'"  )
+    .replace(/\u02BA/g, '"'  )
+    .replace(/\uF0B0/g, '°'  )
+    .replace(/\uF0B2/g, "'"  )
+    .replace(/\uFEFF/g, ''   )
+    .replace(/\u00BA/g, '°'  )
+    .replace(/\u02DA/g, '°'  )
+    .replace(/\u039D/g, 'N'  )
+    .replace(/\u0391/g, 'A'  )
+    .replace(/\u039F/g, 'O'  )
+    .replace(/\u0395/g, 'E'  )
+    .replace(/\u0397/g, 'H'  )
+    .replace(/\u039A/g, 'K'  )
+    .replace(/\u039C/g, 'M'  )
+    .replace(/\u03A1/g, 'R'  )
+    .replace(/\u03A4/g, 'T'  )
+    .replace(/\u03A5/g, 'Y'  )
+    .replace(/\u03A7/g, 'X'  )
+    .replace(/\u03A9/g, 'W'  )
+    .replace(/[\u2018\u2019\u201A\u02BC\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/\bNORTH\b/gi, 'N')
+    .replace(/\bSOUTH\b/gi, 'S')
+    .replace(/\bEAST\b/gi, 'E')
+    .replace(/\bWEST\b/gi, 'W')
+    .replace(/DEGREES?|DEGREAS|DEGRES?|DEG/gi, '°')
+    .replace(/MINUTES|MIN/gi, "'")
+    .replace(/SECONDS|SEC/gi, '"')
+    .replace(/\*/g, ' ')
+    .replace(/(\d+)\s*'\s*(\d+)\s*'\s*(\d+)\s*"/g, "$1'$2.$3\"")
+    .replace(/(\d+)\s*°\s*(\d+)\s*°/g, "$1°$2'")
+    .replace(/(\d+)\s*'\s*(\d+)\s*°/g, '$1\'$2"');
+
+  const cardAz = parseCardinalAzimuthClient(clean);
+  if (cardAz !== null) return cardAz;
+
+  clean = clean
+    .replace(/^([NSns])\s*\./i, '$1')
+    .replace(/\.\s*([EWew])$/i, '$1')
+    .replace(/^([NSns])\s*/i, '$1')
+    .replace(/\s*([EWew])$/i, '$1')
+    .replace(/([EWew])\s*\.$/i, '$1');
+
+  if (/^[EWew].*[NSns]$/.test(clean)) {
+    const start = clean[0].toUpperCase();
+    const end = clean[clean.length - 1].toUpperCase();
+    clean = end + clean.slice(1, clean.length - 1) + start;
+  }
+
+  if (/^[EWew]\d/.test(clean)) {
+    const start = clean[0].toUpperCase();
+    if (start === 'E') clean = 'N' + clean.slice(1);
+    else if (start === 'W') clean = 'S' + clean.slice(1);
+  }
+
+  clean = clean
+    .replace(/\s*[°º\*^d]\s*/g, '°')
+    .replace(/\s*['’‘`]\s*/g, "'")
+    .replace(/\s*(?:"|”|“|'')\s*/g, '"');
+
+  clean = clean
+    .replace(/(?<=\d)[OoQq]/g, '0')
+    .replace(/[OoQq](?=\d)/g, '0')
+    .replace(/[OoQq]\s*°/g, '0°')
+    .replace(/[OoQq]\s*'/g, "0'")
+    .replace(/[OoQq]\s*"/g, '0"');
+
+  clean = clean.replace(/([NSns])\s*[^0-9°\s]*\s*°/gi, '$10°');
+  clean = clean.replace(/([NSns]\s*\d{1,3})\s*([^0-9NSEWns\s])\s*(\d{1,2}\s*['])/gi, '$1°$3');
+  clean = clean.replace(/([NSns]\s*\d{2,3})([0-9])(\d{2}\s*['])/gi, '$1°$3');
+  clean = clean.replace(/(\d+)\s*°\s*[0-9]\s*(\d{2}\s*['])/gi, '$1°$2');
+
+  if (clean.includes('°') && clean.includes('"') && !clean.includes("'")) {
+    const numericGroups = clean.match(/\d+(?:\.\d+)?/g);
+    if (numericGroups && numericGroups.length === 2) {
+      clean = clean.replace(/"/g, "'");
+    }
+  }
+
+  if (!clean.includes('°')) {
+    const smashedMatch = /^([NSns])\s*(\d{3,4})\s*[']\s*(?:(\d{1,2}(?:\.\d+)?)\s*["])?\s*([EWew])$/i.exec(clean);
+    if (smashedMatch) {
+      const ns = smashedMatch[1].toUpperCase();
+      const digits = smashedMatch[2];
+      const sec = smashedMatch[3] || '00';
+      const ew = smashedMatch[4].toUpperCase();
+      const deg = digits.slice(0, digits.length - 2);
+      const min = digits.slice(digits.length - 2);
+      clean = `${ns}${deg}°${min}'${sec}"${ew}`;
+    }
+  }
+
+  const EXPANDED = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["'\s]*([EWew])?\s*$/;
+  const DEG_MIN  = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)['\s]*([EWew])?\s*$/;
+  const DEG_ONLY = /^\s*([NSns])\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])?\s*$/;
+  const PACKED   = /^\s*([NSns])\s*(\d+\.\d+)\s*([EWew])?\s*$/;
+
+  const EXPANDED_NO_PREFIX = /^\s*([NSns])?\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["'\s]*([EWew])\s*$/;
+  const DEG_MIN_NO_PREFIX  = /^\s*([NSns])?\s*(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)['\s]*([EWew])\s*$/;
+  const DEG_ONLY_NO_PREFIX = /^\s*([NSns])?\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])\s*$/;
+  const PACKED_NO_PREFIX   = /^\s*([NSns])?\s*(\d+\.\d+)\s*([EWew])\s*$/;
+
+  const getQuad = (ns, ew) => {
+    const nsC = (ns || 'N').toUpperCase();
+    const ewC = (ew || 'W').toUpperCase();
+    const key = nsC + ewC;
+    const map = { NE: 1, SE: 2, SW: 3, NW: 4 };
+    return map[key] || 1;
+  };
+
+  const quadToAz = (quad, brgDeg) => {
+    switch (quad) {
+      case 1: return brgDeg;
+      case 2: return 180 - brgDeg;
+      case 3: return 180 + brgDeg;
+      case 4: return 360 - brgDeg;
+      default: return brgDeg;
+    }
+  };
+
+  const packToDeg = (dms) => {
+    const d = Math.floor(Math.abs(dms));
+    const rem = (Math.abs(dms) - d) * 100;
+    const m = Math.floor(rem);
+    const s = (rem - m) * 100;
+    return d + m / 60.0 + s / 3600.0;
+  };
+
+  let m = EXPANDED.exec(clean);
+  if (m) {
+    const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = parseFloat(m[3]);
+    const sec = parseFloat(m[4]);
+    const ew = (m[5] || 'W').toUpperCase();
+    return quadToAz(getQuad(ns, ew), deg + min / 60.0 + sec / 3600.0);
+  }
+
+  m = EXPANDED_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = parseFloat(m[3]);
+    const sec = parseFloat(m[4]);
+    const ew = m[5].toUpperCase();
+    return quadToAz(getQuad(ns, ew), deg + min / 60.0 + sec / 3600.0);
+  }
+
+  m = DEG_MIN.exec(clean);
+  if (m) {
+    const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = parseFloat(m[3]);
+    const ew = (m[4] || 'W').toUpperCase();
+    return quadToAz(getQuad(ns, ew), deg + min / 60.0);
+  }
+
+  m = DEG_MIN_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
+    const deg = parseFloat(m[2]);
+    const min = parseFloat(m[3]);
+    const ew = m[4].toUpperCase();
+    return quadToAz(getQuad(ns, ew), deg + min / 60.0);
+  }
+
+  m = DEG_ONLY.exec(clean);
+  if (m) {
+    const ns = m[1].toUpperCase();
+    const deg = parseFloat(m[2]);
+    const ew = (m[3] || 'W').toUpperCase();
+    return quadToAz(getQuad(ns, ew), deg);
+  }
+
+  m = DEG_ONLY_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
+    const deg = parseFloat(m[2]);
+    const ew = m[3].toUpperCase();
+    return quadToAz(getQuad(ns, ew), deg);
+  }
+
+  m = PACKED.exec(clean);
+  if (m) {
+    const ns = m[1].toUpperCase();
+    const packed = parseFloat(m[2]);
+    const ew = (m[3] || 'W').toUpperCase();
+    return quadToAz(getQuad(ns, ew), packToDeg(packed));
+  }
+
+  m = PACKED_NO_PREFIX.exec(clean);
+  if (m) {
+    const ns = (m[1] || 'N').toUpperCase();
+    const packed = parseFloat(m[2]);
+    const ew = m[3].toUpperCase();
+    return quadToAz(getQuad(ns, ew), packToDeg(packed));
+  }
+
+  return null;
+}
+
 function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000 }) {
   const pts = [{ northing: pob.northing, easting: pob.easting }];
   let curN = pob.northing;
@@ -14,36 +269,12 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
 
     if (dist <= 0) return;
 
-    // Parse bearing (e.g. "N45-30-00E" or "S12°34'56\"W")
-    let match = bearingStr.toUpperCase().match(/([NS])\s*(\d+(?:\.\d+)?)(?:\D+(\d+(?:\.\d+)?))?(?:\D+(\d+(?:\.\d+)?))?[^EW]*([EW])/i);
     let angleRad;
-    if (match) {
-      let ns = match[1];
-      let deg = parseFloat(match[2]);
-      let min = parseFloat(match[3] || 0);
-      let sec = parseFloat(match[4] || 0);
-      let ew = match[5];
-
-      let decimalDeg = deg + min / 60 + sec / 3600;
-      let azimuth = 0;
-
-      if (ns === 'N' && ew === 'E') azimuth = decimalDeg;
-      else if (ns === 'S' && ew === 'E') azimuth = 180 - decimalDeg;
-      else if (ns === 'S' && ew === 'W') azimuth = 180 + decimalDeg;
-      else if (ns === 'N' && ew === 'W') azimuth = 360 - decimalDeg;
-
-      angleRad = (azimuth * Math.PI) / 180;
+    let angleDeg = parseBearingToAzimuthDegrees(bearingStr);
+    if (angleDeg !== null) {
+      angleRad = (angleDeg * Math.PI) / 180;
     } else {
-      bearingStr = bearingStr.toUpperCase().trim();
-      if (bearingStr === 'N' || bearingStr === 'NORTH') angleRad = 0;
-      else if (bearingStr === 'S' || bearingStr === 'SOUTH') angleRad = Math.PI;
-      else if (bearingStr === 'E' || bearingStr === 'EAST') angleRad = Math.PI / 2;
-      else if (bearingStr === 'W' || bearingStr === 'WEST') angleRad = Math.PI * 1.5;
-      else if (bearingStr === 'NE') angleRad = Math.PI / 4;
-      else if (bearingStr === 'SE') angleRad = Math.PI * 0.75;
-      else if (bearingStr === 'SW') angleRad = Math.PI * 1.25;
-      else if (bearingStr === 'NW') angleRad = Math.PI * 1.75;
-      else return; // skip if unparseable
+      return; // skip if unparseable
     }
 
     curN += dist * Math.cos(angleRad);
@@ -187,25 +418,7 @@ function parseDmsToDecimal(dms) {
 }
 
 function parseBearingToDegrees(b) {
-  if (!b) return null;
-  const clean = b.toUpperCase().trim().replace(/[^0-9NSEW°'"\-\.\s]/g, '');
-  const m = clean.match(/^([NS])\s*(\d+(?:\.\d+)?)(?:[°\-\s](\d+(?:\.\d+)?))?(?:['\-\s](\d+(?:\.\d+)?))?["'\s]*([EW])/);
-  if (m) {
-    const [, ns, degStr, minStr, secStr, ew] = m;
-    const deg = parseFloat(degStr || 0);
-    const min = parseFloat(minStr || 0);
-    const sec = parseFloat(secStr || 0);
-    const decDeg = deg + min / 60 + sec / 3600;
-    if (ns === 'N' && ew === 'E') return decDeg;
-    if (ns === 'S' && ew === 'E') return 180 - decDeg;
-    if (ns === 'S' && ew === 'W') return 180 + decDeg;
-    if (ns === 'N' && ew === 'W') return 360 - decDeg;
-  }
-  if (clean === 'N' || clean === 'NORTH') return 0;
-  if (clean === 'S' || clean === 'SOUTH') return 180;
-  if (clean === 'E' || clean === 'EAST') return 90;
-  if (clean === 'W' || clean === 'WEST') return 270;
-  return null;
+  return parseBearingToAzimuthDegrees(b);
 }
 
 function azimuthToBearingString(azDeg) {
