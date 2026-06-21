@@ -1320,7 +1320,7 @@ export function solveFromText(deedText, options = {}) {
   normalizedText = normalizedText.replace(/(\d)\s*~\s*(\d)/g, '$1°$2');
 
   // Fix degree sign read as 0 when followed by minutes and a minute mark: N51047' -> N51°47'
-  normalizedText = normalizedText.replace(/([NSns]\s*\.?\s*\d{1,2})0(\d{1,2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
+  normalizedText = normalizedText.replace(/\b([NSns]\s*\.?\s*\d{2})0(\d{2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
 
   // Fix letters-to-digits in minutes/seconds fields:
   // Minutes + minute mark + seconds + second mark (e.g. 47'OO")
