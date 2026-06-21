@@ -156,3 +156,32 @@ describe('parsePrecisionRatio', () => {
     expect(parsePrecisionRatio('not a ratio')).toBe(0);
   });
 });
+
+// ── Title Commitment / ALTA Skip Classification ────────────────────────────────
+describe('classifyByFilename — title commitment / ALTA skip', () => {
+  it('returns SKIP for Title Commitment cover pages', () => {
+    expect(classifyByFilename('Title Commitment Alan Howard 081221(1).pdf')).toBe('SKIP');
+    expect(classifyByFilename('Title Committment 2023.pdf')).toBe('SKIP');
+  });
+
+  it('returns SKIP for ALTA commitment documents', () => {
+    expect(classifyByFilename('ALTA 2016 Title Commitment v. 1 - 21.15.2021.pdf')).toBe('SKIP');
+    expect(classifyByFilename('ALTA 2021 Policy.pdf')).toBe('SKIP');
+  });
+
+  it('returns SKIP for County Commitment documents', () => {
+    expect(classifyByFilename('Duval County Commitment Part 11.pdf')).toBe('SKIP');
+  });
+
+  it('returns DEED for parcel-split pages (__A/__B suffix) from commitment files', () => {
+    // These are extracted parcels from a commitment — they may contain real THENCE courses
+    expect(classifyByFilename('Title Commitment Alan Howard 081221(1)__A.pdf')).toBe('DEED');
+    expect(classifyByFilename('ALTA 2016 Title Commitment v. 1 - 21.15.2021__D.pdf')).toBe('DEED');
+  });
+
+  it('SKIP_KEYWORDS includes title commitment terms', () => {
+    expect(SKIP_KEYWORDS).toContain('Title Commitment');
+    expect(SKIP_KEYWORDS).toContain('ALTA 2016');
+    expect(SKIP_KEYWORDS).toContain('Commitment Part');
+  });
+});

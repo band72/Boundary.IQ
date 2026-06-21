@@ -33,6 +33,9 @@ RULES:
 8. Do NOT compute, correct, or modify any values. Extract ONLY what is written.
 8a. ACTUAL vs PLAT distances: When a clause contains both an ACTUAL DISTANCE and a PLAT distance (e.g. "AN ACTUAL DISTANCE OF 117.30 FEET (126.97 FEET PLAT)"), always use the ACTUAL DISTANCE. The plat figure appears in parentheses and must NOT be used for the traverse.
 9. Bearings format: "N45°22'10\"E" — keep the exact degree/minute/second format from the text.
+   CRITICAL DMS VALIDATION: Minutes must be 00–59. Seconds must be 00–59.99. Degrees must be 0–90.
+   If the source text produces an impossible value (e.g. S00°91'50\"E where minutes=91, or N64°90'50\"W), the text is an OCR artifact.
+   In this case: set Bearing to null and IsUnknown to true. DO NOT transcribe impossible DMS values.
 10. Distances are decimal feet (or meters if stated).
 11. IDENTIFY the Point of Reference (POR) (e.g. the section corner, subdivision corner, or benchmark mentioned) and any commencement/reference runs leading from that Reference Point (POR) to the Point of Beginning (POB).
    - Populate the "ReferencePointName" field with the name/description of the Point of Reference (or null if not found).
@@ -43,6 +46,7 @@ RULES:
 14. Output ONLY a JSON object. No explanation, no markdown.
 15. DUAL DESCRIPTION — If the deed contains TWO complete traverse descriptions of the SAME property (signals: "THIS IS THE SAME PROPERTY AS DESCRIBED IN...", "BEING THE SAME LANDS AS DESCRIBED IN...", or a second "POINT OF BEGINNING" traverse after the first), extract ONLY the SECOND (more recent/precise) description. Ignore the first. The second usually follows a surveyor's job number or "JOB NO." reference.
 16. MULTI-PARCEL / MULTI-TRACT DEED — If the deed contains multiple distinct parcels, tracts, or easements (e.g., "PARCEL 1:", "PARCEL 2:", "TRACT A:", "TRACT B:", "EASEMENT 1:"), extract ALL of them into separate elements in the "Tracts" array. For each tract, specify its Name, POB, ReferencePointName, CommencementSegments, IsOpenEnded, and Segments. Even if there is only a single tract/parcel, wrap it as the sole element in the "Tracts" array.
+17. LOT/BLOCK DESCRIPTIONS: If the legal description is ONLY a lot-block-subdivision reference (e.g. "Lot 5, Block 3, Sunny Acres Subdivision") with no THENCE courses and no metes-and-bounds geometry, output an empty "Segments" array. Do NOT fabricate courses.
 
 
 OUTPUT FORMAT:

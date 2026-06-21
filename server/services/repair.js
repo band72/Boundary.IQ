@@ -199,6 +199,13 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     };
   }
 
+  // Early-warning: flag impossible DMS values (OCR concatenation artifacts like S00°91'50"E)
+  // These cause incorrect traverse math — log so the agent can request re-extraction.
+  const { hasImpossible, badCourses } = bp.hasImpossibleBearings(extraction.courses);
+  if (hasImpossible) {
+    log.warn({ file: fileName, badCourses }, 'Extraction contains impossible DMS bearings (min≥60 or sec≥60) — OCR artifact likely');
+  }
+
   // Fix #9: Prefer the structured isOpenEnded boolean from extraction; string scan is secondary fallback
   const docText = extraction.rawJson || '';
   let actualOpenEnded = extraction.isOpenEnded || detectOpenEnded(docText, fileName, false) || isOpenEnded;
@@ -1090,23 +1097,26 @@ function tryCompute(courses, pob, units, isOpenEnded = false) {
 function isPassing(t) {
   if (t.closure.status.includes('Open-Ended')) return true;
 
-  // Degeneracy Check: Area is extremely small, but perimeter is significant
+  // Degeneracy Check: Area is extremely small but perimeter is significant.
+  // Exception: if linearError is already below the pass threshold the deed IS
+  // geometrically closed — a 2-course back-and-forth lot-line strip is valid.
   const isDegenerate = t.areaSqFt != null && t.areaSqFt < 10.0 && t.perimeter > 100.0;
-  if (isDegenerate) {
-    console.log(`isPassing: Rejected degenerate traverse (areaSqFt=${t.areaSqFt.toFixed(2)}, perimeter=${t.perimeter.toFixed(2)})`);
+  if (isDegenerate && t.closure.linearError >= PASS_LINEAR_ERROR_FT) {
+    log.debug({ areaSqFt: t.areaSqFt?.toFixed(2), perimeter: t.perimeter?.toFixed(2) }, 'isPassing: rejected degenerate non-closing traverse');
     return false;
   }
 
-  // Backtracking Check: Reject if there are backtracking/opposite consecutive courses
-  if (t.courses && detectBacktracking(t.courses, true)) {
-    console.log(`isPassing: Rejected traverse due to backtracking`);
+  // Backtracking Check: Reject if there are backtracking/opposite consecutive courses.
+  // Exception: allow straight-line strips (isDegenerate && perfect closure).
+  if (t.courses && !isDegenerate && detectBacktracking(t.courses, true)) {
+    log.debug('isPassing: rejected traverse due to backtracking');
     return false;
   }
 
   if (t.closure.linearError < PASS_LINEAR_ERROR_FT) return true;
   const parts = t.closure.precisionRatio.split(':');
   if (parts.length > 1) {
-    const cleaned = parts[1].replace(/,/g, '').replace('∞', '999999999').trim();
+    const cleaned = parts[1].replace(/,/g, '').replace('\u221e', '999999999').trim();
     const ratio = parseFloat(cleaned);
     if (!isNaN(ratio) && ratio >= PASS_PRECISION_RATIO) return true;
   }

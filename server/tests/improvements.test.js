@@ -345,4 +345,53 @@ describe('Boundary.IQ Improvements Tests', () => {
       expect(m).toBe(23); // correct DMS minutes are 23, not 38
     });
   });
+
+  describe('10. Impossible DMS Bearing Detection', () => {
+    it('flags impossible DMS values as IMPOSSIBLE confidence', () => {
+      // S00°91'50"E — minutes=91 is physically impossible
+      const res = bp.parse('S00°91\'50"E');
+      expect(res.parseConfidence).toBe('IMPOSSIBLE');
+      expect(res.impossibleDms).toBeTruthy();
+      expect(res.impossibleDms.min).toBe(91);
+    });
+
+    it('flags minutes=90 as impossible', () => {
+      const res = bp.parse('N64°90\'50"W');
+      expect(res.parseConfidence).toBe('IMPOSSIBLE');
+    });
+
+    it('does NOT flag valid DMS values as impossible', () => {
+      const res = bp.parse('N45°22\'10"E');
+      expect(res.parseConfidence).not.toBe('IMPOSSIBLE');
+      expect(res.impossibleDms).toBeUndefined();
+    });
+
+    it('hasImpossibleBearings returns false for valid courses', () => {
+      const courses = [
+        { type: 'Line', bearing: 'N45°22\'10"E', distance: 100 },
+        { type: 'Line', bearing: 'S12°34\'56"W', distance: 150 },
+      ];
+      const result = bp.hasImpossibleBearings(courses);
+      expect(result.hasImpossible).toBe(false);
+      expect(result.badCourses).toHaveLength(0);
+    });
+
+    it('hasImpossibleBearings flags impossible bearings and returns their 1-based indices', () => {
+      const courses = [
+        { type: 'Line', bearing: 'S00°91\'50"E', distance: 431.02 },  // impossible
+        { type: 'Curve', chordBearing: 'N19°44\'08"W', radius: 200 }, // valid
+        { type: 'Line', bearing: 'N64°90\'50"W', distance: 98.48 },    // impossible
+      ];
+      const result = bp.hasImpossibleBearings(courses);
+      expect(result.hasImpossible).toBe(true);
+      expect(result.badCourses).toContain(1);
+      expect(result.badCourses).toContain(3);
+      expect(result.badCourses).not.toContain(2);
+    });
+
+    it('hasImpossibleBearings handles empty or null input gracefully', () => {
+      expect(bp.hasImpossibleBearings([]).hasImpossible).toBe(false);
+      expect(bp.hasImpossibleBearings(null).hasImpossible).toBe(false);
+    });
+  });
 });

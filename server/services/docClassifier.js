@@ -30,6 +30,11 @@ export const SKIP_KEYWORDS = [
   'Assign & Assump', 'REA Assign', 'Agreement Concerning Lease', 'Fourth Amendment',
   '2nd Amend', "Vendor_s Lien", 'Certificate', 'Contribution Agreement',
   'Utility Agreement', 'Dec of Expiration',
+  // Title commitment / insurance documents — contain Schedule B legal descriptions
+  // but the description pages are split out separately; the cover/index pages have no
+  // traversable boundary and must be skipped to avoid wasting LLM quota.
+  'Title Commitment', 'Title Committment', 'ALTA 2016', 'ALTA 2021', 'ALTA/NSPS',
+  'County Commitment', 'Commitment Part',
   // NOTE: 'CERT', 'CERTIFICATION' intentionally NOT in this list —
   // a deed file may be named with CERT but still contain valid THENCE courses.
   'TITLE OPINION', 'ELEVATION CERT', 'FLOOD CERT', 'ENCROACHMENT',
@@ -71,6 +76,17 @@ export function containsWord(source, word) {
  */
 export function classifyByFilename(fileName) {
   const upper = fileName.toUpperCase();
+
+  // ── Commitment / ALTA parcel-split override (checked BEFORE SKIP_KEYWORDS) ──
+  // Files like "Title Commitment XYZ__A.pdf" are parcels extracted from a commitment
+  // document and may contain real boundary THENCE courses.  They must be processed
+  // as DEED rather than being skipped along with the raw commitment cover pages.
+  const isParcelSplit = /__(A|B|C|D|E|F|G|H|I|J|K|L|M|N|[0-9]+|IN|EASEMENT|EXCEPTION)(_\d+)?\./i.test(fileName);
+  const isCommitmentDoc = upper.includes('COMMITMENT') || upper.includes('COMMITTMENT') || upper.includes('ALTA ');
+  if (isCommitmentDoc && isParcelSplit) return 'DEED';   // extracted parcel — process
+  if (isCommitmentDoc && !isParcelSplit) return 'SKIP';  // cover/index page — skip
+
+  // ── Standard SKIP keyword check ───────────────────────────────────────────
   for (const skip of SKIP_KEYWORDS) {
     if (upper.includes(skip.toUpperCase())) return 'SKIP';
   }
@@ -81,7 +97,6 @@ export function classifyByFilename(fileName) {
   if (upper.includes('ORDER OF TAKING')) return 'CONDEMNATION';
   if (upper.includes('ROAD') || upper.includes('BLVD')) return 'ROAD_CLOSING';
   if (upper.includes('DEED') || upper.includes('GRANT')) return 'DEED';
-  if (upper.includes('COMMITMENT') || upper.includes('COMMITTMENT')) return 'DEED';
 
   // Generic or unknown filenames — if it's a supported file type, try content analysis
   const ext = path.extname(fileName).toLowerCase();
@@ -137,6 +152,17 @@ export function getDocType(filePath, fileName) {
            txt.includes('ALTA/ACSM') || txt.includes('ELEVATION CERTIFICATE') ||
            txt.includes('FLOOD INSURANCE')) && !txt.includes('THENCE')) {
         log.debug({ file: fileName }, 'SKIP — pure certification, no boundary courses');
+        return 'SKIP';
+      }
+
+      // Hard skip: title commitment cover/index pages — they have SCHEDULE B text
+      // but the parcel geometry is in __A/__B splits; the cover pages themselves have no THENCE.
+      const isTitleCommitment =
+        txt.includes('TITLE COMMITMENT') || txt.includes('TITLE COMMITTMENT') ||
+        txt.includes('ALTA/NSPS') || txt.includes('TITLE INSURANCE COMPANY') ||
+        (txt.includes('SCHEDULE A') && txt.includes('SCHEDULE B') && !txt.includes('THENCE'));
+      if (isTitleCommitment && !txt.includes('THENCE')) {
+        log.debug({ file: fileName }, 'SKIP — title commitment cover page, no THENCE courses');
         return 'SKIP';
       }
 

@@ -224,11 +224,13 @@ export function parse(bearing) {
     const min = parseFloat(m[3]);
     const sec = parseFloat(m[4]);
     const ew = (m[5] || 'W').toUpperCase();
+    // Detect impossible DMS values (OCR artifacts like S00°91'50"E where minutes=91)
+    const impossible = min >= 60 || sec >= 60 || deg > 90;
     const decDeg = deg + min / 60.0 + sec / 3600.0;
     const quadrant = getQuadrant(ns, ew);
     const azimuthDeg = quadrantToAzimuth(quadrant, decDeg);
-    const parseConfidence = m[5] ? assessConfidence(deg, min, sec, 'expanded') : 'LOW';
-    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence };
+    const parseConfidence = impossible ? 'IMPOSSIBLE' : (m[5] ? assessConfidence(deg, min, sec, 'expanded') : 'LOW');
+    return { azimuthDeg, azimuthRad: azimuthDeg * Math.PI / 180.0, quadrant, parseConfidence, impossibleDms: impossible ? { deg, min, sec } : undefined };
   }
 
   // Try expanded DMS (prefix optional, suffix required)
@@ -428,4 +430,28 @@ export function parseCardinalAzimuth(word) {
   };
   const key = word.toUpperCase().replace(/[^A-Z]/g, '');
   return key in CARDINAL_MAP ? CARDINAL_MAP[key] : null;
+}
+
+/**
+ * Check whether a course list contains any bearing that parsed as physically
+ * impossible (minutes ≥ 60 or seconds ≥ 60 — classic OCR concatenation error).
+ *
+ * @param {Array<{bearing?: string}>} courses
+ * @returns {{ hasImpossible: boolean, badCourses: number[] }}
+ *   badCourses contains 1-based course indices of impossible bearings.
+ */
+export function hasImpossibleBearings(courses) {
+  if (!Array.isArray(courses)) return { hasImpossible: false, badCourses: [] };
+  const badCourses = [];
+  courses.forEach((c, i) => {
+    const brg = c?.bearing || c?.chordBearing;
+    if (!brg) return;
+    try {
+      const parsed = parse(brg);
+      if (parsed?.parseConfidence === 'IMPOSSIBLE') {
+        badCourses.push(i + 1);
+      }
+    } catch {}
+  });
+  return { hasImpossible: badCourses.length > 0, badCourses };
 }

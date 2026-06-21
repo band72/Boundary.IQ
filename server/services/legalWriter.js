@@ -45,13 +45,19 @@ export function write(req) {
       const dist = (c.distance || 0).toFixed(2);
       phrase = `THENCE ${brg}, a distance of ${dist} ${units}${subPhrase}`;
     } else if (type === 'curve') {
-      const dir = c.curveDirection || 'Right';
+      const dir = c.curveDirection || c.Direction || c.direction || 'Right';
       const delta = formatDMS(c.delta || 0);
       const radius = (c.radius || 0).toFixed(2);
       const arc = (c.arcLength || 0).toFixed(2);
       const chord = (c.chordDistance || 0).toFixed(2);
-      const chBrg = formatBearing(c.chordBearing || '');
-      phrase = `THENCE along a curve to the ${dir}, having a radius of ${radius} ${units}, a central angle of ${delta}, an arc length of ${arc} ${units}, a chord bearing of ${chBrg}, and a chord distance of ${chord} ${units}${subPhrase}`;
+      // chord bearing may be absent — use bearing field as fallback, or omit
+      const rawChord = c.chordBearing || c.bearing || '';
+      const chBrg = rawChord ? formatBearing(rawChord) : null;
+      if (chBrg) {
+        phrase = `THENCE along a curve to the ${dir}, having a radius of ${radius} ${units}, a central angle of ${delta}, an arc length of ${arc} ${units}, a chord bearing of ${chBrg}, and a chord distance of ${chord} ${units}${subPhrase}`;
+      } else {
+        phrase = `THENCE along a curve to the ${dir}, having a radius of ${radius} ${units}, a central angle of ${delta}, and an arc length of ${arc} ${units}${subPhrase}`;
+      }
     } else if (type === 'point of beginning') {
       const desc = c.description ? ` (${c.description})` : '';
       phrase = `THENCE to the Point of Beginning (POB)${desc}${subPhrase}`;
@@ -122,15 +128,21 @@ function formatSubItemPhrase(c) {
 }
 
 function formatBearing(raw) {
-  if (!raw || raw.length < 3) return raw;
+  if (!raw || raw.length < 3) return raw || '';
   raw = raw.trim();
-  const ns = raw[0].toUpperCase() === 'N' ? 'North' : 'South';
-  const ew = raw[raw.length - 1].toUpperCase() === 'E' ? 'East' : 'West';
+  // Normalize Unicode/Latin degree symbol variants (º U+00BA, ˚ U+02DA, ° U+00B0)
+  raw = raw.replace(/[\u00B0\u00BA\u02DA\u25E6]/g, '\u00B0');
+  const firstChar = raw[0].toUpperCase();
+  const lastChar = raw[raw.length - 1].toUpperCase();
+  const ns = firstChar === 'N' ? 'North' : (firstChar === 'S' ? 'South' : null);
+  const ew = lastChar === 'E' ? 'East' : (lastChar === 'W' ? 'West' : null);
+  // If not in N/S/E/W quadrant format, return as-is
+  if (!ns || !ew) return raw;
   let mid = raw.slice(1, -1).trim();
-  // Normalize dash separators
+  // Normalize dash separators to symbols
   if (mid.includes('-')) {
     const i1 = mid.indexOf('-');
-    mid = mid.substring(0, i1) + '°' + mid.substring(i1 + 1);
+    mid = mid.substring(0, i1) + '\u00B0' + mid.substring(i1 + 1);
     const i2 = mid.indexOf('-');
     if (i2 >= 0) mid = mid.substring(0, i2) + "'" + mid.substring(i2 + 1);
   }
