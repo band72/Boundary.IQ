@@ -14,7 +14,7 @@
 import pino from 'pino';
 import { IS_PROD } from './config.js';
 
-const transport = IS_PROD
+const transport = (IS_PROD || process.env.PINO_LOG_SYNC === 'true')
   ? undefined
   : {
       target: 'pino-pretty',

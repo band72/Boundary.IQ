@@ -1309,7 +1309,12 @@ export function solveFromText(deedText, options = {}) {
     // Normalize ring above ˚ (U+02DA) → °
     .replace(/\u02DA/g, '°')
     // Remove BOM
-    .replace(/\uFEFF/g, '');
+    .replace(/\uFEFF/g, '')
+    // Remove commas between degree/minute symbols and digits to avoid splitting DMS fields
+    .replace(/([°'\u2032])\s*,\s*(?=\d)/g, '$1 ')
+    // Normalize OCR distance typos (e.g. I750.00 FEET -> 1750.00 FEET, O.50 FEET -> 0.50 FEET)
+    .replace(/\b[IlL|!](?=\d+(?:\.\d+)?\s*(?:FEET|FOOT|FT|METERS|M\b))/gi, '1')
+    .replace(/\b[OoQq](?=\d+(?:\.\d+)?\s*(?:FEET|FOOT|FT|METERS|M\b))/gi, '0');
 
 
   // Pre-normalize surveyor dot-notation bearings: N.89°43'05"E. → N89°43'05"E
@@ -1318,7 +1323,10 @@ export function solveFromText(deedText, options = {}) {
     .replace(/\b([NSns])\.([0-9])/g, '$1$2')   // N.00° → N00°
     .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2') // 47".E → 47"E  or  47".W → 47"W
     .replace(/([EWew])\.(?=\s|,|;|$)/g, '$1')   // strip trailing dot after E/W
-    .replace(/°['\u2018\u2019\u201A\u02BC\u00B4]/g, '°'); // fix °' typo (extra apostrophe after degree symbol)
+    .replace(/°['\u2018\u2019\u201A\u02BC\u00B4]/g, '°') // fix °' typo (extra apostrophe after degree symbol)
+    .replace(/\bDEGREES?|DEGREAS|DEGRES?|DEG\b/gi, '°')
+    .replace(/\bMINUTES?|MIN\b/gi, "'")
+    .replace(/\bSECONDS?|SEC\b/gi, '"');
 
   // Inject THENCE before bearings that are followed by a distance, but lack THENCE/COMMENCE/RUN keywords in the preceding 35 characters.
   let textWithInjectedThence = '';
@@ -1354,12 +1362,12 @@ export function solveFromText(deedText, options = {}) {
   const preparedText = normalizedText
     .replace(/\bTHENCE\s+CONTINUE(?:ING)?\b/gi, 'THENCE')
     .replace(/\bRUN\s+THENCE\b/gi, 'THENCE')
-    .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|[NSns])\b\s*[.\d])/gi, 'THENCE ')
+    .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d])/gi, 'THENCE ')
     // "CONTINUING...bearing" and "CONTINUE...bearing" -> THENCE
-    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=(?:NORTH|SOUTH|[NSns])\b\s*[.\d°])/gi, 'THENCE ')
+    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ')
     // Standalone RUN [bearing] (not preceded by THENCE) → THENCE
     // e.g. "FROM THE POINT OF REFERENCE...RUN S.39°41'50"E."
-    .replace(/\bRUN\s+(?=(?:NORTH|SOUTH|[NSns])\b\s*[.\d°])/gi, 'THENCE ');
+    .replace(/\bRUN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ');
 
 
   const rawSegments = preparedText.split(/\b(THENCE|COMMENCE)\b/i);
@@ -1381,7 +1389,8 @@ export function solveFromText(deedText, options = {}) {
     const content = rawSegments[i + 1] || '';
     const cleanContent = content.replace(/\(.*?\)/g, ' ').trim();
 
-    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)|SAID\s+POINT\s+OF\s+BEGINNING|FOR\s+(?:THE\s+|A\s+)?POINT\s+OF\s+BEGINNING)\b/i.test(cleanContent);
+    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)|SAID\s+POINT\s+OF\s+BEGINNING|FOR\s+(?:THE\s+|A\s+)?POINT\s+OF\s+BEGINNING)\b/i.test(cleanContent)
+      || /\b(?:POINT\s+OF\s+BEGINNING|P\.?\s*O\.?\s*B\.?)\b/i.test(cleanContent);
     // Detect 'FROM THE POINT OF BEGINNING THUS ESTABLISHED' — means we're at the POB now
     const isFromPob = /\bFROM\s+(?:THE\s+)?POINT\s+OF\s+BEGINNING\b/i.test(cleanContent);
 
@@ -1389,16 +1398,23 @@ export function solveFromText(deedText, options = {}) {
     // ── Segment Type Classification ──────────────────────────────────────────
     // Suppress curve detection ONLY when this is a line arriving AT the Point of Curve (PC)
     // — i.e., the segment ends at the START of the next curve. 
-    // Do NOT suppress if the destination is the Point of Tangency (PT) — that's the END of a curve.
-    const hasToPointOfCurve = (
+    // Guard: must NOT have an arc-traversal verb — if "ALONG THE ARC" is present, this IS a curve.
+    const hasAlongArcEarly = /\b(ALONG\s+(?:THE\s+|SAID\s+)?ARC|AROUND\s+SAID\s+CURVE|ALONG\s+(?:AND\s+AROUND\s+)?SAID\s+CURVE|AROUND\s+THE\s+ARC)\b/i.test(cleanContent);
+    const hasToPointOfCurve = !hasAlongArcEarly && (
       /\b(TO\s+(?:THE\s+|A\s+)?POINT\s+OF\s+(?:CURVE|CURVATURE))\b/i.test(cleanContent)
-      // "TO ITS INTERSECTION WITH A CURVE ... HAVING A RADIUS" = arriving at PC
-      || /\bTO\s+(?:ITS\s+)?INTERSECTION\s+WITH\s+(?:A|SAID|THE)?\s*CURVE\b/i.test(cleanContent)
+      // "TO ITS/AN INTERSECTION WITH THE ARC OF A CURVE" = arriving at PC
+      || /\bTO\s+(?:ITS\s+|AN?\s+)?INTERSECTION\s+WITH\s+(?:THE\s+)?(?:ARC\s+OF\s+(?:A|SAID)\s+)?(?:A\s+|SAID\s+|THE\s+)?CURVE\b/i.test(cleanContent)
+      // "TO A POINT LYING ON A CURVE" = arriving at PC (only when no arc traversal verb)
+      || /\bTO\s+(?:A\s+)?POINT\s+(?:LYING\s+)?ON\s+(?:A|SAID|THE)\s+CURVE\b/i.test(cleanContent)
+      // "TO THE BEGINNING OF A CURVE" = arriving at PC
+      || /\bTO\s+(?:THE\s+)?BEGINNING\s+OF\s+(?:A|SAID)\s+CURVE\b/i.test(cleanContent)
+      // "DEPARTING SAID/THE CURVE" = this is a straight line LEAVING the curve
+      || /\bDEPARTING\s+(?:SAID|THE)?\s*CURVE\b/i.test(cleanContent)
     ) && !/\b(POINT\s+OF\s+TANGENCY|POINT\s+OF\s+TANGENT)\b/i.test(cleanContent);
     let type = 'Line';
     if (!hasToPointOfCurve) {
       const hasCurveKeywords = /\b(CURVE|ARC|RADIUS)\b/i.test(cleanContent);
-      const hasAlongArc      = /\b(ALONG\s+(?:THE\s+|SAID\s+)?ARC|AROUND\s+SAID\s+CURVE|ALONG\s+(?:AND\s+AROUND\s+)?SAID\s+CURVE|AROUND\s+THE\s+ARC)\b/i.test(cleanContent);
+      const hasAlongArc      = hasAlongArcEarly; // reuse early computation
       const hasArcDist       = /\bARC\s+(?:DISTANCE|LENGTH)\b/i.test(cleanContent);
       const hasConcave       = /\bCONCAVE\b/i.test(cleanContent);
       const hasCentralAngle  = /\bCENTRAL\s+ANGLE\b/i.test(cleanContent);
@@ -1407,8 +1423,9 @@ export function solveFromText(deedText, options = {}) {
         type = 'Curve';
         
         // Intercept false-positive curves where the current run is a straight line ending at/on a curve
-        const isDestinationCurve = /\bTO\s+[^;.]+?\b(?:LINE|POINT|CORNER|RIGHT-OF-WAY|R\/W|ROAD|STREET|AVENUE|BOULEVARD|LOT)\b.+?\b(?:CURVE|CURVED|RADIUS)\b/i.test(cleanContent);
-        const hasCurveRunVerb = /\b(?:ALONG|AROUND|FOLLOWING|WITH|CURVING|DEVIATING|ARC)\b/i.test(cleanContent);
+        const isDestinationCurve = /\bTO\s+[^;.]+?\b(?:LINE|POINT|CORNER|RIGHT-OF-WAY|R\/W|ROAD|STREET|AVENUE|BOULEVARD|LOT|P\.?C\.?|P\.?T\.?|P\.?C\.?C\.?|P\.?R\.?C\.?|P\.?|INTERSECTION|TERMINUS|TANGENT|TANGENCY|MONUMENT|STAKE|PIN|PIPE)\b.+?\b(?:CURVE|CURVED|RADIUS)\b/i.test(cleanContent);
+        const hasCurveRunVerb = /\b(?:ALONG|AROUND|FOLLOWING|WITH)\s+(?:THE\s+|SAID\s+|A\s+)?(?:ARC|CURVE|CURVED)\b/i.test(cleanContent)
+                             || /\b(?:CURVING|DEVIATING|ARC)\b/i.test(cleanContent);
         if (isDestinationCurve && !hasCurveRunVerb) {
           type = 'Line';
         }
@@ -1422,8 +1439,13 @@ export function solveFromText(deedText, options = {}) {
     // ── Distance parsing ─────────────────────────────────────────────────────
     // Match ALL distances in the segment; select the appropriate one per type.
     // For curves, skip the first number if it immediately follows RADIUS
-    const allDistMatches = [...cleanContent.matchAll(/\b([\d,]+\.?\d*)\s*(?:FEET|FT\.?|METERS|M\.)\b/gi)];
-    const allDistValues  = allDistMatches.map(m => parseFloat(m[1].replace(/,/g, '')));
+    const allDistMatches = [...cleanContent.matchAll(/\b([\d,]+\.?\d*)\s*(?:FEET|FOOT|FT\.?|METERS|M\.)\b/gi)];
+    let allDistValues  = allDistMatches.map(m => parseFloat(m[1].replace(/,/g, '')));
+
+    // Filter out easement/ROW width descriptions (e.g., "60.00 FEET EASEMENT")
+    const widthMatches = [...cleanContent.matchAll(/\b([\d,]+\.?\d*)\s*(?:FEET|FOOT|FT\.?)\s*(?:(?:IN\s+)?WIDTH|WIDE|ROADWAY|EASEMENT|RIGHT[- ]OF[- ]WAY|R\/W|STRIP)\b/gi)];
+    const widthValues = new Set(widthMatches.map(m => parseFloat(m[1].replace(/,/g, ''))));
+    allDistValues = allDistValues.filter(v => !widthValues.has(v));
 
     if (allDistValues.length === 0) {
       // Fallback: look for bare decimal distances (e.g. ", 118.76;") at the end of a clause
@@ -1459,11 +1481,12 @@ export function solveFromText(deedText, options = {}) {
     let isUnknown = false;
 
     const bearingMatch = bearingContent.match(
-      /\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,6}\s*(?:DEGREES?|°|-)?\s*(?:\d{1,2}\s*(?:MINUTES?|'|-)?\s*(?:\d{1,2}(?:\.\d+)?\s*(?:SECONDS?|"))?)?(?:\d{1,2}(?:\.\d+)?)?)\s*\.?\s*(E|W|EAST|WEST)\b/i
+      /\b(N|S|NORTH|SOUTH)\s*\.?\s*(\d{1,6}\s*(?:DEGREES?|°|-)?\s*(?:\d{1,2}\s*(?:MINUTES?|'|-)?\s*(?:\d{1,2}(?:\.\d+)?\s*(?:SECONDS?|["']))?)?(?:\d{1,2}(?:\.\d+)?)?)\s*\.?\s*(E|W|EAST|WEST)\b/i
     );
 
     const chordBearingMatch = !bearingMatch && type === 'Curve'
-      ? bearingContent.match(/CHORD\s+BEARING\s+(?:AND\s+DISTANCE\s+)?(?:OF\s+)?([NSns]\s*\.?\s*\d[^,;]{3,30}?[EWew])/i)
+      ? bearingContent.match(/CHORD\s+BEARING\s+(?:AND\s+DISTANCE\s+)?(?:OF\s+)?\(?([NSns]\s*\.?\s*\d[^,;)]{3,30}?[EWew])\)?/i)
+        || content.match(/CHORD\s+BEARING\s+(?:AND\s+DISTANCE\s+)?(?:OF\s+)?\(?([NSns]\s*\.?\s*\d[^,;)]{3,30}?[EWew])\)?/i)
       : null;
 
     const rawBearingStr = chordBearingMatch ? chordBearingMatch[1] : (bearingMatch ? bearingMatch[0] : null);
@@ -1476,16 +1499,22 @@ export function solveFromText(deedText, options = {}) {
         isUnknown = true;
       }
     } else {
-      const cardMatch = bearingContent.match(
-        /\b(NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b/i
-      );
-      if (cardMatch) {
-        const az = bp.parseCardinalAzimuth(cardMatch[1]);
-        if (az !== null) bearing = bp.toDisplayString(az);
-        else isUnknown = true;
-      } else {
-        isUnknown = true;
+      // Cardinal direction fallback — only valid for LINE segments.
+      // For curves, 'EASTERLY' describes direction of travel along the arc, NOT the chord bearing.
+      // Leave bearing null for curves so COGO can synthesize the chord from incoming azimuth + delta.
+      if (type === 'Line') {
+        const cardMatch = bearingContent.match(
+          /\b(NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b/i
+        );
+        if (cardMatch) {
+          const az = bp.parseCardinalAzimuth(cardMatch[1]);
+          if (az !== null) bearing = bp.toDisplayString(az);
+          else isUnknown = true;
+        } else {
+          isUnknown = true;
+        }
       }
+      // For curves with no explicit chord bearing: bearing stays null — synthesized downstream
     }
 
     // ── Radius tracking ──────────────────────────────────────────────────────
@@ -1507,18 +1536,22 @@ export function solveFromText(deedText, options = {}) {
       segmentObj.isUnknown  = isMeander || isUnknown || distance === null;
       if (isMeander) segmentObj.isMeander = true;
     } else {
-      // ── Arc length: ARC DISTANCE/LENGTH OF X  or  ARC OF X  or  last dist value
-      const arcMatch = cleanContent.match(/(?:ARC\s+(?:DISTANCE|LENGTH)|\bARC)\s+(?:DISTANCE\s+)?OF\s+([\d,]+\.?\d*)/i)
-                    || cleanContent.match(/DISTANCE\s+OF\s+([\d,]+\.?\d*)\s*FEET.*ARC/i);
+      // ── Arc length: ARC DISTANCE/LENGTH OF X  or  ARC OF X  or  AN ARC DISTANCE OF X
+      const arcMatch = cleanContent.match(/(?:AN\s+)?\bARC\s+(?:DISTANCE|LENGTH)\s+(?:OF\s+)?([\d,]+\.?\d*)/i)
+                    || cleanContent.match(/(?:ARC\s+(?:DISTANCE|LENGTH)|\bARC)\s+(?:DISTANCE\s+)?OF\s+([\d,]+\.?\d*)/i)
+                    || cleanContent.match(/A\s+DISTANCE\s+OF\s+([\d,]+\.?\d*)\s*FEET[^)]*ARC/i);
       let arcLength = arcMatch ? parseFloat(arcMatch[1].replace(/,/g, '')) : null;
       if (!arcLength) {
         // fallback: last distance value in the segment (arc is usually last)
-        arcLength = allDistValues[allDistValues.length - 1] ?? distance;
+        // But: exclude values that are the chord distance (inside parentheses)
+        const parenContent = cleanContent.replace(/\([^)]*\)/g, '');
+        const distOutsideParens = [...parenContent.matchAll(/\b([\d,]+\.?\d*)\s*FEET\b/gi)]
+          .map(m => parseFloat(m[1].replace(/,/g, ''))).filter(v => v > 0);
+        arcLength = distOutsideParens[distOutsideParens.length - 1] ?? distance ?? null;
       }
 
       // ── Curve direction: explicit RIGHT/LEFT, or derive from CONCAVE language
       // Florida deeds often say "CONCAVE NORTHERLY" or "CONCAVE TO THE NORTH"
-      // If concave to N/NE/NW → curve is to the right heading E; derive from bearing
       let curveDirection = 'Right'; // default
       const dirMatch = cleanContent.match(/CURVE\s+TO\s+THE\s+(RIGHT|LEFT)/i)
                     || cleanContent.match(/\b(RIGHT|LEFT)(?:\s+CURVE)?\b/i);
@@ -1533,16 +1566,26 @@ export function solveFromText(deedText, options = {}) {
         }
       }
 
-      // ── Chord distance
+      // ── Chord distance (search BOTH cleanContent and raw content — chord is often in parentheses)
+      // Pattern 1: "CHORD DIST(ANCE) OF 104.51"
+      // Pattern 2: "CHORDAL DISTANCE OF 104.51"  
+      // Pattern 3: "CHORD BEARING AND DISTANCE OF S06°E., 104.51 FEET"
+      // Pattern 4: "CHORD BEARING ... DISTANCE 104.51 FEET" (bare)
       const chordDistMatch = cleanContent.match(/CHORD\s+(?:DIST(?:ANCE)?|LENGTH)\s+(?:OF\s+)?([\d,]+\.?\d*)/i)
-                          || cleanContent.match(/CHORD(?:AL)?\s+DISTANCE\s+OF\s+([\d,]+\.?\d*)/i);
+                          || content.match(/CHORD\s+(?:DIST(?:ANCE)?|LENGTH)\s+(?:OF\s+)?([\d,]+\.?\d*)/i)
+                          || cleanContent.match(/CHORD(?:AL)?\s+DISTANCE\s+OF\s+([\d,]+\.?\d*)/i)
+                          || content.match(/CHORD(?:AL)?\s+DISTANCE\s+OF\s+([\d,]+\.?\d*)/i)
+                          || cleanContent.match(/CHORD\s+BEARING\s+AND\s+DISTANCE\s+OF\s+[NSns][^,;)]+,\s*([\d,]+\.?\d*)\s*FEET/i)
+                          || content.match(/CHORD\s+BEARING\s+AND\s+DISTANCE\s+OF\s+[NSns][^,;)]+,\s*([\d,]+\.?\d*)\s*FEET/i)
+                          || cleanContent.match(/CHORD\s+BEARING[^0-9]*?([\d,]+\.?\d*)\s*FEET/i);
       let chordDistance = chordDistMatch ? parseFloat(chordDistMatch[1].replace(/,/g, '')) : null;
 
+      // Fallback: when content mentions CHORD and there is exactly one non-radius distance
       if (!chordDistance && content.toUpperCase().includes('CHORD')) {
         const nonRadiusDists = allDistValues.filter(v => v !== lastMentionedRadius);
         if (nonRadiusDists.length === 1) {
           chordDistance = nonRadiusDists[0];
-          arcLength = null; // the distance is the chord, so clear default arcLength
+          arcLength = null; // the only distance is the chord, so clear default arcLength
         }
       }
 

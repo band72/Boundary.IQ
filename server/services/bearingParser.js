@@ -3,13 +3,13 @@
 // Supports: "N45°30'00"E", "N45-30-00E", "N 45 30 00 E", "N45.3000E"
 
 // Suffix is optional (e.g. S89°21'48")
-const EXPANDED = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*([EWew])?\s*$/;
+const EXPANDED = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["'\s]*([EWew])?\s*$/;
 const DEG_MIN  = /^\s*([NSns])\s*(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)['\s]*([EWew])?\s*$/;
 const DEG_ONLY = /^\s*([NSns])\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])?\s*$/;
 const PACKED   = /^\s*([NSns])\s*(\d+\.\d+)\s*([EWew])?\s*$/;
 
 // Prefix is optional (e.g. 89°21'48"E)
-const EXPANDED_NO_PREFIX = /^\s*([NSns])?\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*([EWew])\s*$/;
+const EXPANDED_NO_PREFIX = /^\s*([NSns])?\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["'\s]*([EWew])\s*$/;
 const DEG_MIN_NO_PREFIX  = /^\s*([NSns])?\s*(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)['\s]*([EWew])\s*$/;
 const DEG_ONLY_NO_PREFIX = /^\s*([NSns])?\s*(\d{1,3}(?:\.\d+)?)[°\s]*([EWew])\s*$/;
 const PACKED_NO_PREFIX   = /^\s*([NSns])?\s*(\d+\.\d+)\s*([EWew])\s*$/;
@@ -119,7 +119,7 @@ export function parse(bearing) {
     .replace(/\bSOUTH\b/gi, 'S')
     .replace(/\bEAST\b/gi, 'E')
     .replace(/\bWEST\b/gi, 'W')
-    .replace(/DEGREES|DEG/gi, '°')
+    .replace(/DEGREES?|DEGREAS|DEGRES?|DEG/gi, '°')
     .replace(/MINUTES|MIN/gi, "'")
     .replace(/SECONDS|SEC/gi, '"')
     .replace(/\*/g, ' ')

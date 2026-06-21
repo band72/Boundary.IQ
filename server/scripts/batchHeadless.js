@@ -7,6 +7,7 @@
 //   node server/scripts/batchHeadless.js [--limit=N] [--offset=N] [--fail-only]
 
 import 'dotenv/config';
+process.env.PINO_LOG_SYNC = 'true';
 import fs   from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
@@ -360,3 +361,5 @@ console.log(`✂  EXTRACT_FL : ${stats.extractFail}`);
 console.log(`→  SKIPPED    : ${stats.skipped}`);
 console.log(`\n📄 Report : ${REPORT_FILE}`);
 console.log(`📝 Summary: ${SUMMARY_FILE}`);
+
+process.exit(0);
