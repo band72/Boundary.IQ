@@ -13,6 +13,7 @@ import * as platLookup from './platLookupService.js';
 import * as plssParser from './plssParser.js';
 import * as legalWriter from './legalWriter.js';
 import pLimit from 'p-limit';
+import { extractRaw, getActiveProvider, getActiveModel, setProvider } from './llm/dispatcher.js';
 
 import { isPlaceholderHallucination } from './geminiVision.js';
 import { ensureOllamaServiceOnline } from './ollamaVision.js';
@@ -1029,10 +1030,20 @@ export async function solveDeedText(deedText, model, options = {}) {
   // ── Phase 1: LLM extracts courses from text ──────────────────────────────
   console.log(`[DeedTextSolver] Phase 1: Sending deed text to ${model} for extraction...`);
   let rawResponse;
+  const oldProvider = getActiveProvider();
+  const oldModel = getActiveModel();
   try {
-    rawResponse = await callOllama(model, buildExtractionPrompt(deedText));
+    const provider = model.startsWith('gemini') ? 'gemini' : (model.startsWith('gpt') ? 'openai' : 'ollama');
+    setProvider(provider, model);
+    rawResponse = await extractRaw(Buffer.from(deedText, 'utf-8'), 'text/plain', buildExtractionPrompt(''));
   } catch (ex) {
     throw new Error(`LLM extraction failed: ${ex.message}`);
+  } finally {
+    try {
+      setProvider(oldProvider, oldModel);
+    } catch (restoreErr) {
+      console.warn(`[DeedTextSolver] Failed to restore AI provider: ${restoreErr.message}`);
+    }
   }
 
   console.log(`[DeedTextSolver] Phase 1 complete. Raw response length: ${rawResponse.length} chars`);
@@ -1352,12 +1363,12 @@ export function solveFromText(deedText, options = {}) {
   const preparedText = normalizedText
     .replace(/\bTHENCE\s+CONTINUE(?:ING)?\b/gi, 'THENCE')
     .replace(/\bRUN\s+THENCE\b/gi, 'THENCE')
-    .replace(/\bTHEN\s+(?=[NSns]\s*[.\d])/gi, 'THENCE ')
+    .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|[NSns])\b\s*[.\d])/gi, 'THENCE ')
     // "CONTINUING...bearing" and "CONTINUE...bearing" -> THENCE
-    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=[NSns]\s*[.\d°])/gi, 'THENCE ')
+    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=(?:NORTH|SOUTH|[NSns])\b\s*[.\d°])/gi, 'THENCE ')
     // Standalone RUN [bearing] (not preceded by THENCE) → THENCE
     // e.g. "FROM THE POINT OF REFERENCE...RUN S.39°41'50"E."
-    .replace(/\bRUN\s+(?=[NSns]\s*[.\d°])/gi, 'THENCE ');
+    .replace(/\bRUN\s+(?=(?:NORTH|SOUTH|[NSns])\b\s*[.\d°])/gi, 'THENCE ');
 
 
   const rawSegments = preparedText.split(/\b(THENCE|COMMENCE)\b/i);

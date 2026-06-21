@@ -6,6 +6,7 @@
 // Usage:
 //   node server/scripts/batchHeadless.js [--limit=N] [--offset=N] [--fail-only]
 
+import 'dotenv/config';
 import fs   from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
@@ -23,7 +24,8 @@ const { init: initDb } = await import('../services/db/core.js');
 initDb?.();                              // non-fatal if already initialised
 
 // Now safe to import the solver
-const { solveFromText } = await import('../services/deedTextSolver.js');
+const { solveFromText, solveDeedText } = await import('../services/deedTextSolver.js');
+const { DEFAULT_LOCAL_MODEL } = await import('../config.js');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const DEED_DIR    = process.env.DEED_DIR || '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions';
@@ -39,13 +41,17 @@ const PASS_THRESHOLD = 0.50;  // ft — treat linear error < 0.50 as PASS (accou
 const args = process.argv.slice(2);
 const limitArg   = args.find(a => a.startsWith('--limit='))?.split('=')[1];
 const offsetArg  = args.find(a => a.startsWith('--offset='))?.split('=')[1];
+const modelArg   = args.find(a => a.startsWith('--model='))?.split('=')[1];
+const useAi      = args.includes('--use-ai');
 const failOnlyMode = args.includes('--fail-only');
 const LIMIT  = limitArg  ? parseInt(limitArg)  : Infinity;
 const OFFSET = offsetArg ? parseInt(offsetArg) : 0;
+const MODEL  = modelArg || DEFAULT_LOCAL_MODEL;
 
 console.log(`📋 Boundary.IQ — Headless Deed Batch Runner (direct service call)`);
 console.log(`   Deed dir  : ${DEED_DIR}`);
 console.log(`   Limit=${isFinite(LIMIT)?LIMIT:'∞'}, Offset=${OFFSET}`);
+console.log(`   AI Auto-Correct: ${useAi ? 'ON (Escalation to ' + MODEL + ')' : 'OFF'}`);
 console.log('');
 
 // ── Ensure extract dir ────────────────────────────────────────────────────────
@@ -83,7 +89,9 @@ function extractText(filePath, fileName) {
     return text;
   }
 
-  // LibreOffice conversion for .doc/.docx/.rtf
+  let text = null;
+
+  // 1. Try standard LibreOffice conversion to .txt
   try {
     const tmpDir = `/tmp/biq_ex_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
     fs.mkdirSync(tmpDir, { recursive: true });
@@ -92,20 +100,68 @@ function extractText(filePath, fileName) {
     ], { timeout: 25000, stdio: 'ignore', env: { ...process.env, DISPLAY: '' } });
     const outTxt = path.join(tmpDir, base + '.txt');
     if (fs.existsSync(outTxt)) {
-      const text = fs.readFileSync(outTxt, 'utf8');
-      fs.writeFileSync(cachedPath, text);
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-      return text;
+      text = fs.readFileSync(outTxt, 'utf8');
     }
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-  } catch { /* fall through */ }
+  } catch (err) {
+    console.warn(`\n⚠️ Standard text extraction failed for ${fileName}: ${err.message}`);
+  }
+
+  // 2. OCR Fallback if text is empty/short
+  if (!text || text.trim().length < 30) {
+    console.log(`\n🔍 [OCR Fallback] Text empty/short for ${fileName}. Attempting PDF + OCR...`);
+    try {
+      const tmpDir = `/tmp/biq_ocr_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+      fs.mkdirSync(tmpDir, { recursive: true });
+
+      let pdfPath = filePath;
+      if (ext !== '.pdf') {
+        // Convert doc/docx/rtf to pdf
+        execFileSync('soffice', [
+          '--headless', '--convert-to', 'pdf', '--outdir', tmpDir, filePath
+        ], { timeout: 35000, stdio: 'ignore', env: { ...process.env, DISPLAY: '' } });
+        pdfPath = path.join(tmpDir, base + '.pdf');
+      }
+
+      if (fs.existsSync(pdfPath)) {
+        // Run OCR on PDF
+        const pythonPath = path.resolve(SERVER_DIR, 'scripts/ocr_pdf.py');
+        const ocrText = execFileSync('python3', [
+          pythonPath, '--oneshot', pdfPath
+        ], { encoding: 'utf8', timeout: 60000 });
+        
+        if (ocrText && ocrText.trim().length > 30) {
+          console.log(`✅ [OCR Fallback] OCR succeeded for ${fileName} (${ocrText.trim().length} chars)`);
+          text = ocrText;
+        }
+      }
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    } catch (err) {
+      console.warn(`❌ [OCR Fallback] OCR failed for ${fileName}: ${err.message}`);
+    }
+  }
+
+  if (text && text.trim().length > 30) {
+    fs.writeFileSync(cachedPath, text);
+    return text;
+  }
+
   return null;
 }
 
 // ── Non-traversable detection ─────────────────────────────────────────────────
 function getSkipReason(text, fileName) {
   const up = text.toUpperCase();
-  if (!up.includes('THENCE')) return 'NO_THENCE';
+  
+  const hasThence = up.includes('THENCE');
+  const bearingRegex = /\b(?:NORTH|SOUTH|[NS])\b\s*\d+[\s°\-d:]+\d+[\s'\-m:]+\d+[\s"\-s:]*\b(?:EAST|WEST|[EW])\b/i;
+  const distanceRegex = /\b\d+(?:\.\d+)?\s*(?:FEET|FT|METERS|M\b)/i;
+  const hasMetesAndBounds = bearingRegex.test(text) && distanceRegex.test(text);
+
+  if (!hasThence && !hasMetesAndBounds) {
+    return 'NO_THENCE';
+  }
+
   // Pure lot-and-block (no beginning clause with THENCE-style description)
   if (/\bLOT\s+\d+\s*,?\s*BLOCK\s+\d+\b/i.test(text) && !/\bBEGINNING\b/i.test(text)) return 'LOT_BLOCK';
   // Title commitment / cert documents
@@ -187,6 +243,7 @@ for (let i = 0; i < filesToProcess.length; i++) {
 
   // Direct service call — no HTTP, no rate limit
   let result, status, errMsg = null;
+  let usedAi = false;
   try {
     result = solveFromText(text, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
     status = classifyResult(result);
@@ -198,6 +255,28 @@ for (let i = 0; i < filesToProcess.length; i++) {
       status = 'ERROR';
     }
     result = null;
+  }
+
+  // Escalate to AI if enabled and regex didn't pass
+  if (useAi && status !== 'PASS') {
+    try {
+      process.stdout.write(`[Escalating to AI...] `);
+      const aiResult = await solveDeedText(text, MODEL, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
+      const aiStatus = classifyResult(aiResult);
+      
+      const regexErr = result?.traverse?.closure?.linearError ?? Infinity;
+      const aiErr    = aiResult?.traverse?.closure?.linearError ?? Infinity;
+      const aiIsPass = aiStatus === 'PASS';
+      
+      if (aiIsPass || aiErr < regexErr) {
+        result = aiResult;
+        status = aiStatus;
+        usedAi = true;
+        errMsg = null;
+      }
+    } catch (aiErr) {
+      errMsg = (errMsg ? errMsg + ' | ' : '') + `AI solver error: ${aiErr.message}`;
+    }
   }
 
   const courses   = result ? (result.repairedCourses || result.originalCourses || []).length : 0;
@@ -212,7 +291,8 @@ for (let i = 0; i < filesToProcess.length; i++) {
 
   const icon = { PASS:'✓', NEAR_PASS:'~', FAIL:'✗', NO_COURSES:'0', ERROR:'E' }[status] || '?';
   const errFt = linErr != null ? ` err=${linErr.toFixed(3)}ft` : '';
-  process.stdout.write(`→ ${icon} ${status} ${courses}c${errFt}\n`);
+  const aiTag = usedAi ? ' [🤖 AI]' : '';
+  process.stdout.write(`→ ${icon} ${status} ${courses}c${errFt}${aiTag}\n`);
 
   results.push({
     fileName, status,
@@ -221,6 +301,7 @@ for (let i = 0; i < filesToProcess.length; i++) {
     courses,
     error: errMsg,
     snippet: text.slice(0, 300),
+    usedAi
   });
 }
 

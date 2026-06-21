@@ -58,11 +58,14 @@ function assessConfidence(deg, min, sec, format) {
   return 'HIGH';
 }
 export function parse(bearing) {
-  // Pre-normalize bearing string to handle non-standard characters from OCR or Word conversions
   let clean = bearing.trim()
     // Normalize double-decimal formats e.g. 12.34.56.78 -> 12°34'56.78", 12.34.56 -> 12°34'56"
     .replace(/(\d+)\.(\d{1,2})\.(\d{1,2})\.(\d+)/g, '$1°$2\'$3.$4"')
     .replace(/(\d+)\.(\d{1,2})\.(\d{1,2})/g, '$1°$2\'$3"')
+    // Normalize OCR degree symbol misread as 8 or 9 (e.g. N.89903*21"E or N.89803*21"E -> N89°03'21"E)
+    .replace(/(?:([NSns])\s*\.?\s*)?([0-8]\d)[89](\d{2})[*'\-\s]+(\d{2}(?:\.\d+)?)\s*["\u201D\u2033]?\s*([EWew])?/gi, (match, ns, deg, min, sec, ew) => {
+      return `${ns || ''}${deg}°${min}'${sec}"${ew || ''}`;
+    })
     // Normalize smashed bearings, e.g. S743907W -> S74°39'07"W
     .replace(/(?:([NSns])\s*)?(\d{5,6}(?:\.\d+)?)(?:\s*([EWew]))?/gi, (match, ns, digits, ew) => {
       if (!ns && !ew) return match;

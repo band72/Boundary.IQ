@@ -57,3 +57,4 @@ agent.py
 server/scripts/inspect_*.js
 server/scripts/query_*.js
 
+.venv/
