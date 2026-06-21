@@ -237,6 +237,9 @@ export default function TraverseTab() {
   const [fixDeedResult, setFixDeedResult] = useState(null);
   const [fixDeedError, setFixDeedError] = useState('');
   const [fixDeedOpen, setFixDeedOpen] = useState(false);
+  // AI auto-correction: when regex parse fails, escalate to LLM solver
+  const [useAIFallback, setUseAIFallback] = useLocalStorage('boundaryiq_deed_ai_fallback', false);
+  const [fixDeedUsedAI, setFixDeedUsedAI] = useState(false);
 
   // ── Feature 1: Bowditch Adjustment Toggle ─────────────────────────────────
   const [showAdjusted, setShowAdjusted] = useState(true);
@@ -346,7 +349,9 @@ export default function TraverseTab() {
     setFixDeedLoading(true);
     setFixDeedError('');
     setFixDeedResult(null);
+    setFixDeedUsedAI(false);
     try {
+      // Step 1: Try fast regex solver
       const res = await fetch(`${API}/deed/solve-text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -359,6 +364,35 @@ export default function TraverseTab() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+
+      const isPass = data.status === 'PASS' || data.status === 'MEANDER';
+
+      // Step 2: If regex failed and AI fallback is enabled, escalate to LLM solver
+      if (!isPass && useAIFallback) {
+        const aiRes = await fetch(`${API}/deed/solve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deedText: fixDeedText,
+            pobNorthing: parseFloat(pob.northing) || 5000,
+            pobEasting:  parseFloat(pob.easting)  || 5000,
+            units,
+          })
+        });
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          const aiIsPass = aiData.status === 'PASS' || aiData.status === 'MEANDER';
+          // Accept AI result if it's better (PASS, or lower error)
+          const regexErr = data.traverse?.closure?.linearError ?? Infinity;
+          const aiErr    = aiData.traverse?.closure?.linearError ?? Infinity;
+          if (aiIsPass || aiErr < regexErr) {
+            setFixDeedUsedAI(true);
+            setFixDeedResult(aiData);
+            return;
+          }
+        }
+      }
+
       setFixDeedResult(data);
     } catch (e) {
       setFixDeedError(e.message);
@@ -512,6 +546,44 @@ export default function TraverseTab() {
                 {deedPreviewStr}
               </span>
             )}
+            {/* AI Fallback toggle — stop propagation so clicking it doesn't collapse the card */}
+            <label
+              onClick={e => e.stopPropagation()}
+              title={useAIFallback ? 'AI Auto-Correct is ON — if regex parse fails, LLM solver is tried automatically' : 'AI Auto-Correct is OFF — click to enable cloud AI fallback on failed parses'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                cursor: 'pointer', userSelect: 'none',
+                padding: '3px 8px', borderRadius: 20,
+                background: useAIFallback ? 'rgba(130,80,255,0.15)' : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${useAIFallback ? 'rgba(130,80,255,0.45)' : 'rgba(255,255,255,0.12)'}`,
+                transition: 'all 0.2s',
+              }}
+            >
+              {/* Custom pill toggle */}
+              <span
+                onClick={() => setUseAIFallback(v => !v)}
+                style={{
+                  display: 'inline-block', position: 'relative',
+                  width: 28, height: 16, borderRadius: 8, flexShrink: 0,
+                  background: useAIFallback ? 'linear-gradient(135deg,#8250ff 0%,#b47bff 100%)' : 'rgba(255,255,255,0.15)',
+                  border: `1px solid ${useAIFallback ? 'rgba(130,80,255,0.6)' : 'rgba(255,255,255,0.2)'}`,
+                  boxShadow: useAIFallback ? '0 0 8px rgba(130,80,255,0.5)' : 'none',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <span style={{
+                  position: 'absolute', top: 2,
+                  left: useAIFallback ? 13 : 2,
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: '#fff',
+                  transition: 'left 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                }} />
+              </span>
+              <span style={{ fontSize: '0.7rem', fontWeight: 600, color: useAIFallback ? '#c4a0ff' : 'var(--text-muted)' }}>
+                🤖 AI Auto-Correct
+              </span>
+            </label>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Paste raw deed text — auto-corrects errors &amp; loads courses
             </span>
@@ -537,7 +609,12 @@ export default function TraverseTab() {
               />
             </div>
 
-            <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end', marginBottom: '0.75rem', alignItems: 'center' }}>
+              {useAIFallback && (
+                <span style={{ fontSize: '0.7rem', color: 'rgba(196,160,255,0.8)', fontStyle: 'italic' }}>
+                  AI fallback enabled — will escalate to LLM if regex fails
+                </span>
+              )}
               <button className="btn btn-ghost btn-sm" onClick={() => { setFixDeedText(''); setFixDeedResult(null); setFixDeedError(''); }}>
                 Clear
               </button>
@@ -545,10 +622,11 @@ export default function TraverseTab() {
                 className="btn btn-primary btn-sm"
                 onClick={handleFixDeed}
                 disabled={fixDeedLoading || !fixDeedText.trim()}
+                style={useAIFallback ? { background: 'linear-gradient(135deg, #3d7fff 0%, #8250ff 100%)', border: '1px solid rgba(130,80,255,0.5)' } : {}}
               >
                 {fixDeedLoading
-                  ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Solving…</>
-                  : '⚡ Solve Deed'}
+                  ? <><span className="spinner" style={{ width: 14, height: 14 }} /> {useAIFallback ? 'Solving (AI)…' : 'Solving…'}</>
+                  : useAIFallback ? '🤖⚡ Solve with AI' : '⚡ Solve Deed'}
               </button>
             </div>
 
@@ -561,7 +639,7 @@ export default function TraverseTab() {
 
                 {/* Status banner */}
                 <div style={{
-                  display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+                  display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap',
                   padding: '0.65rem 0.9rem',
                   background: fixDeedResult.status === 'PASS' ? 'rgba(0,200,100,0.08)' : 'rgba(255,80,80,0.08)',
                   border: `1px solid ${fixDeedResult.status === 'PASS' ? 'var(--success)' : 'var(--danger)'}`,
@@ -573,6 +651,19 @@ export default function TraverseTab() {
                   }}>
                     {fixDeedResult.status === 'PASS' ? '✓ SOLVED' : '⚠ UNCLOSED'}
                   </span>
+                  {/* AI badge shown when LLM was used */}
+                  {fixDeedUsedAI && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                      padding: '2px 8px', borderRadius: 12, fontSize: '0.7rem', fontWeight: 700,
+                      background: 'linear-gradient(135deg,rgba(130,80,255,0.25) 0%,rgba(180,123,255,0.15) 100%)',
+                      border: '1px solid rgba(130,80,255,0.5)',
+                      color: '#c4a0ff',
+                      boxShadow: '0 0 8px rgba(130,80,255,0.25)',
+                    }}>
+                      🤖 AI-Corrected
+                    </span>
+                  )}
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     Trust: <strong style={{ color: fixDeedResult.trustScore >= 80 ? 'var(--success)' : fixDeedResult.trustScore >= 55 ? '#c97a00' : 'var(--danger)' }}>
                       {fixDeedResult.trustScore}/100 {fixDeedResult.trustLevel}
