@@ -615,6 +615,411 @@ function generateQcReportText(fig, units = 'feet') {
   return md.join('\n');
 }
 
+// ── Civil 3D Survey Command Language Batch Parser ────────────────────────────
+// Converts .TXT batch files from the Autodesk Civil 3D Survey Module into the
+// BoundaryIQ Scripting Engine point/figure format.
+//
+// Supported commands: NE, STN, BS, BD, AD, RKRK, BB, BEG/END/PNT/XC PTS,
+//                     SAVE, DEL PTS, TRAV, MAPCHK  (comments start with !)
+
+/**
+ * Parse DD.MMSS packed bearing into decimal degrees.
+ * e.g. 40.5730 → 40 + 57/60 + 30/3600 = 40.9583°
+ */
+function civil3dBearingToDeg(packed) {
+  const raw = Math.abs(parseFloat(packed));
+  const deg = Math.floor(raw);
+  const minsSecs = raw - deg;
+  const mins = Math.floor(minsSecs * 100);
+  const secs = Math.round((minsSecs * 100 - mins) * 100);
+  return deg + mins / 60 + secs / 3600;
+}
+
+/**
+ * Convert Civil 3D bearing (DD.MMSS) + quadrant (1-4) to azimuth (degrees).
+ * 1=NE 2=SE 3=SW 4=NW
+ */
+function civil3dBDToAzimuth(packedBearing, quadrant) {
+  const brg = civil3dBearingToDeg(packedBearing);
+  const q = parseInt(quadrant, 10);
+  if (q === 1) return brg;           // NE
+  if (q === 2) return 180 - brg;    // SE
+  if (q === 3) return 180 + brg;    // SW
+  if (q === 4) return 360 - brg;    // NW
+  return brg;
+}
+
+/**
+ * Parse Civil 3D batch text into { points: Map, figures: Array, warnings: Array }.
+ * @param {string} text  Raw batch file content
+ */
+export function parseCivil3DBatch(text) {
+  const pts = new Map();  // id(string) → { northing, easting, desc }
+  const figures = [];     // { name, pointIds: [], arcs: Map<afterPtId, {radius, centerPtId, toPtId}> }
+  const warnings = [];
+
+  let currentStn = null;   // current occupied station { northing, easting }
+  let currentBsStn = null; // back-sight station point { northing, easting }
+  let currentFig = null;   // active BEG…END figure being built
+  let ptCounter = 9000;    // auto-id for SAVE-computed points without explicit id
+
+  const getOrWarn = (id) => {
+    const p = pts.get(String(id));
+    if (!p) warnings.push(`Point ${id} not yet defined — skipped.`);
+    return p;
+  };
+
+  // Strip BOM, split lines, normalize whitespace
+  const lines = text.replace(/\uFEFF/g, '').split(/\r?\n/);
+
+  let i = 0;
+  while (i < lines.length) {
+    const rawLine = lines[i++];
+    const line = rawLine.trim();
+
+    // Skip blanks and comment lines (! prefix)
+    if (!line || line.startsWith('!')) continue;
+
+    const up = line.toUpperCase();
+    const tokens = line.trim().split(/\s+/);
+    const cmd = tokens[0].toUpperCase();
+
+    // ── TRAV ON / OFF ──────────────────────────────────────────────────────────
+    if (cmd === 'TRAV') continue; // no geometry action needed
+
+    // ── NE <id> <northing> <easting> [tag…] ───────────────────────────────────
+    if (cmd === 'NE') {
+      // NE can appear inline as a point sequence continuation: just numeric id on its own line
+      // Full form: NE 1 5000 5000 COGO  OR  NE 30 1395.72954 1607.64783
+      if (tokens.length >= 4) {
+        const id = tokens[1];
+        const N = parseFloat(tokens[2]);
+        const E = parseFloat(tokens[3]);
+        if (!isNaN(N) && !isNaN(E)) {
+          const desc = tokens.slice(4).filter(t => !t.toUpperCase().startsWith('COGO')).join(' ') || 'NE PT';
+          pts.set(String(id), { northing: N, easting: E, desc });
+          currentStn = { northing: N, easting: E };
+        }
+      }
+      // Peek ahead: sometimes many NE-style points are listed as continuation lines:
+      // bare "id N E" lines immediately following.
+      // We handle those as a continuation block below.
+      continue;
+    }
+
+    // ── Bare coordinate line: "<id> <N> <E>" (continuation of NE block) ─────
+    // Detect: first token is purely numeric (pt id), second and third are floats,
+    // and no recognized command keyword.
+    if (
+      /^\d+$/.test(tokens[0]) &&
+      tokens.length >= 3 &&
+      !isNaN(parseFloat(tokens[1])) &&
+      !isNaN(parseFloat(tokens[2])) &&
+      !['STN','BD','BS','AD','RKRK','SAVE','BEG','END','PNT','XC','MAPCHK','DEL','INV','BB'].includes(cmd)
+    ) {
+      const id = tokens[0];
+      const N = parseFloat(tokens[1]);
+      const E = parseFloat(tokens[2]);
+      const desc = tokens.slice(3).filter(t => !t.toUpperCase().startsWith('COGO')).join(' ') || 'PT';
+      pts.set(String(id), { northing: N, easting: E, desc });
+      continue;
+    }
+
+    // ── STN <id> ─────────────────────────────────────────────────────────────
+    if (cmd === 'STN') {
+      const id = tokens[1];
+      if (id) {
+        const p = pts.get(String(id));
+        if (p) {
+          currentStn = p;
+        } else {
+          warnings.push(`STN ${id}: point not yet defined — station unknown.`);
+          currentStn = null;
+        }
+      }
+      continue;
+    }
+
+    // ── BS <id> ──────────────────────────────────────────────────────────────
+    if (cmd === 'BS') {
+      const id = tokens[1];
+      if (id) currentBsStn = pts.get(String(id)) || null;
+      continue;
+    }
+
+    // ── BD <newId> <bearing_DDMMSS> <quadrant> <distance> [tag…] ─────────────
+    // Also handles continuation: "<newId> <bearing> <quadrant> <distance> [tag]"
+    // when the previous command was BD (first token is purely numeric).
+    {
+      let isBD = cmd === 'BD';
+      // Continuation: bare numeric id followed by bearing, quadrant, dist
+      if (
+        !isBD &&
+        /^\d+$/.test(tokens[0]) &&
+        tokens.length >= 4 &&
+        !isNaN(parseFloat(tokens[1])) &&
+        /^[1-4]$/.test(tokens[2]) &&
+        !isNaN(parseFloat(tokens[3]))
+      ) {
+        isBD = true;
+      }
+      if (isBD) {
+        const offset = cmd === 'BD' ? 1 : 0;
+        const newId  = tokens[offset];
+        const brg    = tokens[offset + 1];
+        const quad   = tokens[offset + 2];
+        const dist   = parseFloat(tokens[offset + 3]);
+        const tagRaw = tokens.slice(offset + 4).join(' ');
+        // Extract description from tag (strip COGO, COGO+PC etc.)
+        const desc = tagRaw
+          .replace(/COGO\+?\S*/gi, '')
+          .replace(/^\s*\+?/, '').trim() || 'COGO';
+
+        if (!currentStn) {
+          warnings.push(`BD ${newId}: No active STN — skipped.`);
+        } else if (!isNaN(dist)) {
+          const azDeg = civil3dBDToAzimuth(brg, quad);
+          const azRad = azDeg * Math.PI / 180;
+          const dN = dist * Math.cos(azRad);
+          const dE = dist * Math.sin(azRad);
+          pts.set(String(newId), {
+            northing: currentStn.northing + dN,
+            easting:  currentStn.easting  + dE,
+            desc
+          });
+        }
+        continue;
+      }
+    }
+
+    // ── AD <newId> <horiz_angle_DDMMSS> <distance> [desc] ───────────────────
+    // Angle-distance from current STN using BS as reference direction.
+    // We plot it as a raw detail point (no figure membership).
+    if (cmd === 'AD') {
+      if (!currentStn || !currentBsStn) {
+        continue; // can't compute without station + backsight
+      }
+      const newId = tokens[1];
+      const angPacked = parseFloat(tokens[2]);
+      const dist = parseFloat(tokens[3]);
+      const desc = tokens.slice(4).join(' ') || 'AD';
+      if (!isNaN(angPacked) && !isNaN(dist) && dist > 0) {
+        // Backsight azimuth
+        const bsDx = currentBsStn.easting  - currentStn.easting;
+        const bsDy = currentBsStn.northing - currentStn.northing;
+        let bsAz = Math.atan2(bsDx, bsDy) * 180 / Math.PI;
+        if (bsAz < 0) bsAz += 360;
+        // Add horizontal angle clockwise
+        const angDeg = civil3dBearingToDeg(angPacked);
+        const shotAz = (bsAz + angDeg) % 360;
+        const shotRad = shotAz * Math.PI / 180;
+        pts.set(String(newId), {
+          northing: currentStn.northing + dist * Math.cos(shotRad),
+          easting:  currentStn.easting  + dist * Math.sin(shotRad),
+          desc
+        });
+      }
+      continue;
+    }
+
+    // ── RKRK <pt1> <r1> <pt2> <r2> ─────────────────────────────────────────
+    // Radius-radius intersection; returns two solutions — we pick the one
+    // that is NOT coincident with an existing point (SAVE will label it).
+    if (cmd === 'RKRK') {
+      const id1 = tokens[1], r1 = parseFloat(tokens[2]);
+      const id2 = tokens[3], r2 = parseFloat(tokens[4]);
+      const p1 = pts.get(String(id1));
+      const p2 = pts.get(String(id2));
+      if (!p1 || !p2) {
+        warnings.push(`RKRK: points ${id1}/${id2} not found — skipped.`);
+        continue;
+      }
+      const dx = p2.easting - p1.easting;
+      const dy = p2.northing - p1.northing;
+      const d  = Math.hypot(dx, dy);
+      if (d > r1 + r2 || d < Math.abs(r1 - r2) || d < 0.0001) {
+        warnings.push(`RKRK: circles do not intersect (d=${d.toFixed(2)}, r1=${r1}, r2=${r2}).`);
+        continue;
+      }
+      const a  = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+      const h  = Math.sqrt(Math.max(0, r1 * r1 - a * a));
+      const mx = p1.easting  + a * dx / d;
+      const my = p1.northing + a * dy / d;
+      // Two intersection solutions stored in a temp registry; SAVE will pick one
+      ptCounter++;
+      const sol1 = { northing: my + h * (-dy / d), easting: mx + h * ( dx / d), desc: 'RKRK SOL1' };
+      const sol2 = { northing: my - h * (-dy / d), easting: mx - h * ( dx / d), desc: 'RKRK SOL2' };
+      // Store both temporarily; SAVE NORTH/SOUTH/EAST/WEST picks the right one
+      pts.set(`__RKRK_SOL1__`, sol1);
+      pts.set(`__RKRK_SOL2__`, sol2);
+      continue;
+    }
+
+    // ── SAVE <direction> <id> [tag] ──────────────────────────────────────────
+    // Picks the RKRK solution in the named cardinal direction.
+    if (cmd === 'SAVE') {
+      const direction = (tokens[1] || '').toUpperCase(); // NORTH SOUTH EAST WEST PICK ALL
+      const newId = tokens[2];
+      if (!newId) continue;
+      const s1 = pts.get('__RKRK_SOL1__');
+      const s2 = pts.get('__RKRK_SOL2__');
+      if (!s1 && !s2) continue; // No pending RKRK
+      let chosen = s1;
+      if (s1 && s2) {
+        if (direction === 'NORTH') chosen = s1.northing >= s2.northing ? s1 : s2;
+        else if (direction === 'SOUTH') chosen = s1.northing <= s2.northing ? s1 : s2;
+        else if (direction === 'EAST')  chosen = s1.easting  >= s2.easting  ? s1 : s2;
+        else if (direction === 'WEST')  chosen = s1.easting  <= s2.easting  ? s1 : s2;
+        else chosen = s1; // PICK / ALL — just use first
+      }
+      const tag = tokens.slice(3).join(' ').replace(/COGO\+?\S*/gi, '').trim() || 'RAD PT';
+      pts.set(String(newId), { northing: chosen.northing, easting: chosen.easting, desc: tag });
+      pts.delete('__RKRK_SOL1__');
+      pts.delete('__RKRK_SOL2__');
+      continue;
+    }
+
+    // ── BB <pt1> <brg1_packed> <q1> <dist1> <pt2> <brg2_packed> <q2> <dist2> ─
+    // Bearing-Bearing intersection (two known points + two bearings).
+    if (cmd === 'BB') {
+      if (tokens.length < 9) continue;
+      const id1 = tokens[1], brg1 = tokens[2], q1 = tokens[3];
+      const id2 = tokens[5], brg2 = tokens[6], q2 = tokens[7];
+      const p1 = pts.get(String(id1));
+      const p2 = pts.get(String(id2));
+      if (!p1 || !p2) continue;
+      const az1Rad = civil3dBDToAzimuth(brg1, q1) * Math.PI / 180;
+      const az2Rad = civil3dBDToAzimuth(brg2, q2) * Math.PI / 180;
+      const sinA1 = Math.sin(az1Rad), cosA1 = Math.cos(az1Rad);
+      const sinA2 = Math.sin(az2Rad), cosA2 = Math.cos(az2Rad);
+      const det = sinA2 * cosA1 - cosA2 * sinA1;
+      if (Math.abs(det) < 0.000001) continue; // parallel
+      const t = ((p2.northing - p1.northing) * sinA2 - (p2.easting - p1.easting) * cosA2) / det;
+      pts.set(`__BB_SOL__`, {
+        northing: p1.northing + t * cosA1,
+        easting:  p1.easting  + t * sinA1,
+        desc: 'BB INT'
+      });
+      continue;
+    }
+
+    // ── BEG <figureName> ─────────────────────────────────────────────────────
+    if (cmd === 'BEG') {
+      const figName = tokens.slice(1).join(' ') || `FIG${figures.length + 1}`;
+      currentFig = { name: figName, pointIds: [], arcs: new Map() };
+      continue;
+    }
+
+    // ── PNT <id> (then bare ids on subsequent lines until XC / END) ──────────
+    if (cmd === 'PNT') {
+      if (!currentFig) continue;
+      const id = tokens[1];
+      if (id) currentFig.pointIds.push(String(id));
+      continue;
+    }
+
+    // ── XC PTS <-|+radius> <centerPtId> <toPtId> ────────────────────────────
+    // Inserts a curve arc. Negative radius = concave (center is to the left).
+    if (cmd === 'XC' && tokens[1]?.toUpperCase() === 'PTS') {
+      if (!currentFig) continue;
+      const radius    = parseFloat(tokens[2]);
+      const centerPtId = String(tokens[3]);
+      const toPtId    = String(tokens[4]);
+      // Associate arc with the LAST point currently in the figure sequence
+      const fromPtId = currentFig.pointIds[currentFig.pointIds.length - 1];
+      if (fromPtId) {
+        currentFig.arcs.set(fromPtId, { radius, centerPtId, toPtId });
+      }
+      if (toPtId) currentFig.pointIds.push(toPtId);
+      continue;
+    }
+
+    // ── END [figureName] ─────────────────────────────────────────────────────
+    if (cmd === 'END' || up.startsWith('END ')) {
+      if (currentFig && currentFig.pointIds.length > 0) {
+        figures.push(currentFig);
+      }
+      currentFig = null;
+      continue;
+    }
+
+    // ── DEL PTS / MAPCHK / INV PTS ────────────────────────────────────────────
+    // These have no geometry relevance for the canvas render.
+    if (cmd === 'DEL' || cmd === 'MAPCHK' || cmd === 'INV') continue;
+
+    // Bare bare single-token point id inside a BEG/END block
+    if (/^\d+$/.test(cmd) && currentFig && tokens.length === 1) {
+      currentFig.pointIds.push(cmd);
+      continue;
+    }
+  }
+
+  // Close any unclosed figure
+  if (currentFig && currentFig.pointIds.length > 0) {
+    figures.push(currentFig);
+  }
+
+  return { pts, figures, warnings };
+}
+
+/**
+ * Convert parseCivil3DBatch output into BoundaryIQ Scripting Engine format:
+ * PointID Northing Easting 0.00 Description
+ * + figure codes (B / CLS / BC / OC / EC)
+ */
+export function emitScriptFromBatch(parsed, sourceFileName = '') {
+  const { pts, figures, warnings } = parsed;
+  const lines = [];
+
+  lines.push(`# Imported from Civil 3D Batch: ${sourceFileName}`);
+  lines.push(`# ${pts.size} points | ${figures.length} figure(s)`);
+  if (warnings.length > 0) {
+    lines.push(`# ⚠ Parse warnings: ${warnings.length}`);
+    warnings.forEach(w => lines.push(`# ${w}`));
+  }
+  lines.push('');
+
+  // Build a set of point ids used by figures so we can annotate codes
+  // figUsage: ptId → [{ figName, isFirst, isLast }]
+  const figUsage = new Map();
+  figures.forEach(fig => {
+    fig.pointIds.forEach((ptId, idx) => {
+      if (!figUsage.has(ptId)) figUsage.set(ptId, []);
+      figUsage.get(ptId).push({
+        figName: fig.name,
+        isFirst: idx === 0,
+        isLast:  idx === fig.pointIds.length - 1,
+        arcAfter: fig.arcs?.has(ptId),
+      });
+    });
+  });
+
+  // Write all points
+  for (const [id, p] of pts.entries()) {
+    if (id.startsWith('__')) continue; // temp solve slots
+    const usage = figUsage.get(id) || [];
+    let desc = '';
+    if (usage.length > 0) {
+      // Build code string for each figure this point belongs to
+      const codeParts = usage.map(u => {
+        const fig = u.figName.replace(/\s+/g, '_');
+        if (u.isFirst) return `${fig} B`;
+        if (u.isLast)  return `${fig} CLS`;
+        if (u.arcAfter) return `${fig} BC`;
+        return fig;
+      });
+      desc = codeParts.join(' ');
+    } else {
+      desc = p.desc || 'COGO';
+    }
+    lines.push(
+      `${id.padEnd(5)} ${p.northing.toFixed(4).padStart(13)} ${p.easting.toFixed(4).padStart(13)} ${'0.0000'.padStart(9)} ${desc}`
+    );
+  }
+
+  return lines.join('\n');
+}
+
 function parseBearingToAzimuth(bearingStr) {
   const clean = bearingStr.replace(/\s+/g, '').toUpperCase();
   const match = clean.match(/^([NS])(\d+)(?:[-°](\d+))?(?:[-'](\d+))?([EW])$/);
@@ -654,6 +1059,10 @@ export default function ScriptingTab() {
   const [activeSubTab, setActiveSubTab] = useState('figures'); // 'figures' | 'points' | 'qc' | 'exports'
   const [selectedQcFigureName, setSelectedQcFigureName] = useState('');
   const [units, setUnits] = useLocalStorage('boundaryiq_linework_units', 'feet'); // 'feet' | 'meters'
+
+  // Civil 3D batch import state
+  const civil3dBatchFileRef = useRef(null);
+  const [batchImportModal, setBatchImportModal] = useState(null); // null | { parsed, fileName, previewScript }
   
   // TRS states
   const [trsShiftN, setTrsShiftN] = useState('0.00');
@@ -2291,8 +2700,231 @@ export default function ScriptingTab() {
     }));
   };
 
+  // ── Civil 3D Batch Import handler ─────────────────────────────────────────
+  const handleCivil3DBatchFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so re-selecting the same file fires onChange again
+    e.target.value = '';
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      const parsed = parseCivil3DBatch(text);
+      const previewScript = emitScriptFromBatch(parsed, file.name);
+      setBatchImportModal({ parsed, fileName: file.name, previewScript });
+    };
+    reader.readAsText(file);
+  };
+
+  const applyBatchImport = () => {
+    if (!batchImportModal) return;
+    setScript(batchImportModal.previewScript);
+    setBatchImportModal(null);
+    showToast(`✅ Civil 3D batch imported — ${batchImportModal.parsed.pts.size} points loaded.`);
+  };
+
+  // ── Listen for Settings panel "Launch in Scripting Engine" event ───────────
+  // The SettingsTab dispatches window.CustomEvent('boundaryiq:importBatchPath', { detail: { path } })
+  // We fetch the raw file from the server's batch-library path, parse it, and open the modal.
+  useEffect(() => {
+    const handleRemoteImport = async (e) => {
+      const filePath = e.detail?.path;
+      if (!filePath) return;
+      try {
+        // Fetch the raw file content via the batch-library/file endpoint
+        const res = await fetch(`/api/settings/batch-library/file?path=${encodeURIComponent(filePath)}`);
+        if (!res.ok) {
+          showToast(`⚠ Could not load batch file: ${res.statusText}`);
+          return;
+        }
+        const text = await res.text();
+        const fileName = filePath.split(/[\\/]/).pop() || filePath;
+        const parsed = parseCivil3DBatch(text);
+        const previewScript = emitScriptFromBatch(parsed, fileName);
+        setBatchImportModal({ parsed, fileName, previewScript });
+      } catch (err) {
+        showToast(`✗ Batch import error: ${err.message}`);
+      }
+    };
+    window.addEventListener('boundaryiq:importBatchPath', handleRemoteImport);
+    return () => window.removeEventListener('boundaryiq:importBatchPath', handleRemoteImport);
+  }, []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+
+      {/* ── Civil 3D Batch Import Modal ──────────────────────────────────────── */}
+      {batchImportModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.72)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, #0d1629 0%, #090e1a 100%)',
+            border: '1px solid rgba(61,127,255,0.35)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+            width: 'min(860px, 95vw)',
+            maxHeight: '88vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '1.2rem 1.5rem',
+              borderBottom: '1px solid rgba(61,127,255,0.2)',
+              background: 'rgba(61,127,255,0.05)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{
+                  background: 'linear-gradient(135deg, #3d7fff 0%, #00d4a8 100%)',
+                  width: 36, height: 36, borderRadius: 'var(--radius-md)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1.2rem', boxShadow: '0 0 16px rgba(61,127,255,0.4)',
+                }}>🏗️</div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#fff', letterSpacing: '-0.01em' }}>
+                    Civil 3D Batch Import Preview
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                    {batchImportModal.fileName} · {batchImportModal.parsed.pts.size} points · {batchImportModal.parsed.figures.length} figure(s)
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setBatchImportModal(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}
+              >✕</button>
+            </div>
+
+            {/* Warnings */}
+            {batchImportModal.parsed.warnings.length > 0 && (
+              <div style={{
+                margin: '0.75rem 1.5rem 0',
+                padding: '0.6rem 0.9rem',
+                background: 'rgba(201,122,0,0.08)',
+                border: '1px solid rgba(201,122,0,0.3)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '0.75rem',
+                color: '#ffaa00',
+              }}>
+                <strong>⚠ {batchImportModal.parsed.warnings.length} parse warning{batchImportModal.parsed.warnings.length !== 1 ? 's' : ''}:</strong>
+                <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.2rem' }}>
+                  {batchImportModal.parsed.warnings.slice(0, 10).map((w, i) => <li key={i}>{w}</li>)}
+                  {batchImportModal.parsed.warnings.length > 10 && <li>…and {batchImportModal.parsed.warnings.length - 10} more</li>}
+                </ul>
+              </div>
+            )}
+
+            {/* Stats Grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '0.65rem',
+              padding: '0.75rem 1.5rem 0',
+            }}>
+              {[
+                { label: 'Points Computed', value: batchImportModal.parsed.pts.size, color: 'var(--accent)' },
+                { label: 'Figures Defined', value: batchImportModal.parsed.figures.length, color: 'var(--success)' },
+                { label: 'Parse Warnings',  value: batchImportModal.parsed.warnings.length, color: batchImportModal.parsed.warnings.length > 0 ? '#ffaa00' : 'var(--text-muted)' },
+              ].map(s => (
+                <div key={s.label} style={{
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-md)', padding: '0.65rem 0.9rem',
+                }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>{s.label}</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: s.color }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Figures List */}
+            {batchImportModal.parsed.figures.length > 0 && (
+              <div style={{ padding: '0.75rem 1.5rem 0' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.4rem' }}>Figures</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {batchImportModal.parsed.figures.map(fig => (
+                    <span key={fig.name} style={{
+                      background: 'rgba(61,127,255,0.1)', border: '1px solid rgba(61,127,255,0.3)',
+                      borderRadius: '99px', padding: '2px 10px',
+                      fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 600,
+                    }}>
+                      {fig.name} ({fig.pointIds.length} pts)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Script Preview */}
+            <div style={{ padding: '0.75rem 1.5rem 0', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.4rem' }}>Generated Script Preview</div>
+              <textarea
+                readOnly
+                value={batchImportModal.previewScript}
+                style={{
+                  flex: 1,
+                  minHeight: '180px',
+                  background: '#07091a',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '0.75rem',
+                  color: '#a8c7fa',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '0.73rem',
+                  lineHeight: 1.6,
+                  resize: 'none',
+                  overflowY: 'auto',
+                }}
+              />
+            </div>
+
+            {/* Footer Actions */}
+            <div style={{
+              display: 'flex', justifyContent: 'flex-end', gap: '0.65rem',
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid rgba(61,127,255,0.15)',
+              background: 'rgba(0,0,0,0.2)',
+            }}>
+              <button
+                id="civil3d-batch-import-cancel"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setBatchImportModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                id="civil3d-batch-import-apply"
+                className="btn btn-primary"
+                style={{
+                  background: 'linear-gradient(135deg, #3d7fff 0%, #00d4a8 100%)',
+                  border: 'none',
+                  fontWeight: 700,
+                  padding: '0.5rem 1.5rem',
+                  boxShadow: '0 0 20px rgba(61,127,255,0.35)',
+                }}
+                onClick={applyBatchImport}
+              >
+                ✅ Apply to Script
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden file input for Civil 3D batch import */}
+      <input
+        type="file"
+        accept=".txt,.TXT"
+        ref={civil3dBatchFileRef}
+        style={{ display: 'none' }}
+        onChange={handleCivil3DBatchFileChange}
+      />
+
       {/* ── Top Header Actions ────────────────────────────────────────────────── */}
       <div className="card" style={{ padding: '0.85rem 1.25rem' }}>
         <div className="flex-between">
@@ -2307,6 +2939,26 @@ export default function ScriptingTab() {
           </div>
           
           <div className="flex-row" style={{ gap: '0.6rem' }}>
+            <button
+              id="civil3d-batch-import-btn"
+              className="btn btn-sm"
+              onClick={() => civil3dBatchFileRef.current?.click()}
+              title="Import a Civil 3D / Survey Module batch .txt file"
+              style={{
+                background: 'linear-gradient(135deg, rgba(61,127,255,0.18) 0%, rgba(0,212,168,0.12) 100%)',
+                border: '1px solid rgba(61,127,255,0.45)',
+                color: 'var(--accent)',
+                fontWeight: 700,
+                fontSize: '0.76rem',
+                letterSpacing: '0.01em',
+                boxShadow: '0 0 12px rgba(61,127,255,0.15)',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              🏗️ Import Civil 3D Batch
+            </button>
+
             <select style={{ width: 180, height: 32, padding: '0 0.5rem', fontSize: '0.78rem' }} onChange={handleTemplateChange}>
               <option value="">📁 Load Example Template...</option>
               <option value="closedLot">📐 Closed Lot with Curve</option>
