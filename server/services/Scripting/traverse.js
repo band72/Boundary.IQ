@@ -482,8 +482,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCent
     } else {
       incTangent = t1;
     }
-    // console.log(` RadToCenterDegRadToCenterDeg radialDirDeg radialDirRad radToCenterDeg RadToCenterDeg RadToCenterDeg RadToCenterDeg radToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg radToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg RadToCenterDeg RadToCenterDeg [traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
-    // console.log(`[traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
+
   }
 
   let outgoingTangent = null;
@@ -523,7 +522,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCent
     const dn = chordDist * Math.cos(synthAzRad);
     const de = chordDist * Math.sin(synthAzRad);
     const label = `Curve R=${(c.radius).toFixed(2)} Δ=${deltaDeg.toFixed(4)}° [CHORD-SYNTH]`;
-    // console.log(`Curve chord synthesized: bearing=${bp.toDisplayString(synthAzDeg)} dist=${chordDist.toFixed(3)}'`);
+
     return { dn, de, perimeter: perim, label, centerN, centerE, outgoingTangent };
   }
 

@@ -11,7 +11,10 @@
 import * as gemini from '../geminiVision.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
-import { SupervisorAgent } from '../agentSystem.js';
+// NOTE: SupervisorAgent is intentionally NOT imported here at module level.
+// repair.js ↔ agentSystem.js form a mutual import cycle.  Loading SupervisorAgent
+// lazily (dynamic import inside runRepairPipeline) breaks the cycle at module
+// evaluation time while preserving identical runtime behaviour.
 import { createChildLogger } from '../../logger.js';
 import { pdfOcrCache } from '../llm/pdfProcessor.js';
 import crypto from 'crypto';
@@ -48,21 +51,21 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
       ALLOW_API_FALLBACK !== false) {
 
     const fallbackModel = 'gemini-2.5-flash';
-    console.log(` Escalating failed deed "${fileName}" (status=${result.status}) from local model [${gemini.getActiveModel()}] to cloud model [${fallbackModel}] for another look.`);
+    log.info(` Escalating failed deed "${fileName}" (status=${result.status}) from local model [${gemini.getActiveModel()}] to cloud model [${fallbackModel}] for another look.`);
 
     const originalModel = gemini.getActiveModel();
     try {
       gemini.setProvider('gemini', fallbackModel);
       const escalatedResult = await _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
       if (escalatedResult.status === 'PASS' || escalatedResult.status === 'MEANDER') {
-        console.log(`✓ Escalation succeeded! Deed passed via ${fallbackModel}`);
+        log.info(`✓ Escalation succeeded! Deed passed via ${fallbackModel}`);
         result = escalatedResult;
         result.repairStageUsed = `${result.repairStageUsed} (Escalated Fallback from ${currentProvider}:${originalModel})`;
       } else {
-        console.log(` Escalation did not resolve the issue. Status: ${escalatedResult.status}`);
+        log.info(` Escalation did not resolve the issue. Status: ${escalatedResult.status}`);
       }
     } catch (escalateErr) {
-      console.warn(`⚠️ Escalation attempt failed:`, escalateErr.message);
+      log.warn({ err: escalateErr }, '⚠️ Escalation attempt failed');
     } finally {
       // Restore original provider and model
       gemini.setProvider(currentProvider, originalModel);
@@ -132,6 +135,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   log.info({ stage: 'stage5_agent', file: fileName }, 'Executing Hierarchical Multi-Agent System');
   let cachedExtraction = null; // Fix #2: cache Stage 5 extraction to avoid redundant Gemini call
   try {
+    const { SupervisorAgent } = await import('../agentSystem.js');
     const supervisor = new SupervisorAgent();
     const agentResult = await supervisor.solve(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
 
@@ -141,7 +145,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     }
 
     if (agentResult.status === 'PASS') {
-      console.log(`✓ Hierarchical Agent System succeeded: ${agentResult.repairStageUsed}`);
+      log.info(`✓ Hierarchical Agent System succeeded: ${agentResult.repairStageUsed}`);
       const steps = buildSolutionSteps(
         agentResult.extraction,
         agentResult.extraction,
@@ -164,26 +168,26 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
         solutionSteps: steps,
       };
     }
-    console.log('⚠ Hierarchical Agent System failed to close. Falling back to sequential pipeline stages...');
+    log.info('⚠ Hierarchical Agent System failed to close. Falling back to sequential pipeline stages...');
     if (agentResult.bustCourseIndex !== undefined && agentResult.bustCourseIndex !== null) {
       bustCourseIdx = agentResult.bustCourseIndex;
     }
   } catch (err) {
-    console.error('✗ Hierarchical Agent System encountered an error, falling back:', err.message);
+    log.error({ err }, '✗ Hierarchical Agent System encountered an error, falling back');
   }
 
   // ── Stage 0: Direct Gemini Extraction ───────────────────────────────────
   // Fix #2: Reuse Stage 5 cached extraction if available — skip redundant Gemini call
   let extraction;
   if (cachedExtraction) {
-    console.log('Repair Pipeline Stage 0: Reusing Stage 5 cached extraction (no extra Gemini call).');
+    log.info('Repair Pipeline Stage 0: Reusing Stage 5 cached extraction (no extra Gemini call).');
     extraction = cachedExtraction;
   } else {
-    console.log('Repair Pipeline Stage 0: Direct Gemini extraction.');
+    log.info('Repair Pipeline Stage 0: Direct Gemini extraction.');
     try {
       extraction = await gemini.extractBoundary(imageBytes, mimeType);
     } catch (ex) {
-      console.error('Stage 0: Gemini extraction failed hard.', ex.message);
+      log.error({ err: ex }, 'Stage 0: Gemini extraction failed hard');
       throw ex;
     }
   }
@@ -214,12 +218,12 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     const fullDocText = getDocumentText(imageBytes, mimeType);
     const hasPobReturn = hasPobReturnText(docText) || hasPobReturnText(extraction.originalLegalDesc || '') || hasPobReturnText(fullDocText);
     if (hasPobReturn) {
-      console.log('Open-ended classification overridden: document contains a return to POB.');
+      log.info('Open-ended classification overridden: document contains a return to POB.');
       actualOpenEnded = false;
     }
   }
   if (actualOpenEnded) {
-    console.log('Classified traverse as OPEN-ENDED (Easement, Right-of-Way, Centerline, Strip Deed).');
+    log.info('Classified traverse as OPEN-ENDED (Easement, Right-of-Way, Centerline, Strip Deed).');
     // Stage 0 Short-Circuit: Open-ended survey lines are correct by design.
     // Do NOT burn through the full repair pipeline — exit immediately as MEANDER.
     const [tvOpen] = tryCompute(extraction.courses, pob, units, true);
@@ -236,7 +240,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   // ── Compute initial traverse ──────────────────────────────────────────
   let [traverse, traverseError] = tryCompute(extraction.courses, pob, units, actualOpenEnded);
   if (traverse && isPassing(traverse)) {
-    console.log(`Stage 0 PASS: ${traverse.closure.precisionRatio}`);
+    log.info(`Stage 0 PASS: ${traverse.closure.precisionRatio}`);
     if (traverse.courses) {
       extraction.courses = traverse.courses;
       extraction.rawJson = JSON.stringify(traverse.courses);
@@ -251,7 +255,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
       extraction.courses, pob, units, actualOpenEnded, traverse.closure
     );
     if (stripResult) {
-      console.log(`Stage 0.5 Preemptive Commencement Stripper: removed ${stripResult.stripLen} leading course(s).`);
+      log.info(`Stage 0.5 Preemptive Commencement Stripper: removed ${stripResult.stripLen} leading course(s).`);
       extraction = {
         ...extraction,
         courses: stripResult.courses,
@@ -264,7 +268,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
         traverse = tStrip;
         traverseError = eStrip;
         if (isPassing(traverse)) {
-          console.log(`Stage 0.5 PASS: ${traverse.closure.precisionRatio}`);
+          log.info(`Stage 0.5 PASS: ${traverse.closure.precisionRatio}`);
           const steps = buildSolutionSteps(originalExtraction, extraction, stripResult.message, traverse, Date.now() - pipelineStart);
           return { finalExtraction: extraction, finalTraverse: traverse, status: 'PASS', repairStageUsed: stripResult.message, traverseError: null, originalExtraction, solutionSteps: steps };
         }
@@ -273,11 +277,11 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   }
 
   // ── Stage 1: Bowtie / Quadrant Inversion Auto-Fix ─────────────────────
-  console.log('Stage 1: Bowtie/Quadrant Inversion bearing-flip repair.');
+  log.info('Stage 1: Bowtie/Quadrant Inversion bearing-flip repair.');
   const stage1Extraction = tryBowtieAutoFix(extraction, pob, units);
   const [t1, e1] = tryCompute(stage1Extraction.courses, pob, units, actualOpenEnded);
   if (t1 && isPassing(t1)) {
-    console.log(`Stage 1 PASS: ${t1.closure.precisionRatio}`);
+    log.info(`Stage 1 PASS: ${t1.closure.precisionRatio}`);
     if (t1.courses) {
       stage1Extraction.courses = t1.courses;
       stage1Extraction.rawJson = JSON.stringify(t1.courses);
@@ -291,14 +295,14 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   let stage1_5Extraction = stage1Extraction;
   let t1_5 = t1;
   if (stage1Extraction.courses && (stage1Extraction.courses.length === 3 || stage1Extraction.courses.length === 4)) {
-    console.log('Stage 1.5: Surveyor Shape Constraint & Scrivener Corrector.');
+    log.info('Stage 1.5: Surveyor Shape Constraint & Scrivener Corrector.');
     stage1_5Extraction = trySurveyorShapeCorrection(stage1Extraction, pob, units);
     if (stage1_5Extraction !== stage1Extraction) {
       const [t1_5_new, e1_5] = tryCompute(stage1_5Extraction.courses, pob, units, actualOpenEnded);
       if (t1_5_new) {
         t1_5 = t1_5_new;
         if (isPassing(t1_5)) {
-          console.log(`Stage 1.5 PASS: ${t1_5.closure.precisionRatio}`);
+          log.info(`Stage 1.5 PASS: ${t1_5.closure.precisionRatio}`);
           if (t1_5.courses) {
             stage1_5Extraction.courses = t1_5.courses;
             stage1_5Extraction.rawJson = JSON.stringify(t1_5.courses);
@@ -337,7 +341,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     const COMPASS_RULE_MAX_LINEAR_FT = 2.0;   // 2.0 ft maximum misclosure (relaxed from 1.0 ft)
 
     if (linErr > 0 && linErr <= COMPASS_RULE_MAX_LINEAR_FT && precVal >= COMPASS_RULE_MIN_PRECISION) {
-      console.log(`Stage 3.5 PASS (Compass Rule): error=${linErr.toFixed(4)}ft ratio=${precStr} — applying Bowditch adjustment`);
+      log.info(`Stage 3.5 PASS (Compass Rule): error=${linErr.toFixed(4)}ft ratio=${precStr} — applying Bowditch adjustment`);
 
       // Re-compute traverse using the Bowditch-adjusted stations from traverse.js
       // The adjusted stations are already in bestTraverse.adjustedStations
@@ -395,7 +399,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   // which replaces them with a straight-line chord. If the resulting traverse
   // closes cleanly (or within 5ft for multi-meander parcels), mark as MEANDER.
   if (isMeanderDeed(bestExtraction)) {
-    console.log('Stage 3.6: Meander-Parcel — attempting gap closure of water boundary courses.');
+    log.info('Stage 3.6: Meander-Parcel — attempting gap closure of water boundary courses.');
 
     const meanderCourses = (bestExtraction.courses || []).map(c => {
       // Mark as unknown if: distance=0, isUnknown=true, or description contains meander keywords and bearing is unparseable
@@ -435,7 +439,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
           const solvedCourses = traverseSvc.autoFixUnknownRuns(meanderCourses, pob);
           const [tmSolved] = tryCompute(solvedCourses, pob, units, false);
           const finalTrav = tmSolved || tmGap;
-          console.log(`Stage 3.6 MEANDER: gap-closed water boundary, linearError=${finalTrav.closure.linearError.toFixed(3)}ft`);
+          log.info(`Stage 3.6 MEANDER: gap-closed water boundary, linearError=${finalTrav.closure.linearError.toFixed(3)}ft`);
           const mergedExtraction = {
             ...bestExtraction,
             courses: solvedCourses,
@@ -454,7 +458,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
             solutionSteps:   steps36,
           };
         } else {
-          console.log(`Stage 3.6: gap closure gave ${linErr.toFixed(3)}ft — too large, falling through to Stage 4.`);
+          log.info(`Stage 3.6: gap closure gave ${linErr.toFixed(3)}ft — too large, falling through to Stage 4.`);
         }
       }
     }
@@ -487,13 +491,13 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   //   But DO test correcting the second segment's distance independently.
 
   if (bestTraverse && !isPassing(bestTraverse)) {
-    console.log('Stage 3.7: Deterministic Scrivener Error Solver — systematic single-course correction.');
+    log.info('Stage 3.7: Deterministic Scrivener Error Solver — systematic single-course correction.');
     const s37result = tryScrivenerErrorSolver(bestExtraction, pob, units, actualOpenEnded);
     if (s37result) {
       const [t37, e37] = tryCompute(s37result.courses, pob, units, actualOpenEnded);
       const t37Passed = checkPass(t37);
       if (t37Passed) {
-        console.log(`Stage 3.7 PASS: ${t37Passed.closure.precisionRatio} — ${s37result.message}`);
+        log.info(`Stage 3.7 PASS: ${t37Passed.closure.precisionRatio} — ${s37result.message}`);
         t37Passed.courses = s37result.courses;
         const steps37 = buildSolutionSteps(originalExtraction, s37result, s37result.message, t37Passed, Date.now() - pipelineStart);
         return {
@@ -506,10 +510,10 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
           solutionSteps:   steps37,
         };
       } else {
-        console.log(`Stage 3.7: best candidate error=${t37?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
+        log.info(`Stage 3.7: best candidate error=${t37?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
       }
     } else {
-      console.log('Stage 3.7: No single-course correction achieved closure.');
+      log.info('Stage 3.7: No single-course correction achieved closure.');
     }
   }
 
@@ -517,23 +521,23 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   // Near-antiparallel course pairs with 0.01°–5° bearing mismatch.
   // Classic pattern: deed south line vs plat ROW use different bearing control.
   if (bestTraverse && !isPassing(bestTraverse) && !actualOpenEnded) {
-    console.log('Stage 3.8: Bearing Consistency Harmonizer.');
+    log.info('Stage 3.8: Bearing Consistency Harmonizer.');
     const s38result = _tryBearingHarmonization(bestExtraction?.courses || [], pob, units, actualOpenEnded);
     if (s38result) {
       const [t38] = tryCompute(s38result.courses, pob, units, actualOpenEnded);
       const t38Passed = checkPass(t38);
       if (t38Passed) {
-        console.log(`Stage 3.8 PASS: ${t38Passed.closure.precisionRatio} — ${s38result.message}`);
+        log.info(`Stage 3.8 PASS: ${t38Passed.closure.precisionRatio} — ${s38result.message}`);
         t38Passed.courses = s38result.courses;
         const steps38 = buildSolutionSteps(originalExtraction, s38result, s38result.message, t38Passed, Date.now() - pipelineStart);
         return { finalExtraction: s38result, finalTraverse: t38Passed, status: 'PASS',
           repairStageUsed: `Stage 3.8: ${s38result.message}`, traverseError: null,
           originalExtraction, solutionSteps: steps38 };
       } else {
-        console.log(`Stage 3.8: error=${t38?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
+        log.info(`Stage 3.8: error=${t38?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
       }
     } else {
-      console.log('Stage 3.8: No near-antiparallel pair found within 5°.');
+      log.info('Stage 3.8: No near-antiparallel pair found within 5°.');
     }
   }
 
@@ -544,7 +548,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   // Dominant pattern: the extractor includes "COMMENCE … THENCE S.89°W 1318.72ft
   // … THENCE S.00°W 30ft … POB" causing a ~1319ft unidirectional error.
   if (bestTraverse && !isPassing(bestTraverse) && bestExtraction?.courses?.length > 2) {
-    console.log('Stage 3.9: Commencement Leg Stripper.');
+    log.info('Stage 3.9: Commencement Leg Stripper.');
     const s39result = _tryCommencementStrip(
       bestExtraction.courses, pob, units, actualOpenEnded, bestTraverse.closure
     );
@@ -552,7 +556,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
       const [t39] = tryCompute(s39result.courses, pob, units, actualOpenEnded);
       const t39Passed = checkPass(t39);
       if (t39Passed) {
-        console.log(`Stage 3.9 PASS: ${t39Passed.closure.precisionRatio} — ${s39result.message}`);
+        log.info(`Stage 3.9 PASS: ${t39Passed.closure.precisionRatio} — ${s39result.message}`);
         t39Passed.courses = s39result.courses;
         const steps39 = buildSolutionSteps(
           originalExtraction, s39result, s39result.message, t39Passed, Date.now() - pipelineStart
@@ -563,10 +567,10 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
           traverseError: null, originalExtraction, solutionSteps: steps39,
         };
       } else {
-        console.log(`Stage 3.9: error=${t39?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
+        log.info(`Stage 3.9: error=${t39?.closure?.linearError?.toFixed(3) ?? '?'}ft — did not pass.`);
       }
     } else {
-      console.log('Stage 3.9: No commencement-leg match found within 5%.');
+      log.info('Stage 3.9: No commencement-leg match found within 5%.');
     }
   }
 
@@ -576,7 +580,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   // Test prepending the last k commencement segments back to the main courses,
   // and run both direct traverse and the Deterministic Scrivener Solver on them.
   if (bestTraverse && !isPassing(bestTraverse) && originalExtraction?.commencementSegments?.length > 0) {
-    console.log('Stage 3.9b: Commencement Leg Restorer.');
+    log.info('Stage 3.9b: Commencement Leg Restorer.');
     const comm = originalExtraction.commencementSegments;
     const main = bestExtraction?.courses || [];
     
@@ -623,7 +627,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     }
     
     if (resolvedRestoration) {
-      console.log(`Stage 3.9b PASS: ${resolvedRestoration.message}`);
+      log.info(`Stage 3.9b PASS: ${resolvedRestoration.message}`);
       const steps39b = buildSolutionSteps(originalExtraction, resolvedRestoration.extraction, resolvedRestoration.message, resolvedRestoration.traverse, Date.now() - pipelineStart);
       return {
         finalExtraction: resolvedRestoration.extraction,
@@ -635,7 +639,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
         solutionSteps:   steps39b
       };
     } else {
-      console.log('Stage 3.9b: No commencement-leg restoration achieved closure.');
+      log.info('Stage 3.9b: No commencement-leg restoration achieved closure.');
     }
   }
 
@@ -643,7 +647,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   // Fix C: the second run now provides a short feedback hint to extractBoundary()
   // so it uses a slightly different prompt path, producing genuine variance
   // rather than a deterministic re-roll of the same temperature=0 call.
-  console.log('Stage 2: Dual-run Gemini consensus voting (with feedback variance).');
+  log.info('Stage 2: Dual-run Gemini consensus voting (with feedback variance).');
 
   let stage2Extraction = null, t2 = null;
   try {
@@ -653,7 +657,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     stage2Extraction = await gemini.extractBoundary(imageBytes, mimeType, consensusFeedback);
     [t2] = tryCompute(stage2Extraction.courses, pob, units, actualOpenEnded);
   } catch (ex) {
-    console.warn('Stage 2: Second Gemini run failed, skipping consensus.', ex.message);
+    log.warn({ err: ex }, 'Stage 2: Second Gemini run failed, skipping consensus');
   }
 
   if (t2) {
@@ -663,15 +667,15 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
       bestExtraction = stage2Extraction;
       bestTraverse = t2;
       bestStage = 'Stage 2: Consensus (Run 2)';
-      console.log(`Stage 2: Run 2 wins with LinearError=${err2}`);
+      log.info(`Stage 2: Run 2 wins with LinearError=${err2}`);
     } else {
-      console.log(`Stage 2: Run 1 wins with LinearError=${err1}`);
+      log.info(`Stage 2: Run 1 wins with LinearError=${err1}`);
     }
   }
 
   const t2Passed = checkPass(t2);
   if (t2Passed) {
-    console.log(`Stage 2 PASS: ${t2Passed.closure.precisionRatio}`);
+    log.info(`Stage 2 PASS: ${t2Passed.closure.precisionRatio}`);
     if (t2Passed.courses) {
       bestExtraction.courses = t2Passed.courses;
       bestExtraction.rawJson = JSON.stringify(t2Passed.courses);
@@ -681,14 +685,14 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   }
 
   // ── Stage 3: AI Misclosure Repair (Generative Fallback) ─────────────────
-  console.log('Stage 3: AI misclosure repair.');
+  log.info('Stage 3: AI misclosure repair.');
   const worstTraverse = bestTraverse || traverse || t1;
   try {
     const stage3Extraction = await gemini.extractMisclosureRepair(imageBytes, mimeType, bestExtraction, worstTraverse);
     const [t3, e3] = tryCompute(stage3Extraction.courses, pob, units, actualOpenEnded);
     const t3Passed = checkPass(t3);
     if (t3Passed) {
-      console.log(`Stage 3 PASS: ${t3Passed.closure.precisionRatio}`);
+      log.info(`Stage 3 PASS: ${t3Passed.closure.precisionRatio}`);
       if (t3Passed.courses) {
         stage3Extraction.courses = t3Passed.courses;
         stage3Extraction.rawJson = JSON.stringify(t3Passed.courses);
@@ -699,10 +703,10 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     if (t3 && worstTraverse && worstTraverse.closure && t3.closure.linearError < worstTraverse.closure.linearError) {
       bestExtraction = stage3Extraction;
       bestTraverse = t3;
-      console.log(`Stage 3 improved error: ${t3.closure.linearError}`);
+      log.info(`Stage 3 improved error: ${t3.closure.linearError}`);
     }
   } catch (ex) {
-    console.warn('Stage 3: AI repair call failed, proceeding to Stage 4.', ex.message);
+    log.warn({ err: ex }, 'Stage 3: AI repair call failed, proceeding to Stage 4');
   }
 
   // Sync solved courses for Stage 4 fallback scenarios as well
@@ -721,7 +725,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
       const [tPB] = tryCompute(pbResult.courses, pob, units, actualOpenEnded);
       const tPBPassed = checkPass(tPB);
       if (tPBPassed) {
-        console.log(`Stage 4.5b PASS: ${tPBPassed.closure.precisionRatio}`);
+        log.info(`Stage 4.5b PASS: ${tPBPassed.closure.precisionRatio}`);
         const stepsPB = buildSolutionSteps(originalExtraction, pbResult, pbResult.message, tPBPassed, Date.now() - pipelineStart);
         return { finalExtraction: pbResult, finalTraverse: tPBPassed, status: 'PASS',
           repairStageUsed: pbResult.message, traverseError: null, originalExtraction, solutionSteps: stepsPB };
@@ -730,7 +734,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   }
 
   if (isMeanderDeed(bestExtraction)) {
-    console.log('Stage 4: Detected MEANDER deed (water boundary).');
+    log.info('Stage 4: Detected MEANDER deed (water boundary).');
     const hasSelfIntersection = bestTraverse ? detectSelfIntersection(bestTraverse.adjustedStations || bestTraverse.stations) : false;
     return {
       finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'MEANDER',
@@ -743,7 +747,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     };
   }
 
-  console.log('Stage 4: Marking deed for adjacent-lot boundary review.');
+  log.info('Stage 4: Marking deed for adjacent-lot boundary review.');
   const hasSelfIntersection = bestTraverse ? detectSelfIntersection(bestTraverse.adjustedStations || bestTraverse.stations) : false;
   return {
     finalExtraction: bestExtraction, finalTraverse: bestTraverse, status: 'FAIL',
@@ -1562,7 +1566,7 @@ export function detectBacktracking(courses, verbose = false) {
       
       if (isOpposite) {
         if (verbose) {
-          console.log(`Backtracking detected between segment ${i + 1} and segment ${((i + 1) % courses.length) + 1}!`);
+          log.info(`Backtracking detected between segment ${i + 1} and segment ${((i + 1) % courses.length) + 1}!`);
         }
         return true;
       }
@@ -1643,7 +1647,7 @@ export function tryBowtieAutoFix(original, pob = { northing: 5000, easting: 5000
     const testEval = evaluate(testCourses);
     
     if (!testEval.hasIntersection && (testEval.linearError < PASS_LINEAR_ERROR_FT || testEval.precisionRatio >= PASS_PRECISION_RATIO)) {
-      console.log(`Combinatorial Bowtie Solver: Solved via SINGLE FLIP on course ${idx + 1}!`);
+      log.info(`Combinatorial Bowtie Solver: Solved via SINGLE FLIP on course ${idx + 1}!`);
       // Use gap-solved courses so the corrected unknown segments are included
       const finalCourses = testEval.solvedCourses || testCourses;
       return {
@@ -1681,7 +1685,7 @@ export function tryBowtieAutoFix(original, pob = { northing: 5000, easting: 5000
         const testEval = evaluate(testCourses);
         
         if (!testEval.hasIntersection && (testEval.linearError < PASS_LINEAR_ERROR_FT || testEval.precisionRatio >= PASS_PRECISION_RATIO)) {
-          console.log(`Combinatorial Bowtie Solver: Solved via DOUBLE FLIP on courses ${idx1 + 1} & ${idx2 + 1}!`);
+          log.info(`Combinatorial Bowtie Solver: Solved via DOUBLE FLIP on courses ${idx1 + 1} & ${idx2 + 1}!`);
           return {
             ...original,
             courses: testCourses,
@@ -1700,7 +1704,7 @@ export function tryBowtieAutoFix(original, pob = { northing: 5000, easting: 5000
   }
   
   if (bestEval.linearError < originalEval.linearError) {
-    console.log(`Combinatorial Bowtie Solver: Improved linear error from ${originalEval.linearError.toFixed(2)} to ${bestEval.linearError.toFixed(2)} via ${bestStage}`);
+    log.info(`Combinatorial Bowtie Solver: Improved linear error from ${originalEval.linearError.toFixed(2)} to ${bestEval.linearError.toFixed(2)} via ${bestStage}`);
     return {
       ...original,
       courses: bestCourses,
@@ -1721,7 +1725,7 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
   const courses = original.courses.map(c => ({ ...c }));
   
   if (courses.length === 3) {
-    console.log('Stage 1.5: 3 courses detected. Appending 4th meandering line to close the traverse.');
+    log.info('Stage 1.5: 3 courses detected. Appending 4th meandering line to close the traverse.');
     const testCourses = [...courses, {
       type: 'Line',
       bearing: '',
@@ -1742,7 +1746,7 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
       }
       
       if (res.closure.linearError < PASS_LINEAR_ERROR_FT || ratio >= PASS_PRECISION_RATIO) {
-        console.log(`Stage 1.5: 3 bearings + meander successfully closed!`);
+        log.info(`Stage 1.5: 3 bearings + meander successfully closed!`);
         return {
           ...original,
           courses: solvedCourses,
@@ -1751,12 +1755,12 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
         };
       }
     } catch (e) {
-      console.warn('Stage 1.5: Failed to compute 3-course traverse with appended meander.', e.message);
+      log.warn({ err: e }, 'Stage 1.5: Failed to compute 3-course traverse with appended meander');
     }
   }
   
   if (courses.length === 4) {
-    console.log('Stage 1.5: 4 courses detected. Evaluating rectangular opposite-side scrivener alignments.');
+    log.info('Stage 1.5: 4 courses detected. Evaluating rectangular opposite-side scrivener alignments.');
     
     const evaluate = (testCourses) => {
       try {
@@ -1789,7 +1793,7 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
       if (originalEval.courses) {
         const hasChanges = JSON.stringify(originalEval.courses) !== JSON.stringify(courses);
         if (hasChanges) {
-          console.log('Stage 1.5: Solved missing segment bearing inside initial evaluation!');
+          log.info('Stage 1.5: Solved missing segment bearing inside initial evaluation!');
           return {
             ...original,
             courses: originalEval.courses,
@@ -1975,7 +1979,7 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
     for (const cand of candidates) {
       const testEval = cand.evaluation;
       if (!testEval.hasIntersection && (testEval.linearError < PASS_LINEAR_ERROR_FT || testEval.precisionRatio >= PASS_PRECISION_RATIO)) {
-        console.log(`Stage 1.5: Rectangular Scrivener Solver corrected via candidate: "${cand.message}"!`);
+        log.info(`Stage 1.5: Rectangular Scrivener Solver corrected via candidate: "${cand.message}"!`);
         return {
           ...original,
           courses: testEval.courses,
@@ -1992,7 +1996,7 @@ export function trySurveyorShapeCorrection(original, pob = { northing: 5000, eas
     }
     
     if (bestEval.linearError < originalEval.linearError) {
-      console.log(`Stage 1.5: Rectangular Scrivener Solver improved error from ${originalEval.linearError.toFixed(2)} to ${bestEval.linearError.toFixed(2)} via: "${bestMessage}"`);
+      log.info(`Stage 1.5: Rectangular Scrivener Solver improved error from ${originalEval.linearError.toFixed(2)} to ${bestEval.linearError.toFixed(2)} via: "${bestMessage}"`);
       return {
         ...original,
         courses: bestEval.courses,
@@ -2109,7 +2113,7 @@ export function detectOpenEnded(text, fileName, aiFlag) {
   // These parcels describe corridors (road/utility R/W), not closed polygons.
   const isStripDeed = combined.includes('STRIP OF LAND') && combined.includes('POINT OF TERMINATION');
   if (isStripDeed) {
-    console.log('detectOpenEnded: Fast-path STRIP DEED detected ("strip of land" + "point of termination")');
+    log.info('detectOpenEnded: Fast-path STRIP DEED detected ("strip of land" + "point of termination")');
     return true;
   }
 
