@@ -3,7 +3,7 @@
 // Replaces RCS.Cogo.Core with pure JS math (bearingParser.js).
 
 import * as bp from './bearingParser.js';
-import { createChildLogger } from '../logger.js';
+import { createChildLogger } from '../../logger.js';
 
 const log = createChildLogger('traverse');
 

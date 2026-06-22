@@ -1,4 +1,4 @@
-import { solveFromCourses } from '../services/deedTextSolver.js';
+import { solveFromCourses } from '../services/Scripting/deedTextSolver.js';
 
 function isPassing(r) {
   if (!r) return false;

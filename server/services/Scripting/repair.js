@@ -8,14 +8,14 @@
 //   Stage 2+ — Re-extraction & heuristic fallback chain
 // Pass Threshold: LinearError < 0.30 ft OR PrecisionRatio >= 1:10,000
 
-import * as gemini from './geminiVision.js';
+import * as gemini from '../geminiVision.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
-import { SupervisorAgent } from './agentSystem.js';
-import { createChildLogger } from '../logger.js';
-import { pdfOcrCache } from './llm/pdfProcessor.js';
+import { SupervisorAgent } from '../agentSystem.js';
+import { createChildLogger } from '../../logger.js';
+import { pdfOcrCache } from '../llm/pdfProcessor.js';
 import crypto from 'crypto';
-import { GEMINI_API_KEY, ALLOW_API_FALLBACK } from '../config.js';
+import { GEMINI_API_KEY, ALLOW_API_FALLBACK } from '../../config.js';
 
 const log = createChildLogger('repair');
 

@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 import { init as initDb, getDb, saveDeedLog, saveBatchRun } from '../services/diagnosticsDb.js';
-import { compute } from '../services/traverse.js';
+import { compute } from '../services/Scripting/traverse.js';
 
 const FAILED_DIR = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions/_FAILED';
 const EXTRACTED_DIR = path.join(FAILED_DIR, '_extracted');

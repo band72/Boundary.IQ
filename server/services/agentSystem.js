@@ -2,9 +2,9 @@
 // Implements a turn-based dialogue loop between Extractor, COGO, and Surveyor agents.
 
 import * as gemini from './geminiVision.js';
-import * as traverseSvc from './traverse.js';
-import * as bp from './bearingParser.js';
-import { tryBowtieAutoFix, trySurveyorShapeCorrection, detectBacktracking, isMeanderDeed, tryScrivenerErrorSolver, applyCompassRuleIfEligible } from './repair.js';
+import * as traverseSvc from './Scripting/traverse.js';
+import * as bp from './Scripting/bearingParser.js';
+import { tryBowtieAutoFix, trySurveyorShapeCorrection, detectBacktracking, isMeanderDeed, tryScrivenerErrorSolver, applyCompassRuleIfEligible } from './Scripting/repair.js';
 
 /**
  * Rec 3 helper — produce up to 3 course-set variants by flipping the bearing

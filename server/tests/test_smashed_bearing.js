@@ -1,4 +1,4 @@
-import * as bp from '../services/bearingParser.js';
+import * as bp from '../services/Scripting/bearingParser.js';
 
 try {
   const result1 = bp.parse('S5719\'54"W');

@@ -5,7 +5,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import fs from 'fs/promises';
 import pLimit from 'p-limit';
-import { runRepairPipeline } from '../services/repair.js';
+import { runRepairPipeline } from '../services/Scripting/repair.js';
 import * as geminiVision from '../services/geminiVision.js';
 import * as db from '../services/diagnosticsDb.js';
 import crypto from 'crypto';

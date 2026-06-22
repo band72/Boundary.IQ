@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { solveDeedText } from '../services/deedTextSolver.js';
+import { solveDeedText } from '../services/Scripting/deedTextSolver.js';
 import { renderSketchPages } from '../services/sketchRenderer.js';
 
 const parcelHText = `PARCEL "H"

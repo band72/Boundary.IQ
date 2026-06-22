@@ -2,7 +2,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { solveFromText } from '../services/deedTextSolver.js';
+import { solveFromText } from '../services/Scripting/deedTextSolver.js';
 
 const DEED_FILE = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions/_extracted/REGENCY_2525.894 - Monument Road.txt';
 

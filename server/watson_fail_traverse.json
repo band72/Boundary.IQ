@@ -1,0 +1,109 @@
+{
+  "stations": [
+    {
+      "seq": 0,
+      "course": "POB",
+      "northing": 5000,
+      "easting": 5000,
+      "depDN": 0,
+      "depDE": 0
+    },
+    {
+      "seq": 1,
+      "course": "N45°22'10.00\"E 150.25'",
+      "northing": 5105.555534132521,
+      "easting": 5106.925636374063,
+      "depDN": 105.55553413252036,
+      "depDE": 106.92563637406293
+    },
+    {
+      "seq": 2,
+      "course": "Curve R=300.50 Δ=60.0000°",
+      "northing": 5303.2324486113885,
+      "easting": 5033.998772447835,
+      "depDN": 197.67691447886736,
+      "depDE": -72.92686392622785
+    },
+    {
+      "seq": 3,
+      "course": "S60°45'00.00\"E 250.00'",
+      "northing": 5181.0771382371495,
+      "easting": 5252.1227742160345,
+      "depDN": -122.15531037423877,
+      "depDE": 218.12400176819926
+    }
+  ],
+  "closure": {
+    "errorNorthing": -181.07713823714948,
+    "errorEasting": -252.1227742160345,
+    "linearError": 310.41073317549,
+    "perimeter": 587.55,
+    "precisionRatio": "1:2",
+    "status": "✗ FAILS   1:2  (min 1:10,000)",
+    "hasSelfIntersection": false
+  },
+  "perimeter": 587.55,
+  "areaSqFt": 9056.322139959782,
+  "areaAcres": 0.20790454866757993,
+  "adjustedStations": [
+    {
+      "seq": 0,
+      "northing": 5000,
+      "easting": 5000
+    },
+    {
+      "seq": 1,
+      "northing": 5059.249960104555,
+      "easting": 5042.452065059351
+    },
+    {
+      "seq": 2,
+      "northing": 5191.991204382473,
+      "easting": 4879.112013272824
+    },
+    {
+      "seq": 3,
+      "northing": 4992.788349868523,
+      "easting": 4989.958858111386
+    }
+  ],
+  "courses": [
+    {
+      "type": "Line",
+      "bearing": "N45°22'10\"E",
+      "distance": 150.25,
+      "delta": null,
+      "radius": null,
+      "arcLength": null,
+      "curveDirection": null,
+      "chordBearing": null,
+      "chordDistance": null,
+      "isUnknown": false
+    },
+    {
+      "type": "Curve",
+      "bearing": null,
+      "distance": null,
+      "delta": 60,
+      "radius": 300.5,
+      "arcLength": 187.3,
+      "curveDirection": "Right",
+      "chordBearing": "N20°15'W",
+      "chordDistance": 210.7,
+      "isUnknown": false
+    },
+    {
+      "type": "Line",
+      "bearing": "S60°45'E",
+      "distance": 250,
+      "delta": null,
+      "radius": null,
+      "arcLength": null,
+      "curveDirection": null,
+      "chordBearing": null,
+      "chordDistance": null,
+      "isUnknown": false
+    }
+  ],
+  "hasSelfIntersection": false
+}

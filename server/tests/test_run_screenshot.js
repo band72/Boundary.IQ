@@ -5,12 +5,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 import fs from 'fs/promises';
-import { runRepairPipeline } from '../services/repair.js';
+import { runRepairPipeline } from '../services/Scripting/repair.js';
 import * as geminiVision from '../services/geminiVision.js';
 import * as db from '../services/diagnosticsDb.js';
 import crypto from 'crypto';
 import * as output from '../services/output.js';
-import * as legalWriter from '../services/legalWriter.js';
+import * as legalWriter from '../services/Scripting/legalWriter.js';
 
 function parsePrecisionRatio(precisionStr) {
   if (!precisionStr) return 0;

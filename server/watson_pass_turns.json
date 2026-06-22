@@ -1,0 +1,29 @@
+[
+  {
+    "turn": 1,
+    "timestamp": "2026-06-17T04:33:03.718Z",
+    "feedbackSent": null,
+    "diagnoses": [
+      {
+        "type": "SCRIVENER_CORRECTION",
+        "confidence": 0.82,
+        "message": "Evaluating deterministic scrivener corrections (single-course bearing/distance flips/typos)."
+      },
+      {
+        "type": "BOWTIE_COMBINATORIAL_FLIP",
+        "confidence": 0.7,
+        "message": "Evaluating combinatoric quadrant bearing flips (N <-> S, E <-> W)."
+      }
+    ],
+    "outcome": "FAIL_CONTINUE",
+    "linearError": 999
+  },
+  {
+    "turn": 2,
+    "timestamp": "2026-06-17T04:35:23.525Z",
+    "feedbackSent": "The traverse fails to close by 999.00 ft (Error Northing: 0.00, Easting: 0.00). Please re-read the boundary document carefully and verify all bearings and distances.",
+    "diagnoses": [],
+    "outcome": "PASS",
+    "linearError": 0
+  }
+]

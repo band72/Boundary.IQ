@@ -6,8 +6,8 @@
 
 import { Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { solveDeedText, listAvailableModels, solveFromText } from '../services/deedTextSolver.js';
-import * as traverseSvc from '../services/traverse.js';
+import { solveDeedText, listAvailableModels, solveFromText } from '../services/Scripting/deedTextSolver.js';
+import * as traverseSvc from '../services/Scripting/traverse.js';
 import { requireAuth, trackDeedUsage } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import logger from '../logger.js';

@@ -1,6 +1,6 @@
 // ─── Traverse Route ─────────────────────────────────────────────────────────
 import { Router } from 'express';
-import * as traverseSvc from '../services/traverse.js';
+import * as traverseSvc from '../services/Scripting/traverse.js';
 import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);

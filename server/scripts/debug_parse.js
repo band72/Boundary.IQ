@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
-import { solveFromText } from '../services/deedTextSolver.js';
-import * as bp from '../services/bearingParser.js';
+import { solveFromText } from '../services/Scripting/deedTextSolver.js';
+import * as bp from '../services/Scripting/bearingParser.js';
 
 const DEED_FILE = '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions/_extracted/REGENCY_2525.894 - Monument Road.txt';
 const text = fs.readFileSync(DEED_FILE, 'utf8');

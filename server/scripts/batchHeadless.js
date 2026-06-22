@@ -25,7 +25,7 @@ const { init: initDb } = await import('../services/db/core.js');
 initDb?.();                              // non-fatal if already initialised
 
 // Now safe to import the solver
-const { solveFromText, solveDeedText } = await import('../services/deedTextSolver.js');
+const { solveFromText, solveDeedText } = await import('../services/Scripting/deedTextSolver.js');
 const { DEFAULT_LOCAL_MODEL } = await import('../config.js');
 
 // ── Config ────────────────────────────────────────────────────────────────────

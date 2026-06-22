@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { solveFromCourses } from '../services/deedTextSolver.js';
+import { solveFromCourses } from '../services/Scripting/deedTextSolver.js';
 import { renderSketchPages } from '../services/sketchRenderer.js';
 
 // Transcribed descriptions for display
