@@ -2196,8 +2196,7 @@ export function extractNamedParcels(docText) {
     }
   }
 
-  // 2. Keyword dividers (e.g., "Together with", "Less and except", etc.)
-  const keywordRe = /(?:^|\n)[ \t]*(?:together\s+with|also\s+together\s+with|and\s+together\s+with|less\s+and\s+except|less\s+and\s+excepting|excepting\s+therefrom|also\s+together\s+with\s+an\s+easement|together\s+with\s+an\s+easement)\b/gi;
+  const keywordRe = /(?:^|\n)[ \t]*(?:together\s+with|also\s+together\s+with|and\s+together\s+with|less\s+and\s+except|less\s+and\s+excepting|excepting\s+therefrom|also\s+together\s+with\s+an?\s+(?:\d+(?:\.\d+)?\s*(?:foot|feet|ft)\s+)?easement|together\s+with\s+an?\s+(?:\d+(?:\.\d+)?\s*(?:foot|feet|ft)\s+)?easement|subject\s+to\s+and\s+together\s+with|subject\s+to\s+together\s+with|subject\s+to\s+an?\s+(?:\d+(?:\.\d+)?\s*(?:foot|feet|ft)\s+)?easement)\b/gi;
   while ((m = keywordRe.exec(docText)) !== null) {
     const nextNewline = docText.indexOf('\n', m.index + 1);
     const endOfLine = nextNewline !== -1 ? nextNewline : docText.length;

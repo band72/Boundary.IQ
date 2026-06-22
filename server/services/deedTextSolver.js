@@ -1322,6 +1322,12 @@ export function solveFromText(deedText, options = {}) {
   // Fix degree sign read as 0 when followed by minutes and a minute mark: N51047' -> N51°47'
   normalizedText = normalizedText.replace(/\b([NSns]\s*\.?\s*\d{2})0(\d{2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
 
+  // Fix missing degree sign when degrees and minutes are run together: S5719' -> S57°19'
+  normalizedText = normalizedText.replace(/\b([NSns]\s*\.?\s*\d{2})(\d{2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
+
+  // Fix double quote read as degree symbol (e.g. N00"03'00"W -> N00°03'00"W)
+  normalizedText = normalizedText.replace(/\b([NSns]\s*\.?\s*\d{1,2})\s*"\s*(\d{1,2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
+
   // Fix letters-to-digits in minutes/seconds fields:
   // Minutes + minute mark + seconds + second mark (e.g. 47'OO")
   normalizedText = normalizedText.replace(/(\d{1,2})\s*([\u2018\u2019\u201A\u02BC\u00B4\u2032'])\s*([0-9OLolI|!]{1,2})\s*(["\u201C\u201D\u201E\u2033\u2034'])/gi, (m, mins, minMark, secs, secMark) => {
@@ -1348,7 +1354,7 @@ export function solveFromText(deedText, options = {}) {
   // Pre-normalize surveyor dot-notation bearings: N.89°43'05"E. → N89°43'05"E
   // Pattern: cardinal letter (N/S) followed by a literal dot then digits
   normalizedText = normalizedText
-    .replace(/\b([NSns])\.([0-9])/g, '$1$2')   // N.00° → N00°
+    .replace(/(?<![a-zA-Z])([NSns])\.([0-9])/g, '$1$2')   // N.00° → N00°
     .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2') // 47".E → 47"E  or  47".W → 47"W
     .replace(/([EWew])\.(?=\s|,|;|$)/g, '$1')   // strip trailing dot after E/W
     .replace(/°['\u2018\u2019\u201A\u02BC\u00B4]/g, '°') // fix °' typo (extra apostrophe after degree symbol)
@@ -1388,14 +1394,15 @@ export function solveFromText(deedText, options = {}) {
 
   // Pre-normalize text: "RUN THENCE", "THENCE CONTINUE", "THEN" → all become THENCE
   const preparedText = normalizedText
-    .replace(/\bTHENCE\s+CONTINUE(?:ING)?\b/gi, 'THENCE')
+    .replace(/\bTHENCE\s+CONTINU(?:ING|E)\b/gi, 'THENCE')
+    .replace(/\bTHENCE\s+RUN(?:NING|S)?\b/gi, 'THENCE')
     .replace(/\bRUN\s+THENCE\b/gi, 'THENCE')
-    .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d])/gi, 'THENCE ')
+    .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d])/gi, 'THENCE ')
     // "CONTINUING...bearing" and "CONTINUE...bearing" -> THENCE
-    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ')
+    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=(?:NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ')
     // Standalone RUN [bearing] (not preceded by THENCE) → THENCE
     // e.g. "FROM THE POINT OF REFERENCE...RUN S.39°41'50"E."
-    .replace(/\bRUN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ');
+    .replace(/\bRUN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ');
 
 
   const rawSegments = preparedText.split(/\b(THENCE|COMMENCE)\b/i);
@@ -1502,7 +1509,7 @@ export function solveFromText(deedText, options = {}) {
 
     // ── Bearing parsing ──────────────────────────────────────────────────────
     const bearingContent = cleanContent
-      .replace(/\b([NSns])\.([0-9])/g, '$1$2')
+      .replace(/(?<![a-zA-Z])([NSns])\.([0-9])/g, '$1$2')
       .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2');
 
     let bearing = null;

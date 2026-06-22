@@ -26,11 +26,12 @@ initDb?.();                              // non-fatal if already initialised
 
 // Now safe to import the solver
 const { solveFromText, solveDeedText } = await import('../services/deedTextSolver.js');
+const { extractNamedParcels } = await import('../services/repair.js');
 const { DEFAULT_LOCAL_MODEL } = await import('../config.js');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const DEED_DIR    = process.env.DEED_DIR || '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions';
-const EXTRACT_DIR = path.join(DEED_DIR, '_extracted');
+const EXTRACT_DIR = DEED_DIR.endsWith('_extracted') ? DEED_DIR : path.join(DEED_DIR, '_extracted');
 const REPORT_FILE = path.join(SERVER_DIR, '../deed_batch_report.json');
 const SUMMARY_FILE= path.join(SERVER_DIR, '../deed_batch_summary.md');
 const POB_N       = parseFloat(process.env.POB_N) || 5000;
@@ -246,8 +247,16 @@ for (let i = 0; i < filesToProcess.length; i++) {
   // Direct service call — no HTTP, no rate limit
   let result, status, errMsg = null;
   let usedAi = false;
+
+  let solveText = text;
+  const parsedParcels = extractNamedParcels(text);
+  if (parsedParcels && parsedParcels.length > 0) {
+    const metesParcel = parsedParcels.find(p => /\b(THENCE|COMMENCE|BEGIN)\b/i.test(p.text));
+    solveText = metesParcel ? metesParcel.text : parsedParcels[0].text;
+  }
+
   try {
-    result = solveFromText(text, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
+    result = solveFromText(solveText, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
     status = classifyResult(result);
   } catch (e) {
     errMsg = e.message?.slice(0, 300) || 'Unknown error';
@@ -263,7 +272,7 @@ for (let i = 0; i < filesToProcess.length; i++) {
   if (useAi && status !== 'PASS') {
     try {
       process.stdout.write(`[Escalating to AI...] `);
-      const aiResult = await solveDeedText(text, MODEL, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
+      const aiResult = await solveDeedText(solveText, MODEL, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
       const aiStatus = classifyResult(aiResult);
       
       const regexErr = result?.traverse?.closure?.linearError ?? Infinity;
