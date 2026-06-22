@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import * as bp from '../services/Scripting/bearingParser.js';
 import { parseExtractionJson, solveFromCourses } from '../services/Scripting/deedTextSolver.js';
 import { generateGeoJson, generateLandXml } from '../services/exportService.js';
-import { parseDmsToDecimal } from '../services/Scripting/traverse.js';
+import { parseDmsToDecimal, autoFixUnknownRuns } from '../services/Scripting/traverse.js';
 
 describe('Boundary.IQ Improvements Tests', () => {
 
@@ -132,7 +132,7 @@ describe('Boundary.IQ Improvements Tests', () => {
 
       expect(solved.status).toBe('PASS');
       expect(solved.repairedCourses[0].distance).toBe(150.25);
-      expect(solved.primaryHypothesis).toBe('DISTANCE_TRANSPOSITION_REPAIR');
+      expect(solved.primaryHypothesis).toContain('distance 105.25→150.25ft');
     });
 
     it('corrects transposed components in segment bearing', () => {
@@ -154,7 +154,7 @@ describe('Boundary.IQ Improvements Tests', () => {
 
       expect(solved.status).toBe('PASS');
       expect(solved.repairedCourses[1].bearing).toBe('N45°22\'10"E');
-      expect(solved.primaryHypothesis).toBe('BEARING_TRANSPOSITION_REPAIR');
+      expect(solved.primaryHypothesis).toContain('min/sec digit swap');
     });
   });
 
@@ -392,6 +392,59 @@ describe('Boundary.IQ Improvements Tests', () => {
     it('hasImpossibleBearings handles empty or null input gracefully', () => {
       expect(bp.hasImpossibleBearings([]).hasImpossible).toBe(false);
       expect(bp.hasImpossibleBearings(null).hasImpossible).toBe(false);
+    });
+  });
+
+  describe('11. 2-Unknown-Runs Iterative Solver', () => {
+    it('successfully runs the iterative solver for two non-adjacent unknown runs', () => {
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: null, distance: null, isUnknown: true }, // Run 0
+        { type: 'Line', bearing: 'N90°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: null, distance: null, isUnknown: true }, // Run 1
+        { type: 'Line', bearing: 'S00°00\'00"W', distance: 100 },
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 300 }
+      ];
+      const resolved = autoFixUnknownRuns(courses, { northing: 5000, easting: 5000 });
+      expect(resolved[1].isUnknown).toBe(false);
+      expect(resolved[1].distance).toBeCloseTo(200, 1);
+      expect(resolved[1].bearing).toContain('E');
+    });
+  });
+
+  describe('12. Curve Course Scrivener Repairs (Principle 9)', () => {
+    it('corrects a transposed curve radius to achieve closure', () => {
+      // Perfect shape is:
+      // C1: N00E 100
+      // C2 (Curve): radius 100, delta 90, direction right, chord N45E 141.42, arc 157.08
+      // C3: S00E 200
+      // C4: N90W 100
+      // We transpose C2 radius 100 -> 10.
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 100.00 },
+        {
+          type: 'Curve',
+          radius: 10.00, // Transposed! Should be 100.00
+          delta: '90°00\'00"',
+          direction: 'right',
+          chordBearing: 'N45°00\'00"E',
+          chordDistance: 14.14,
+          arcLength: 15.71
+        },
+        { type: 'Line', bearing: 'S00°00\'00"E', distance: 200.00 },
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 100.00 }
+      ];
+
+      const solved = solveFromCourses(courses, {
+        pobNorthing: 5000,
+        pobEasting: 5000,
+        units: 'Feet',
+        isOpenEnded: false
+      });
+
+      expect(solved.status).toBe('PASS');
+      expect(solved.repairedCourses[1].radius).toBe(100.00);
+      expect(solved.primaryHypothesis).toContain('radius 10→100ft');
     });
   });
 });

@@ -714,7 +714,7 @@ export function autoFixUnknownRuns(courses, pob) {
         // Restore the corresponding original course.  Because run[1] starts after
         // run[0] and run[0] was collapsed to 1 course, the frozen slots shift by
         // (run[0].end - run[0].start) positions relative to their original index.
-        const originalIdx = runs[1].start + (i - (runs[0].start + 1));
+        const originalIdx = i + (runs[0].end - runs[0].start);
         if (originalIdx >= 0 && originalIdx < courses.length) {
           pass2[i] = { ...courses[originalIdx] };
         }

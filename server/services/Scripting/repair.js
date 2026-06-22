@@ -1254,7 +1254,92 @@ export function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
     }
   };
 
-  // ────────────────────────────────────────────────────────────────
+  const generateDigitVariants = (val) => {
+    if (val == null || isNaN(val) || val <= 0) return [];
+    const variants = new Set([
+      val + 10, val + 20, val - 10, val - 20,
+      val * 10, val / 10,
+      val + 100, val - 100,
+      ...(val >= 10 && val < 100
+        ? [Math.floor(val / 10) + (val % 10) * 10 + (val - Math.floor(val))]
+        : [])
+    ]);
+
+    const valStr = val.toFixed(2);
+    for (let pos = 0; pos < valStr.length; pos++) {
+      if (valStr[pos] === '.') continue;
+      for (let digit = 0; digit <= 9; digit++) {
+        if (valStr[pos] === digit.toString()) continue;
+        const newValStr = valStr.slice(0, pos) + digit + valStr.slice(pos + 1);
+        const newVal = parseFloat(newValStr);
+        if (newVal > 0) variants.add(newVal);
+      }
+    }
+
+    for (let pos = 0; pos < valStr.length - 1; pos++) {
+      if (valStr[pos] === '.' || valStr[pos + 1] === '.') continue;
+      if (valStr[pos] === valStr[pos + 1]) continue;
+      const chars = valStr.split('');
+      const tmp = chars[pos];
+      chars[pos] = chars[pos + 1];
+      chars[pos + 1] = tmp;
+      const newVal = parseFloat(chars.join(''));
+      if (newVal > 0) variants.add(newVal);
+    }
+
+    return Array.from(variants).filter(v => v > 0 && v <= 99999 && Math.abs(v - val) >= 0.01);
+  };
+
+  const generateAngleTranspositions = (angleStr) => {
+    if (!angleStr) return [];
+    const variants = new Set();
+    const match = /^\s*(\d{1,3})[°\-\s](\d{1,2})['\-\s](\d{1,2}(?:\.\d+)?)["\s]*$/i.exec(angleStr);
+    if (match) {
+      const degStr = match[1];
+      const minStr = match[2];
+      const secStr = match[3];
+
+      if (degStr.length > 1) {
+        for (let i = 0; i < degStr.length - 1; i++) {
+          const dChars = degStr.split('');
+          const tmp = dChars[i];
+          dChars[i] = dChars[i + 1];
+          dChars[i + 1] = tmp;
+          const newDeg = dChars.join('');
+          variants.add(`${newDeg}°${minStr}'${secStr}"`);
+        }
+      }
+      if (minStr.length > 1) {
+        for (let i = 0; i < minStr.length - 1; i++) {
+          const mChars = minStr.split('');
+          const tmp = mChars[i];
+          mChars[i] = mChars[i + 1];
+          mChars[i + 1] = tmp;
+          const newMin = mChars.join('');
+          variants.add(`${degStr}°${newMin}'${secStr}"`);
+        }
+      }
+      const secInt = secStr.split('.')[0];
+      if (secInt.length > 1) {
+        for (let i = 0; i < secInt.length - 1; i++) {
+          const sChars = secInt.split('');
+          const tmp = sChars[i];
+          sChars[i] = sChars[i + 1];
+          sChars[i + 1] = tmp;
+          const newSec = sChars.join('') + (secStr.includes('.') ? '.' + secStr.split('.')[1] : '');
+          variants.add(`${degStr}°${minStr}'${newSec}"`);
+        }
+      }
+      if (degStr !== minStr) {
+        variants.add(`${minStr}°${degStr}'${secStr}"`);
+      }
+      if (minStr !== secStr) {
+        variants.add(`${degStr}°${secStr}'${minStr}"`);
+      }
+    }
+    return Array.from(variants);
+  };
+
   // PRINCIPLE 2: Exact closing distance on the FINAL course
   // Most common scrivener error: typist mis-copies the return leg distance.
   // Strategy: hold the final bearing fixed; compute the distance that makes
@@ -1523,6 +1608,88 @@ export function tryScrivenerErrorSolver(extraction, pob, units, isOpenEnded) {
           tryCandidate(fixed,
             `Scrivener fix: C${i + 1} curve chord distance ${origChord != null ? origChord.toFixed(2) : 'null'}→${computedChord.toFixed(2)}ft (computed from radius/delta)`);
         }
+      }
+    }
+  }
+
+  // ── PRINCIPLE 9: Curve Property Mutator ──
+  for (let i = 0; i < N_COURSES; i++) {
+    const c = courses[i];
+    if (c.type?.toLowerCase() !== 'curve') continue;
+
+    // A. Mutate Radius
+    if (c.radius != null && c.radius > 0) {
+      const radiusVariants = generateDigitVariants(c.radius);
+      for (const newR of radiusVariants) {
+        const fixed = courses.map((cc, j) => {
+          if (j !== i) return { ...cc };
+          const copy = { ...cc, radius: newR };
+          // If we have delta, recompute arcLength and chordDistance
+          if (copy.delta != null) {
+            const deltaDeg = traverseSvc.parseDmsToDecimal(copy.delta);
+            if (deltaDeg != null && deltaDeg > 0) {
+              const deltaRad = deltaDeg * Math.PI / 180.0;
+              copy.arcLength = newR * deltaRad;
+              copy.chordDistance = 2.0 * newR * Math.sin(deltaRad / 2.0);
+            }
+          }
+          return copy;
+        });
+        tryCandidate(fixed, `Curve fix: C${i + 1} radius ${c.radius}→${newR}ft`);
+      }
+    }
+
+    // B. Mutate Arc Length
+    if (c.arcLength != null && c.arcLength > 0) {
+      const arcVariants = generateDigitVariants(c.arcLength);
+      for (const newL of arcVariants) {
+        const fixed = courses.map((cc, j) => {
+          if (j !== i) return { ...cc };
+          const copy = { ...cc, arcLength: newL };
+          // If we have radius, recompute delta and chordDistance
+          if (copy.radius != null && copy.radius > 0) {
+            const deltaRad = newL / copy.radius;
+            const deltaDeg = deltaRad * 180.0 / Math.PI;
+            copy.delta = deltaDeg.toFixed(6);
+            copy.chordDistance = 2.0 * copy.radius * Math.sin(deltaRad / 2.0);
+          }
+          return copy;
+        });
+        tryCandidate(fixed, `Curve fix: C${i + 1} arc length ${c.arcLength}→${newL}ft`);
+      }
+    }
+
+    // C. Mutate Chord Distance
+    if (c.chordDistance != null && c.chordDistance > 0) {
+      const chordVariants = generateDigitVariants(c.chordDistance);
+      for (const newCh of chordVariants) {
+        const fixed = courses.map((cc, j) =>
+          j === i ? { ...cc, chordDistance: newCh } : { ...cc }
+        );
+        tryCandidate(fixed, `Curve fix: C${i + 1} chord distance ${c.chordDistance}→${newCh}ft`);
+      }
+    }
+
+    // D. Mutate Delta angle
+    if (c.delta != null) {
+      const deltaStr = c.delta.toString();
+      const deltaVariants = generateAngleTranspositions(deltaStr);
+      for (const newDelta of deltaVariants) {
+        const fixed = courses.map((cc, j) => {
+          if (j !== i) return { ...cc };
+          const copy = { ...cc, delta: newDelta };
+          // If we have radius, recompute chordDistance and arcLength
+          if (copy.radius != null && copy.radius > 0) {
+            const deltaDeg = traverseSvc.parseDmsToDecimal(newDelta);
+            if (deltaDeg != null && deltaDeg > 0) {
+              const deltaRad = deltaDeg * Math.PI / 180.0;
+              copy.arcLength = copy.radius * deltaRad;
+              copy.chordDistance = 2.0 * copy.radius * Math.sin(deltaRad / 2.0);
+            }
+          }
+          return copy;
+        });
+        tryCandidate(fixed, `Curve fix: C${i + 1} delta ${c.delta}→${newDelta}`);
       }
     }
   }
