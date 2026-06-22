@@ -86,7 +86,8 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
       // ── Line segment
       lineCount++;
       d.setActiveLayer(activeBoundaryLayer);
-      d.drawLine(p1.x, p1.y, p2.x, p2.y);
+      const heavyWidth = textScale * 0.12;
+      d.drawPolyline([[p1.x, p1.y], [p2.x, p2.y]], false, heavyWidth, heavyWidth);
 
       // Midpoint perpendicular offset for clean labeling
       const midX = (p1.x + p2.x) / 2 + perpX;
@@ -144,7 +145,18 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
           if (!curveLeft) { [startAng, endAng] = [endAng, startAng]; }
 
           d.setActiveLayer(activeBoundaryLayer);
-          d.drawArc(centX, centY, r, startAng, endAng);
+          const heavyWidth = textScale * 0.12;
+          const arcPoints = [];
+          const numSteps = Math.max(16, Math.min(100, Math.ceil((r * Math.abs(endAng - startAng) * Math.PI / 180) / (textScale * 0.4))));
+          let startRad = startAng * Math.PI / 180;
+          let endRad = endAng * Math.PI / 180;
+          let diffRad = endRad - startRad;
+          if (diffRad < 0) diffRad += 2 * Math.PI;
+          for (let step = 0; step <= numSteps; step++) {
+            const currentRad = startRad + (diffRad * step / numSteps);
+            arcPoints.push([centX + r * Math.cos(currentRad), centY + r * Math.sin(currentRad)]);
+          }
+          d.drawPolyline(arcPoints, false, heavyWidth, heavyWidth);
 
           // Curve label midpoints & aligned chord angle
           const midX = cx + perpX;
@@ -170,7 +182,8 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
 
       if (!solved) {
         d.setActiveLayer(activeBoundaryLayer);
-        d.drawLine(p1.x, p1.y, p2.x, p2.y);
+        const heavyWidth = textScale * 0.12;
+        d.drawPolyline([[p1.x, p1.y], [p2.x, p2.y]], false, heavyWidth, heavyWidth);
         const midX = (p1.x + p2.x) / 2 + perpX;
         const midY = (p1.y + p2.y) / 2 + perpY;
 
@@ -378,7 +391,8 @@ export function generateCombinedDxf(parcels) {
         // Draw line
         lineCount++;
         d.setActiveLayer(layerBoundary);
-        d.drawLine(p1.x, p1.y, p2.x, p2.y);
+        const heavyWidth = textScale * 0.12;
+        d.drawPolyline([[p1.x, p1.y], [p2.x, p2.y]], false, heavyWidth, heavyWidth);
 
         const midX = (p1.x + p2.x) / 2 + perpX;
         const midY = (p1.y + p2.y) / 2 + perpY;
@@ -428,7 +442,18 @@ export function generateCombinedDxf(parcels) {
             if (!curveLeft) { [startAng, endAng] = [endAng, startAng]; }
 
             d.setActiveLayer(layerBoundary);
-            d.drawArc(centX, centY, r, startAng, endAng);
+            const heavyWidth = textScale * 0.12;
+            const arcPoints = [];
+            const numSteps = Math.max(16, Math.min(100, Math.ceil((r * Math.abs(endAng - startAng) * Math.PI / 180) / (textScale * 0.4))));
+            let startRad = startAng * Math.PI / 180;
+            let endRad = endAng * Math.PI / 180;
+            let diffRad = endRad - startRad;
+            if (diffRad < 0) diffRad += 2 * Math.PI;
+            for (let step = 0; step <= numSteps; step++) {
+              const currentRad = startRad + (diffRad * step / numSteps);
+              arcPoints.push([centX + r * Math.cos(currentRad), centY + r * Math.sin(currentRad)]);
+            }
+            d.drawPolyline(arcPoints, false, heavyWidth, heavyWidth);
 
             const midX = cx + perpX;
             const midY = cy + perpY;
@@ -452,7 +477,8 @@ export function generateCombinedDxf(parcels) {
 
         if (!solved) {
           d.setActiveLayer(layerBoundary);
-          d.drawLine(p1.x, p1.y, p2.x, p2.y);
+          const heavyWidth = textScale * 0.12;
+          d.drawPolyline([[p1.x, p1.y], [p2.x, p2.y]], false, heavyWidth, heavyWidth);
           const midX = (p1.x + p2.x) / 2 + perpX;
           const midY = (p1.y + p2.y) / 2 + perpY;
 

@@ -356,9 +356,9 @@ function getDensePoints(pts, coursesList) {
 function parseDmsToDecimal(dms) {
   if (dms == null) return 0;
   const clean = dms.toString().trim();
-  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/)
-    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”?']{0,2}$/)
-    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/);
+  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º*^d]?$/)
+    || clean.match(/^(-?\d+)\s*[°º*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”?']{0,2}$/)
+    || clean.match(/^(-?\d+)\s*[°º*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/);
 
   if (match) {
     const deg = parseFloat(match[1]);
@@ -384,7 +384,7 @@ function parseDmsToDecimal(dms) {
 
 function parseBearingToDegrees(b) {
   if (!b) return null;
-  const clean = b.toUpperCase().trim().replace(/[^0-9NSEW°'"\-\.\s]/g, '');
+  const clean = b.toUpperCase().trim().replace(/[^0-9NSEW°'"\-.\s]/g, '');
   const m = clean.match(/^([NS])\s*(\d+(?:\.\d+)?)(?:[°\-\s](\d+(?:\.\d+)?))?(?:['\-\s](\d+(?:\.\d+)?))?["'\s]*([EW])/);
   if (m) {
     const [, ns, degStr, minStr, secStr, ew] = m;

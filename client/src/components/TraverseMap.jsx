@@ -27,7 +27,7 @@ function parseCardinalAzimuthClient(word) {
   return key in CARDINAL_MAP ? CARDINAL_MAP[key] : null;
 }
 
-export function parseBearingToAzimuthDegrees(bearing) {
+function parseBearingToAzimuthDegrees(bearing) {
   if (!bearing) return null;
   let clean = bearing.toString().trim()
     .replace(/(\d+)\.(\d{1,2})\.(\d{1,2})\.(\d+)/g, '$1°$2\'$3.$4"')
@@ -113,7 +113,7 @@ export function parseBearingToAzimuthDegrees(bearing) {
   }
 
   clean = clean
-    .replace(/\s*[°º\*^d]\s*/g, '°')
+    .replace(/\s*[°º*^d]\s*/g, '°')
     .replace(/\s*['’‘`]\s*/g, "'")
     .replace(/\s*(?:"|”|“|'')\s*/g, '"');
 
@@ -391,9 +391,9 @@ function getDensePoints(pts, coursesList) {
 function parseDmsToDecimal(dms) {
   if (dms == null) return 0;
   const clean = dms.toString().trim();
-  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º\*^d]?$/)
-    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”“']{0,2}$/)
-    || clean.match(/^(-?\d+)\s*[°º\*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/);
+  const match = clean.match(/^(-?\d+(?:\.\d+)?)\s*[°º*^d]?$/)
+    || clean.match(/^(-?\d+)\s*[°º*^d]?\s*(\d+)\s*['’‘`]?\s*(\d+(?:\.\d+)?)\s*["”“']{0,2}$/)
+    || clean.match(/^(-?\d+)\s*[°º*^d]?\s*(\d+(?:\.\d+)?)\s*['’‘`]?$/);
 
   if (match) {
     const deg = parseFloat(match[1]);

@@ -18,7 +18,7 @@
 const RE_THENCE = /\bTHENCE\b/gi;
 
 // Matches a quadrant bearing: N/S + digits + °/- + digits + '/- + digits + E/W
-const RE_BEARING = /\b([NSns])\s*(\d{1,3})[°\-\s\.]+(\d{1,2})['\-\s\.]+(\d{1,2}(?:\.\d+)?)["\s]*([EWew])/g;
+const RE_BEARING = /\b([NSns])\s*(\d{1,3})[°\-\s.]+(\d{1,2})['\-\s.]+(\d{1,2}(?:\.\d+)?)["\s]*([EWew])/g;
 
 // Matches a straight-line distance: number followed by feet/meters/ft/m
 const RE_DISTANCE = /(\d{1,6}(?:\.\d+)?)\s*(?:feet|foot|ft\.?|meters?|m\.?)\b/gi;
@@ -74,7 +74,6 @@ export function previewDeedText(text) {
 
   // Count curves
   RE_CURVE.lastIndex = 0;
-  const curveSegments = (text.match(RE_CURVE) || []).length;
   // Rough heuristic: if a THENCE segment mentions a curve keyword, it's a curve call
   const thenceParts = text.split(RE_THENCE);
   let curveCount = 0;

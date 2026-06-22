@@ -12,11 +12,20 @@ import * as plssParser from './plssParser.js';
 import * as legalWriter from './legalWriter.js';
 import { extractRaw, getActiveProvider, getActiveModel, setProvider } from './llm/dispatcher.js';
 
+import { Agent } from 'undici';
+import { httpFetch } from './httpFetch.js';
+import { OLLAMA_URL } from '../config.js';
 import { isPlaceholderHallucination } from './geminiVision.js';
 import { postProcessOcrText } from './llm/ocrPostProcess.js';
 import { createChildLogger } from '../logger.js';
 
 const log = createChildLogger('deedSolver');
+const OLLAMA_BASE = OLLAMA_URL;
+const ollamaAgent = new Agent({
+  connectTimeout: 3000,
+  headersTimeout: 1800000,
+  bodyTimeout: 1800000,
+});
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildExtractionPrompt(deedText) {

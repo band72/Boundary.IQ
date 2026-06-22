@@ -1,6 +1,6 @@
 // ─── Folder Scan Route ──────────────────────────────────────────────────────
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import * as lockService from '../services/lockService.js';
 import crypto from 'crypto';
 import { createChildLogger } from '../logger.js';
@@ -1925,8 +1925,8 @@ router.post('/retry-failed', async (req, res) => {
   if (!fs.existsSync(validPath)) return res.status(404).json({ error: 'Directory not found.' });
 
   if (!acquireLock('retry-failed', req.query.path)) {
-    const info = _processingInfo;
-    const elapsed = info ? Math.round((Date.now() - info.startTime) / 1000) : 0;
+    const info = lockService.status();
+    const elapsed = info.elapsedSec || 0;
     return res.status(503).json({
       error: `Server is already processing (${info?.type ?? 'unknown'} — ${elapsed}s elapsed). Please wait for it to finish or restart the server.`
     });

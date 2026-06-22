@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "lint": "eslint . --ext .js --max-warnings 0",
+    "lint": "eslint .",
     "test": "node tests/test_headless_riddle.js && node tests/test_server_headless.js",
     "test:riddle": "node tests/test_headless_riddle.js",
     "test:server": "node tests/test_server_headless.js",
@@ -18,7 +18,8 @@
     "batch:fails": "node scripts/batchHeadless.js --fail-only",
     "batch:ai": "node scripts/batchHeadless.js --use-ai --model=gemini-2.5-flash --fail-only",
     "query:stats": "node tests/list_summaries.js",
-    "query:fails": "node tests/query_all_failed.js"
+    "query:fails": "node tests/query_all_failed.js",
+    "reconstruct-plat": "node scripts/reconstruct_plat_to_dxf.js"
   },
   "dependencies": {
     "archiver": "^8.0.0",
@@ -39,9 +40,12 @@
     "pino-pretty": "^13.1.3",
     "stripe": "^22.2.1",
     "undici": "^6.26.0",
-    "uuid": "^10.0.0"
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
     "vitest": "^4.1.9"
   }
 }
