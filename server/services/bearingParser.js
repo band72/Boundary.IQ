@@ -189,7 +189,7 @@ export function parse(bearing) {
   clean = clean.replace(/([NSns]\s*\d{1,3})\s*([^0-9NSEWns\s])\s*(\d{1,2}\s*['])/gi, '$1°$3');
 
   // Handle OCR/scrivener errors where the degree symbol is misread as a digit (e.g. S00955'38"E -> S00°55'38"E)
-  clean = clean.replace(/([NSns]\s*\d{2,3})([0-9])(\d{2}\s*['])/gi, '$1°$3');
+  clean = clean.replace(/([NSns])\s*(\d{2})([0-9])\s*[°º\*^d]?\s*(\d{1,2}\s*['])/gi, '$1$2°$4');
 
   // Handle double degree symbol OCR errors or LLM translation duplicate degree digit errors (e.g. S72°912'02"W -> S72°12'02"W, S17°047'58"E -> S17°47'58"E)
   clean = clean.replace(/(\d+)\s*°\s*[0-9]\s*(\d{2}\s*['])/gi, '$1°$2');

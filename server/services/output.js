@@ -232,6 +232,7 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
     // Run Python Conceptual Map Pipeline if courses exist
     if (courses.length > 0) {
       let tempFilePath = null;
+      let tempDeedPath = null;
       try {
         const { execSync } = await import('child_process');
         const { fileURLToPath } = await import('url');
@@ -239,6 +240,10 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
         // Write courses JSON to a temporary file
         tempFilePath = path.join(targetFolder, `temp_courses_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.json`);
         fs.writeFileSync(tempFilePath, JSON.stringify(courses));
+
+        // Write deed text to a temporary file
+        tempDeedPath = path.join(targetFolder, `temp_deed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.txt`);
+        fs.writeFileSync(tempDeedPath, rawOCR || legalDesc || '');
         
         const pyScriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../conceptual_pipeline/main.py');
         const outSvg = path.join(targetFolder, shortFileNames ? 'Conceptual_Map.svg' : `${baseName}_conceptual_map.svg`);
@@ -246,7 +251,7 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
         const outReport = path.join(targetFolder, shortFileNames ? 'Conceptual_Report.json' : `${baseName}_conceptual_report.json`);
         
         // Execute python pipeline with courses-json file
-        const cmd = `python3 "${pyScriptPath}" --courses-json "${tempFilePath}" --output-svg "${outSvg}" --output-img "${outPng}" --output-report "${outReport}"`;
+        const cmd = `python3 "${pyScriptPath}" --courses-json "${tempFilePath}" --deed-file "${tempDeedPath}" --output-svg "${outSvg}" --output-img "${outPng}" --output-report "${outReport}"`;
         execSync(cmd, { stdio: 'ignore' });
       } catch (pyErr) {
         console.warn(`Output: Python conceptual drawing pipeline failed for ${sourceFileName}:`, pyErr.message);
@@ -254,6 +259,11 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
         if (tempFilePath && fs.existsSync(tempFilePath)) {
           try {
             fs.unlinkSync(tempFilePath);
+          } catch {}
+        }
+        if (tempDeedPath && fs.existsSync(tempDeedPath)) {
+          try {
+            fs.unlinkSync(tempDeedPath);
           } catch {}
         }
       }

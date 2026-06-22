@@ -116,6 +116,57 @@ def generate_curve_points(x_start, y_start, radius, arc_length, curve_direction,
         
     return points, final_azimuth
 
+def generate_curve_points_from_chord(x_start, y_start, radius, chord_distance, chord_azimuth, curve_direction, steps_count=10):
+    if radius <= 0:
+        raise ValueError("Radius must be greater than zero.")
+        
+    chord_rad = math.radians(chord_azimuth)
+    x_end = x_start + chord_distance * math.sin(chord_rad)
+    y_end = y_start + chord_distance * math.cos(chord_rad)
+    
+    mx = (x_start + x_end) / 2
+    my = (y_start + y_end) / 2
+    
+    c_half = chord_distance / 2
+    h = math.sqrt(max(0.0, radius**2 - c_half**2))
+    
+    if curve_direction.lower() == 'right':
+        center_az = (chord_azimuth + 90.0) % 360.0
+    else:
+        center_az = (chord_azimuth - 90.0) % 360.0
+        
+    center_rad = math.radians(center_az)
+    cx = mx + h * math.sin(center_rad)
+    cy = my + h * math.cos(center_rad)
+    
+    angle_start = math.atan2(y_start - cy, x_start - cx)
+    angle_end = math.atan2(y_end - cy, x_end - cx)
+    
+    diff = angle_end - angle_start
+    if curve_direction.lower() == 'right':
+        if diff > 0:
+            diff -= 2 * math.pi
+    else:
+        if diff < 0:
+            diff += 2 * math.pi
+            
+    points = []
+    for i in range(1, steps_count + 1):
+        angle = angle_start + (i / steps_count) * diff
+        x_step = cx + radius * math.cos(angle)
+        y_step = cy + radius * math.sin(angle)
+        points.append((x_step, y_step))
+        
+    radial_end_az = math.degrees(math.atan2(x_end - cx, y_end - cy))
+    if radial_end_az < 0: radial_end_az += 360.0
+    
+    if curve_direction.lower() == 'right':
+        final_az = (radial_end_az + 90.0) % 360.0
+    else:
+        final_az = (radial_end_az - 90.0) % 360.0
+        
+    return points, final_az
+
 def compute_acreage(vertices):
     """
     Computes area in square feet using Shoelace formula and returns acreage.
@@ -248,17 +299,38 @@ def calculate_traverse(courses, start_x=5000.0, start_y=5000.0):
                     first_course = False
                     continue
     
-                if first_course:
-                    # If first course is a curve, assume it starts tangent to North/East or needs reference
-                    # Usually tangent to North (azimuth=0)
-                    pass
-                    
-                steps, final_az = generate_curve_points(
-                    current_x, current_y, radius, arc_length, direction, current_azimuth
-                )
-                vertices.extend(steps)
-                current_x, current_y = steps[-1]
-                current_azimuth = final_az
+                chord_bearing = c.get('chordBearing')
+                chord_distance = safe_float(c.get('chordDistance', 0.0))
+
+                if chord_bearing and chord_distance > 0:
+                    try:
+                        chord_az = parse_bearing(chord_bearing)
+                        steps, final_az = generate_curve_points_from_chord(
+                            current_x, current_y, radius, chord_distance, chord_az, direction
+                        )
+                        vertices.extend(steps)
+                        current_x, current_y = steps[-1]
+                        current_azimuth = final_az
+                    except Exception as chord_err:
+                        print(f"[COGO Warning] Curve on course {idx+1} chord projection failed: {chord_err}. Falling back to tangent.")
+                        steps, final_az = generate_curve_points(
+                            current_x, current_y, radius, arc_length, direction, current_azimuth
+                        )
+                        vertices.extend(steps)
+                        current_x, current_y = steps[-1]
+                        current_azimuth = final_az
+                else:
+                    if first_course:
+                        # If first course is a curve, assume it starts tangent to North/East or needs reference
+                        # Usually tangent to North (azimuth=0)
+                        pass
+                        
+                    steps, final_az = generate_curve_points(
+                        current_x, current_y, radius, arc_length, direction, current_azimuth
+                    )
+                    vertices.extend(steps)
+                    current_x, current_y = steps[-1]
+                    current_azimuth = final_az
                 
             end_vertex_idx = len(vertices) - 1
             course_metadata.append({

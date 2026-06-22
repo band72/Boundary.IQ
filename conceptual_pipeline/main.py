@@ -332,7 +332,7 @@ def main():
     args = parser_args.parse_args()
 
     # Determine deed text source
-    deed_text = DEFAULT_DEED_TEXT
+    deed_text = ""
     if args.deed_file:
         try:
             with open(args.deed_file, 'r') as f:
@@ -341,8 +341,9 @@ def main():
         except Exception as e:
             print(f"[Error] Failed to read deed file '{args.deed_file}': {e}", file=sys.stderr)
             sys.exit(1)
-    else:
-        print("[Pipeline] No deed file specified. Using default sample deed.")
+    elif not args.courses_json:
+        print("[Pipeline] No deed file specified and no courses JSON provided. Using default sample deed.")
+        deed_text = DEFAULT_DEED_TEXT
 
     # 1. Parse deed text to courses JSON
     print("\n=== Phase 1: Parsing/Loading courses JSON ===")
