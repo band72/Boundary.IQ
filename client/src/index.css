@@ -1843,14 +1843,16 @@ select option { background: var(--bg-elevated); }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
-  align-items: start;
+  align-items: start; /* both columns anchor to the top of the row */
 }
 
-.sticky-column {
-  position: -webkit-sticky;
-  position: sticky;
-  top: 80px; /* Offset to clear the 60px app header */
+/* Both direct children pin to the top of their grid cell */
+.split-layout > * {
   align-self: start;
+}
+
+/* Right sticky column — top-pinned, scrolls with the page */
+.sticky-column {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -1860,10 +1862,4 @@ select option { background: var(--bg-elevated); }
   .split-layout {
     grid-template-columns: 1fr;
   }
-  .sticky-column {
-    position: static;
-  }
 }
-
-
-

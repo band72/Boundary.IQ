@@ -10,6 +10,7 @@ import HelpModal from './components/HelpModal';
 import LoginScreen from './components/LoginScreen';
 import AdminPanel from './components/AdminPanel';
 import BillingTab from './components/BillingTab';
+import ScriptingTab from './components/ScriptingTab';
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { AuthProvider } from './context/AuthProvider';
@@ -74,6 +75,7 @@ const TABS = [
   { id: 'plat',      icon: '🛰',  label: 'Plat Extraction',  minRole: 'user',  minPlan: 'free', status: 'testing' },
   { id: 'writer',    icon: '✍️',  label: 'Deed Writer',      minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'batch',     icon: '📦',  label: 'Batch Deed',       minRole: 'user',  minPlan: 'free', status: 'testing' },
+  { id: 'scripting', icon: '📝',  label: 'Linework Scripting', minRole: 'user', minPlan: 'free', status: 'live'   },
   { id: 'dashboard', icon: '📊',  label: 'Dashboard',        minRole: 'user',  minPlan: 'free', status: 'testing' },
   { id: 'settings',  icon: '⚙️',  label: 'Settings',         minRole: 'user',  minPlan: 'free', status: 'live'    },
 ];
@@ -334,6 +336,11 @@ function AppShell() {
                 hasAccess(user, TABS.find(t => t.id === 'batch'))
                   ? <BatchDeedTab />
                   : <TestingWall feature="Batch Deed Processing" icon="📦" />
+              )}
+              {tab === 'scripting' && (
+                hasAccess(user, TABS.find(t => t.id === 'scripting'))
+                  ? <ScriptingTab />
+                  : <TestingWall feature="Linework Scripting" icon="📝" />
               )}
               {tab === 'dashboard' && (
                 hasAccess(user, TABS.find(t => t.id === 'dashboard'))

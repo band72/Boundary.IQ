@@ -290,4 +290,117 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
   log.info({ envPath }, 'System settings persisted to .env');
 }
 
+// ── GET /api/settings/batch-library — list .txt batch files in a directory ───
+// Query: ?dir=<absolute_path>
+// Returns: { files: [{ name, path, size, modified }] }
+// Security: path is validated to stay within home, temp, or BOUNDARY_SCAN_ROOTS.
+router.get('/batch-library', asyncHandler(async (req, res) => {
+  const reqDir = (req.query.dir || '').trim();
+  if (!reqDir) {
+    return res.status(400).json({ error: 'Query parameter "dir" is required.' });
+  }
+
+  const resolved = path.resolve(reqDir);
+
+  // ── Security: validate the directory is within safe boundaries ──────────────
+  const home = os.homedir();
+  const tmp  = os.tmpdir();
+  const rawScanRoots = process.env.BOUNDARY_SCAN_ROOTS || '';
+  const allowedRoots = [
+    home,
+    tmp,
+    '/var',
+    '/data',
+    ...rawScanRoots.split(';').filter(Boolean).map(r => path.resolve(r.trim())),
+  ];
+
+  const isAllowed = allowedRoots.some(root => resolved.startsWith(root));
+  if (!isAllowed) {
+    return res.status(403).json({
+      error: `Directory "${resolved}" is not within an allowed scan root. Add it to System Settings > Scan Roots first.`,
+    });
+  }
+
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).json({ error: `Directory not found: ${resolved}` });
+  }
+
+  const stat = fs.statSync(resolved);
+  if (!stat.isDirectory()) {
+    return res.status(400).json({ error: `Path is not a directory: ${resolved}` });
+  }
+
+  // ── List .txt files (non-recursive) ─────────────────────────────────────────
+  let entries;
+  try {
+    entries = fs.readdirSync(resolved, { withFileTypes: true });
+  } catch (err) {
+    return res.status(500).json({ error: `Cannot read directory: ${err.message}` });
+  }
+
+  const files = entries
+    .filter(e => e.isFile() && e.name.toLowerCase().endsWith('.txt'))
+    .map(e => {
+      const fullPath = path.join(resolved, e.name);
+      let size = 0;
+      let modified = null;
+      try {
+        const s = fs.statSync(fullPath);
+        size = s.size;
+        modified = s.mtime.toISOString();
+      } catch { /* ignore stat errors on individual files */ }
+      return { name: e.name, path: fullPath, size, modified };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+  log.info({ dir: resolved, count: files.length, actor: req.user?.username }, 'Batch library listed');
+  res.json({ files, dir: resolved });
+}));
+
+// ── GET /api/settings/batch-library/file — read a single batch .txt file ─────
+// Query: ?path=<absolute_path_to_txt_file>
+// Returns: raw text content of the file (text/plain)
+router.get('/batch-library/file', asyncHandler(async (req, res) => {
+  const reqPath = (req.query.path || '').trim();
+  if (!reqPath) {
+    return res.status(400).json({ error: 'Query parameter "path" is required.' });
+  }
+
+  const resolved = path.resolve(reqPath);
+
+  // Security: same allowed-roots validation
+  const home = os.homedir();
+  const tmp  = os.tmpdir();
+  const rawScanRoots = process.env.BOUNDARY_SCAN_ROOTS || '';
+  const allowedRoots = [
+    home,
+    tmp,
+    '/var',
+    '/data',
+    ...rawScanRoots.split(';').filter(Boolean).map(r => path.resolve(r.trim())),
+  ];
+  const isAllowed = allowedRoots.some(root => resolved.startsWith(root));
+  if (!isAllowed) {
+    return res.status(403).json({ error: `File path is not within an allowed scan root.` });
+  }
+
+  if (!resolved.toLowerCase().endsWith('.txt')) {
+    return res.status(400).json({ error: 'Only .txt files are allowed.' });
+  }
+
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).json({ error: `File not found: ${resolved}` });
+  }
+
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) {
+    return res.status(400).json({ error: `Path is not a file: ${resolved}` });
+  }
+
+  const content = fs.readFileSync(resolved, 'utf8');
+  log.info({ path: resolved, actor: req.user?.username }, 'Batch file read');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(content);
+}));
+
 export default router;

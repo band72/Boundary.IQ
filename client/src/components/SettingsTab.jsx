@@ -10,6 +10,7 @@ const PANEL_DEFS = [
   { id: 'plat',      icon: '🛰️', label: 'Plat Extraction',         desc: 'AI-powered OCR for boundary images and PDFs',           color: '#00d4a8', minRole: 'user',  status: 'testing' },
   { id: 'writer',    icon: '✍️', label: 'Legal Description Writer', desc: 'Generate professional registry legal text',              color: '#a855f7', minRole: 'user',  status: 'testing' },
   { id: 'batch',     icon: '📦', label: 'Batch Deed',               desc: 'Folder scan & batch deed processing pipeline',           color: '#c97a00', minRole: 'user',  status: 'testing' },
+  { id: 'scripting', icon: '📝', label: 'Linework Scripting',       desc: 'IDE for survey command language & figure plotting',      color: '#e85a19', minRole: 'user',  status: 'live'    },
   { id: 'dashboard', icon: '📊', label: 'Dashboard',                desc: 'Processing statistics and deed review panel',           color: '#4285F4', minRole: 'user',  status: 'testing' },
 ];
 
@@ -2070,6 +2071,280 @@ export default function SettingsTab({
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── Survey Command Language Settings Card ─────────────────────────────── */}
+      <SurveyBatchLibraryCard API={API} />
+
+    </div>
+  );
+}
+
+// ── Survey Batch Library Card (sub-component) ────────────────────────────────
+function SurveyBatchLibraryCard({ API }) {
+  const [batchLibDir, setBatchLibDir]     = useLocalStorage('boundaryiq_batch_lib_dir', '');
+  const [batchFiles, setBatchFiles]       = useState([]);
+  const [batchLoading, setBatchLoading]   = useState(false);
+  const [batchMsg, setBatchMsg]           = useState('');
+  const [selectedFile, setSelectedFile]   = useState('');
+
+  const browseBatchLibrary = async () => {
+    const dir = batchLibDir.trim();
+    if (!dir) {
+      setBatchMsg('⚠ Enter a batch library folder path first.');
+      return;
+    }
+    setBatchLoading(true);
+    setBatchMsg('');
+    try {
+      const res = await fetch(`${API}/settings/batch-library?dir=${encodeURIComponent(dir)}`);
+      const data = await res.json();
+      if (res.ok) {
+        setBatchFiles(data.files || []);
+        if ((data.files || []).length === 0) {
+          setBatchMsg('No .txt batch files found in that directory.');
+        } else {
+          setBatchMsg(`✓ Found ${data.files.length} batch file${data.files.length !== 1 ? 's' : ''}.`);
+        }
+      } else {
+        setBatchMsg(`✗ ${data.error || 'Failed to list files.'}`);
+        setBatchFiles([]);
+      }
+    } catch (e) {
+      setBatchMsg(`✗ ${e.message}`);
+      setBatchFiles([]);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const launchInScriptingEngine = () => {
+    if (!selectedFile) {
+      setBatchMsg('⚠ Select a batch file first.');
+      return;
+    }
+    // Dispatch a custom event that ScriptingTab listens to for remote file imports
+    window.dispatchEvent(new CustomEvent('boundaryiq:importBatchPath', {
+      detail: { path: selectedFile }
+    }));
+    setBatchMsg(`✓ "${selectedFile.split(/[\\/]/).pop()}" sent to Scripting Engine.`);
+  };
+
+  return (
+    <div className="card" style={{
+      background: 'rgba(9, 14, 26, 0.4)',
+      backdropFilter: 'blur(8px)',
+      border: '1px solid rgba(0, 212, 168, 0.25)',
+      boxShadow: '0 4px 24px rgba(0, 212, 168, 0.07)',
+    }}>
+      <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            🏗️ Survey Command Language
+          </div>
+          <span style={{
+            fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+            background: 'rgba(0,212,168,0.12)', border: '1px solid rgba(0,212,168,0.35)', color: '#00d4a8',
+            padding: '2px 8px', borderRadius: '99px',
+          }}>Civil 3D / Survey Module</span>
+        </div>
+      </div>
+
+      <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+        {/* Description */}
+        <div style={{
+          background: 'rgba(0,212,168,0.05)', border: '1px solid rgba(0,212,168,0.2)',
+          borderRadius: 'var(--radius-md)', padding: '0.85rem 1.1rem',
+          fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.6,
+        }}>
+          <strong style={{ color: '#00d4a8' }}>Batch Library Browser</strong> — Configure a folder containing Civil 3D Survey
+          Module batch <code style={{ background: 'rgba(0,0,0,0.3)', padding: '1px 4px', borderRadius: '3px' }}>.txt</code> export files.
+          Selected files are imported directly into the <strong>Linework Scripting IDE</strong> where the COGO geometry is
+          computed, plotted, and made available for DXF export.
+        </div>
+
+        {/* Batch library folder path */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+            Batch Library Folder Path
+          </label>
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            <input
+              id="batch-lib-dir-input"
+              type="text"
+              value={batchLibDir}
+              onChange={e => { setBatchLibDir(e.target.value); setBatchMsg(''); }}
+              placeholder="C:\Users\...\survey-command-lang-batch"
+              style={{
+                flex: 1,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.55rem 0.85rem',
+                color: 'var(--text-primary)',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '0.78rem',
+              }}
+            />
+            <button
+              id="batch-lib-browse-btn"
+              className="btn btn-sm"
+              disabled={batchLoading}
+              onClick={browseBatchLibrary}
+              style={{
+                background: 'linear-gradient(135deg, rgba(0,212,168,0.18) 0%, rgba(61,127,255,0.12) 100%)',
+                border: '1px solid rgba(0,212,168,0.4)',
+                color: '#00d4a8',
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 0 10px rgba(0,212,168,0.15)',
+              }}
+            >
+              {batchLoading ? '⏳ Scanning…' : '📂 Browse'}
+            </button>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+            This path is saved to your browser. The server will list all <code>.txt</code> files within this directory.
+          </p>
+        </div>
+
+        {/* File list */}
+        {batchFiles.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              Select Batch File to Import
+            </div>
+            <div style={{
+              maxHeight: '220px', overflowY: 'auto',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(7,9,26,0.6)',
+            }}>
+              {batchFiles.map((f, i) => (
+                <div
+                  key={f.path}
+                  id={`batch-file-item-${i}`}
+                  onClick={() => setSelectedFile(f.path)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.65rem',
+                    padding: '0.5rem 0.85rem',
+                    cursor: 'pointer',
+                    borderBottom: i < batchFiles.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                    background: selectedFile === f.path ? 'rgba(0,212,168,0.08)' : 'transparent',
+                    borderLeft: selectedFile === f.path ? '3px solid #00d4a8' : '3px solid transparent',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <span style={{ fontSize: '0.85rem' }}>📄</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: '0.78rem', fontWeight: 600,
+                      color: selectedFile === f.path ? '#00d4a8' : 'var(--text-primary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {f.name}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                      {(f.size / 1024).toFixed(1)} KB
+                      {f.modified && ` · ${new Date(f.modified).toLocaleDateString()}`}
+                    </div>
+                  </div>
+                  {selectedFile === f.path && (
+                    <span style={{
+                      fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em',
+                      background: 'rgba(0,212,168,0.15)', color: '#00d4a8',
+                      border: '1px solid rgba(0,212,168,0.35)',
+                      padding: '1px 7px', borderRadius: '99px',
+                    }}>SELECTED</span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Launch button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem', marginTop: '0.25rem' }}>
+              <button
+                id="batch-launch-scripting-btn"
+                className="btn"
+                disabled={!selectedFile}
+                onClick={launchInScriptingEngine}
+                style={{
+                  background: selectedFile
+                    ? 'linear-gradient(135deg, #00d4a8 0%, #3d7fff 100%)'
+                    : 'rgba(255,255,255,0.05)',
+                  border: selectedFile ? 'none' : '1px solid var(--border)',
+                  color: selectedFile ? '#fff' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  padding: '0.55rem 1.5rem',
+                  boxShadow: selectedFile ? '0 0 18px rgba(0,212,168,0.3)' : 'none',
+                  transition: 'all 0.25s',
+                  cursor: selectedFile ? 'pointer' : 'not-allowed',
+                }}
+              >
+                🚀 Launch in Scripting Engine
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Status message */}
+        {batchMsg && (
+          <div style={{
+            padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)',
+            background: batchMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.08)',
+            border: `1px solid ${batchMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
+            color: batchMsg.startsWith('✓') ? 'var(--success)' : batchMsg.startsWith('⚠') ? '#ffaa00' : '#dc3232',
+            fontSize: '0.75rem', fontWeight: 500,
+          }}>
+            {batchMsg}
+          </div>
+        )}
+
+        {/* Supported commands legend */}
+        <details style={{ marginTop: '0.25rem' }}>
+          <summary style={{
+            cursor: 'pointer', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600,
+            userSelect: 'none', letterSpacing: '0.03em',
+          }}>
+            📋 Supported Civil 3D Batch Commands
+          </summary>
+          <div style={{
+            marginTop: '0.65rem',
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem',
+            fontSize: '0.72rem',
+          }}>
+            {[
+              ['NE',     'Set point by Northing / Easting'],
+              ['STN',    'Set occupied station'],
+              ['BS',     'Set backsight point'],
+              ['BD',     'Bearing-Distance traverse shot'],
+              ['AD',     'Angle-Distance field shot'],
+              ['RKRK',   'Radius-Radius curve center intersection'],
+              ['SAVE',   'Pick RKRK solution by direction'],
+              ['BB',     'Bearing-Bearing intersection'],
+              ['BEG',    'Begin named figure/boundary'],
+              ['PNT',    'Sequence point into figure'],
+              ['XC PTS', 'Insert arc segment into figure'],
+              ['END',    'End figure definition'],
+              ['MAPCHK', 'Closure check (display only)'],
+              ['DEL PTS','Delete point range (ignored)'],
+              ['TRAV',   'Traverse mode flag (ignored)'],
+              ['!',      'Comment line'],
+            ].map(([cmd, desc]) => (
+              <div key={cmd} style={{ display: 'flex', gap: '0.5rem', alignItems: 'baseline' }}>
+                <code style={{
+                  background: 'rgba(61,127,255,0.1)', color: 'var(--accent)',
+                  border: '1px solid rgba(61,127,255,0.2)',
+                  borderRadius: '3px', padding: '0 4px', fontSize: '0.7rem',
+                  fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+                }}>{cmd}</code>
+                <span style={{ color: 'var(--text-muted)' }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </details>
       </div>
     </div>
   );

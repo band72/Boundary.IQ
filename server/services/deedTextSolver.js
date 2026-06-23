@@ -11,13 +11,14 @@ import * as platLookup from './platLookupService.js';
 import * as plssParser from './plssParser.js';
 import * as legalWriter from './legalWriter.js';
 import { extractRaw, getActiveProvider, getActiveModel, setProvider } from './llm/dispatcher.js';
+import { tryScrivenerErrorSolver } from './repair.js';
 
-import { Agent } from 'undici';
-import { httpFetch } from './httpFetch.js';
-import { OLLAMA_URL } from '../config.js';
 import { isPlaceholderHallucination } from './geminiVision.js';
 import { postProcessOcrText } from './llm/ocrPostProcess.js';
 import { createChildLogger } from '../logger.js';
+import { httpFetch } from './httpFetch.js';
+import { OLLAMA_URL } from '../config.js';
+import { Agent } from 'undici';
 
 const log = createChildLogger('deedSolver');
 const OLLAMA_BASE = OLLAMA_URL;
@@ -641,98 +642,39 @@ function repairCourses(rawCourses, pob, units, isOpenEnded = false, commencement
     return testSolved.every(c => !c.distance || c.distance <= maxKnown * 1.25);
   }
 
-  // ── Step 2.5: Transposition Scrivener Repair ──────────────────────────
-  for (let i = 0; i < courses.length; i++) {
-    const c = courses[i];
-    
-    // Test distance transpositions (e.g. 105.25 instead of 150.25)
-    if (c.distance != null && !c.isUnknown) {
-      const distVariants = generateDistanceTranspositions(c.distance);
-      for (const newDist of distVariants) {
-        const test = courses.map((x, j) =>
-          j === i ? { ...x, distance: newDist } : { ...x }
-        );
-        const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-        const { result: rT } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
-        const rTBowtie = rT && (rT.areaAcres == null || rT.areaAcres < 0.0001) && !isOpenEnded;
-        if (rT && isPassing(rT) && !rTBowtie && isSensible(testSolved)) {
-          steps.push({
-            hypothesis: 'DISTANCE_TRANSPOSITION_REPAIR',
-            courseIndex: i,
-            originalDistance: c.distance,
-            correctedDistance: newDist
-          });
-          log.info({ course: i + 1, from: c.distance, to: newDist }, 'Scrivener Repair: Corrected transposed distance');
-          return { courses: rT.courses || testSolved, result: rT, steps };
+  // ── Step 2.5: Deterministic Scrivener Error Solver ──
+  const scrivenerResult = tryScrivenerErrorSolver({ courses }, pob, units, isOpenEnded);
+  if (scrivenerResult) {
+    const { result: tScriv } = tryCompute(scrivenerResult.courses, pob, units, isOpenEnded, commencementSegments);
+    if (tScriv && isPassing(tScriv)) {
+      const hypotheses = scrivenerResult.message || 'Stage 3.7: Scrivener Solver';
+      let courseIndex = -1;
+      let originalBearing = null, correctedBearing = null;
+      let originalDistance = null, correctedDistance = null;
+      for (let i = 0; i < courses.length; i++) {
+        if (i < scrivenerResult.courses.length) {
+          const orig = courses[i];
+          const rep = scrivenerResult.courses[i];
+          if (orig.bearing !== rep.bearing || orig.distance !== rep.distance || orig.radius !== rep.radius || orig.arcLength !== rep.arcLength || orig.chordDistance !== rep.chordDistance || orig.delta !== rep.delta) {
+            courseIndex = i;
+            originalBearing = orig.bearing;
+            correctedBearing = rep.bearing;
+            originalDistance = orig.distance;
+            correctedDistance = rep.distance;
+            break;
+          }
         }
       }
-    }
-
-    // Test bearing transpositions (e.g. N45°10'22"E instead of N45°22'10"E)
-    if (c.bearing && !c.isUnknown) {
-      const bearingVariants = generateBearingTranspositions(c.bearing);
-      for (const newBrg of bearingVariants) {
-        const test = courses.map((x, j) =>
-          j === i ? { ...x, bearing: newBrg } : { ...x }
-        );
-        const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-        const { result: rT } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
-        const rTBowtie = rT && (rT.areaAcres == null || rT.areaAcres < 0.0001) && !isOpenEnded;
-        if (rT && isPassing(rT) && !rTBowtie && isSensible(testSolved)) {
-          steps.push({
-            hypothesis: 'BEARING_TRANSPOSITION_REPAIR',
-            courseIndex: i,
-            originalBearing: c.bearing,
-            correctedBearing: newBrg
-          });
-          log.info({ course: i + 1, from: c.bearing, to: newBrg }, 'Scrivener Repair: Corrected transposed bearing');
-          return { courses: rT.courses || testSolved, result: rT, steps };
-        }
-      }
-    }
-  }
-
-  // Step 3: Single flip — try EW-only, NS-only, and full quadrant per course
-  const flipVariants = [
-    { fn: flipEW,       label: 'EW_FLIP' },
-    { fn: flipNS,       label: 'NS_FLIP' },
-    { fn: flipQuadrant, label: 'QUADRANT_FLIP' },
-  ];
-  for (const { fn: flipFn, label } of flipVariants) {
-    for (let i = 0; i < courses.length; i++) {
-      const c = courses[i];
-      if (!c.bearing || c.isUnknown) continue;
-      const flipped = flipFn(c.bearing);
-      if (flipped === c.bearing) continue;
-      const test = courses.map((x, j) =>
-        j === i ? { ...x, bearing: flipped } : { ...x }
-      );
-      const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-      const { result: r1 } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
-      const r1Bowtie = r1 && (r1.areaAcres == null || r1.areaAcres < 0.0001) && !isOpenEnded;
-      if (r1 && isPassing(r1) && !r1Bowtie && isSensible(testSolved)) {
-        steps.push({ hypothesis: `SINGLE_${label}`, courseIndex: i, originalBearing: c.bearing, correctedBearing: flipped });
-        return { courses: r1.courses || testSolved, result: r1, steps };
-      }
-    }
-  }
-
-  // Step 4: Double flip
-  for (let i = 0; i < courses.length; i++) {
-    for (let j = i + 1; j < courses.length; j++) {
-      const ci = courses[i], cj = courses[j];
-      if (!ci.bearing || ci.isUnknown || !cj.bearing || cj.isUnknown) continue;
-      const test = courses.map((x, k) => {
-        if (k === i || k === j) return { ...x, bearing: flipQuadrant(x.bearing) };
-        return { ...x };
+      steps.push({
+        hypothesis: hypotheses,
+        courseIndex,
+        originalBearing,
+        correctedBearing,
+        originalDistance,
+        correctedDistance
       });
-      const testSolved = traverseSvc.autoFixUnknownRuns(test, pob);
-      const { result: r2 } = tryCompute(testSolved, pob, units, isOpenEnded, commencementSegments);
-      const r2Bowtie = r2 && (r2.areaAcres == null || r2.areaAcres < 0.0001) && !isOpenEnded;
-      if (r2 && isPassing(r2) && !r2Bowtie && isSensible(testSolved)) {
-        steps.push({ hypothesis: 'DOUBLE_QUADRANT_FLIP', courseIndices: [i, j] });
-        return { courses: r2.courses || testSolved, result: r2, steps };
-      }
+      log.info({ hypothesis: hypotheses }, 'Scrivener Repair: resolved via tryScrivenerErrorSolver');
+      return { courses: scrivenerResult.courses, result: tScriv, steps };
     }
   }
 
@@ -1331,12 +1273,6 @@ export function solveFromText(deedText, options = {}) {
   // Fix degree sign read as 0 when followed by minutes and a minute mark: N51047' -> N51°47'
   normalizedText = normalizedText.replace(/\b([NSns]\s*\.?\s*\d{2})0(\d{2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
 
-  // Fix missing degree sign when degrees and minutes are run together: S5719' -> S57°19'
-  normalizedText = normalizedText.replace(/\b([NSns]\s*\.?\s*\d{2})(\d{2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
-
-  // Fix double quote read as degree symbol (e.g. N00"03'00"W -> N00°03'00"W)
-  normalizedText = normalizedText.replace(/\b([NSns]\s*\.?\s*\d{1,2})\s*"\s*(\d{1,2}\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032])/gi, '$1°$2');
-
   // Fix letters-to-digits in minutes/seconds fields:
   // Minutes + minute mark + seconds + second mark (e.g. 47'OO")
   normalizedText = normalizedText.replace(/(\d{1,2})\s*([\u2018\u2019\u201A\u02BC\u00B4\u2032'])\s*([0-9OLolI|!]{1,2})\s*(["\u201C\u201D\u201E\u2033\u2034'])/gi, (m, mins, minMark, secs, secMark) => {
@@ -1363,7 +1299,7 @@ export function solveFromText(deedText, options = {}) {
   // Pre-normalize surveyor dot-notation bearings: N.89°43'05"E. → N89°43'05"E
   // Pattern: cardinal letter (N/S) followed by a literal dot then digits
   normalizedText = normalizedText
-    .replace(/(?<![a-zA-Z])([NSns])\.([0-9])/g, '$1$2')   // N.00° → N00°
+    .replace(/\b([NSns])\.([0-9])/g, '$1$2')   // N.00° → N00°
     .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2') // 47".E → 47"E  or  47".W → 47"W
     .replace(/([EWew])\.(?=\s|,|;|$)/g, '$1')   // strip trailing dot after E/W
     .replace(/°['\u2018\u2019\u201A\u02BC\u00B4]/g, '°') // fix °' typo (extra apostrophe after degree symbol)
@@ -1403,15 +1339,14 @@ export function solveFromText(deedText, options = {}) {
 
   // Pre-normalize text: "RUN THENCE", "THENCE CONTINUE", "THEN" → all become THENCE
   const preparedText = normalizedText
-    .replace(/\bTHENCE\s+CONTINU(?:ING|E)\b/gi, 'THENCE')
-    .replace(/\bTHENCE\s+RUN(?:NING|S)?\b/gi, 'THENCE')
+    .replace(/\bTHENCE\s+CONTINUE(?:ING)?\b/gi, 'THENCE')
     .replace(/\bRUN\s+THENCE\b/gi, 'THENCE')
-    .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d])/gi, 'THENCE ')
+    .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d])/gi, 'THENCE ')
     // "CONTINUING...bearing" and "CONTINUE...bearing" -> THENCE
-    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=(?:NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ')
+    .replace(/\bCONTINU(?:ING|E)\s+(?:ALONG\s+[^,;.]{0,40}\s+)?(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ')
     // Standalone RUN [bearing] (not preceded by THENCE) → THENCE
     // e.g. "FROM THE POINT OF REFERENCE...RUN S.39°41'50"E."
-    .replace(/\bRUN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHERLY|SOUTHERLY|EASTERLY|WESTERLY|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ');
+    .replace(/\bRUN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d°])/gi, 'THENCE ');
 
 
   const rawSegments = preparedText.split(/\b(THENCE|COMMENCE)\b/i);
@@ -1518,7 +1453,7 @@ export function solveFromText(deedText, options = {}) {
 
     // ── Bearing parsing ──────────────────────────────────────────────────────
     const bearingContent = cleanContent
-      .replace(/(?<![a-zA-Z])([NSns])\.([0-9])/g, '$1$2')
+      .replace(/\b([NSns])\.([0-9])/g, '$1$2')
       .replace(/([0-9"])\s*\.([EWew])\b/g, '$1$2');
 
     let bearing = null;

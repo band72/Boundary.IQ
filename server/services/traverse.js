@@ -140,7 +140,7 @@ export function compute(req) {
   let tempAz = null;
   if (req.commencementSegments && req.commencementSegments.length > 0) {
     for (const comm of req.commencementSegments) {
-      if ((comm.type?.toLowerCase() === 'line' || comm.type?.toLowerCase() === 'squiggle') && comm.bearing) {
+      if (comm.type?.toLowerCase() === 'line' && comm.bearing) {
         try { tempAz = bp.parse(comm.bearing).azimuthDeg; } catch {}
       } else if (comm.type?.toLowerCase() === 'curve') {
         resolveCurveProperties(comm, tempAz);
@@ -155,7 +155,7 @@ export function compute(req) {
   }
 
   for (const course of resolved) {
-    if (course.type?.toLowerCase() === 'line' || course.type?.toLowerCase() === 'squiggle') {
+    if (course.type?.toLowerCase() === 'line') {
       if (course.bearing) {
         try { tempAz = bp.parse(course.bearing).azimuthDeg; } catch {}
       }
@@ -200,7 +200,7 @@ export function compute(req) {
     for (const comm of req.commencementSegments) {
       commCoords.push({ startN: currN, startE: currE });
       let dn = 0, de = 0;
-      if ((comm.type?.toLowerCase() === 'line' || comm.type?.toLowerCase() === 'squiggle') && comm.bearing && comm.distance != null) {
+      if (comm.type?.toLowerCase() === 'line' && comm.bearing && comm.distance != null) {
         try {
           const parsed = bp.parse(comm.bearing);
           tempAz = parsed.azimuthDeg;
@@ -237,7 +237,7 @@ export function compute(req) {
       const startN = commCoords[idx].startN + shiftN;
       const startE = commCoords[idx].startE + shiftE;
       
-      if ((comm.type?.toLowerCase() === 'line' || comm.type?.toLowerCase() === 'squiggle') && comm.bearing) {
+      if (comm.type?.toLowerCase() === 'line' && comm.bearing) {
         try { tempAz = bp.parse(comm.bearing).azimuthDeg; } catch {}
       } else if (comm.type?.toLowerCase() === 'curve' && comm.radius) {
         let deltaDeg = parseDmsToDecimal(comm.delta);
@@ -273,9 +273,9 @@ export function compute(req) {
   for (const course of courses) {
     let dn, de, label;
 
-    if (course.type?.toLowerCase() === 'line' || course.type?.toLowerCase() === 'squiggle') {
+    if (course.type?.toLowerCase() === 'line') {
       if (!course.bearing || course.distance == null)
-        throw new Error(`Course ${seq}: Line/Squiggle requires Bearing and Distance.`);
+        throw new Error(`Course ${seq}: Line requires Bearing and Distance.`);
 
       const { azimuthDeg, azimuthRad } = bp.parse(course.bearing);
       const dist = course.distance * uf;
@@ -315,13 +315,19 @@ export function compute(req) {
   const linearError = Math.sqrt(errorN * errorN + errorE * errorE);
   const precision = (perimeter > 0 && linearError > 0) ? perimeter / linearError : Number.MAX_SAFE_INTEGER;
 
-  // Compass Rule
-  const adjusted = compassRuleAdjust(
-    stations,
-    req.isOpenEnded ? 0 : errorN,
-    req.isOpenEnded ? 0 : errorE,
-    perimeter
-  );
+  // Adjustment Method
+  let adjusted;
+  const isCrandall = (req.adjustmentMethod || '').toLowerCase() === 'crandall';
+  if (isCrandall && !req.isOpenEnded) {
+    adjusted = crandallAdjust(stations, errorN, errorE);
+  } else {
+    adjusted = compassRuleAdjust(
+      stations,
+      req.isOpenEnded ? 0 : errorN,
+      req.isOpenEnded ? 0 : errorE,
+      perimeter
+    );
+  }
 
   const hasSelfIntersection = detectSelfIntersection(adjusted);
   const enforceFailsafe = process.env.ENFORCE_NO_SELF_INTERSECTION === 'true';
@@ -482,8 +488,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCent
     } else {
       incTangent = t1;
     }
-    // console.log(` RadToCenterDegRadToCenterDeg radialDirDeg radialDirRad radToCenterDeg RadToCenterDeg RadToCenterDeg RadToCenterDeg radToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg radToCenterDegRadToCenterDeg RadToCenterDegRadToCenterDeg RadToCenterDeg RadToCenterDeg [traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
-    // console.log(`[traverse.js] Concentric curve matched. Radius: ${c.radius}, Selected tangent: ${bp.toDisplayString(incTangent)}`);
+
   }
 
   let outgoingTangent = null;
@@ -523,7 +528,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCent
     const dn = chordDist * Math.cos(synthAzRad);
     const de = chordDist * Math.sin(synthAzRad);
     const label = `Curve R=${(c.radius).toFixed(2)} Δ=${deltaDeg.toFixed(4)}° [CHORD-SYNTH]`;
-    // console.log(`Curve chord synthesized: bearing=${bp.toDisplayString(synthAzDeg)} dist=${chordDist.toFixed(3)}'`);
+
     return { dn, de, perimeter: perim, label, centerN, centerE, outgoingTangent };
   }
 
@@ -549,6 +554,63 @@ function compassRuleAdjust(stations, errN, errE, perimeter) {
     const k = perimeter > 0 ? cumDist / perimeter : 0;
     result.push({ seq: i, northing: s.northing + errN * k, easting: s.easting + errE * k });
   }
+  return result;
+}
+
+// ── Crandall Adjustment Method ────────────────────────────────────────────────
+export function crandallAdjust(stations, errN, errE) {
+  const result = [];
+  result.push({ seq: 0, northing: stations[0].northing, easting: stations[0].easting });
+
+  let A = 0;
+  let B = 0;
+  let C = 0;
+
+  for (let i = 1; i < stations.length; i++) {
+    const s = stations[i];
+    const legDist = Math.sqrt(s.depDN * s.depDN + s.depDE * s.depDE);
+    if (legDist > 0.00001) {
+      A += (s.depDN * s.depDN) / legDist;
+      B += (s.depDN * s.depDE) / legDist;
+      C += (s.depDE * s.depDE) / legDist;
+    }
+  }
+
+  const det = A * C - B * B;
+
+  if (Math.abs(det) <= 1e-9) {
+    // Fall back to compass rule
+    const perimeter = stations.reduce((acc, s, idx) => {
+      if (idx === 0) return acc;
+      return acc + Math.sqrt(s.depDN * s.depDN + s.depDE * s.depDE);
+    }, 0);
+    return compassRuleAdjust(stations, errN, errE, perimeter);
+  }
+
+  const lambda1 = (errN * C - errE * B) / det;
+  const lambda2 = (errE * A - errN * B) / det;
+
+  let curN = stations[0].northing;
+  let curE = stations[0].easting;
+
+  for (let i = 1; i < stations.length; i++) {
+    const s = stations[i];
+    const legDist = Math.sqrt(s.depDN * s.depDN + s.depDE * s.depDE);
+    let adjDN = s.depDN;
+    let adjDE = s.depDE;
+
+    if (legDist > 0.00001) {
+      const vi = lambda1 * s.depDN + lambda2 * s.depDE;
+      const factor = 1.0 + vi / legDist;
+      adjDN = s.depDN * factor;
+      adjDE = s.depDE * factor;
+    }
+
+    curN += adjDN;
+    curE += adjDE;
+    result.push({ seq: i, northing: curN, easting: curE });
+  }
+
   return result;
 }
 
@@ -634,7 +696,7 @@ export function autoFixUnknownRuns(courses, pob) {
 
   const isIncompleteCourse = (c) => {
     if (c.isUnknown) return true;
-    if (c.type?.toLowerCase() === 'line' || c.type?.toLowerCase() === 'squiggle') {
+    if (c.type?.toLowerCase() === 'line') {
       // distance=0 is treated as unknown — meander courses often land here
       // when the AI sees "along meanderings thereof, 100 ft more or less"
       if (!c.bearing || c.distance == null || isNaN(c.distance) || c.distance === 0) return true;
@@ -715,7 +777,7 @@ export function autoFixUnknownRuns(courses, pob) {
         // Restore the corresponding original course.  Because run[1] starts after
         // run[0] and run[0] was collapsed to 1 course, the frozen slots shift by
         // (run[0].end - run[0].start) positions relative to their original index.
-        const originalIdx = runs[1].start + (i - (runs[0].start + 1));
+        const originalIdx = i + (runs[0].end - runs[0].start);
         if (originalIdx >= 0 && originalIdx < courses.length) {
           pass2[i] = { ...courses[originalIdx] };
         }
@@ -767,24 +829,61 @@ function _solveOneRun(courses, run, pob) {
   if (chordDist < 0.01 || isNaN(chordDist)) return courses; // too small or invalid to solve
 
   const tieBearing = bp.vectorToBearing(dN_tie, dE_tie);
-  const replacement = {
-    ...courses[run.start],
-    type: courses[run.start]?.type || 'Line',
-    bearing: tieBearing,
-    distance: Math.round(chordDist * 100) / 100,
-    isUnknown: false,
-  };
+
+  const k = run.end - run.start + 1;
+  const replacements = [];
+
+  if (k > 1) {
+    const weights = [];
+    let totalWeight = 0;
+    for (let i = run.start; i <= run.end; i++) {
+      const dist = parseFloat(courses[i].distance);
+      const w = (!isNaN(dist) && dist > 0) ? dist : 1.0;
+      weights.push(w);
+      totalWeight += w;
+    }
+
+    for (let idx = 0; idx < k; idx++) {
+      const i = run.start + idx;
+      const p = totalWeight > 0 ? weights[idx] / totalWeight : 1.0 / k;
+      const segDist = chordDist * p;
+      const orig = courses[i];
+      const isCurve = orig.type?.toLowerCase() === 'curve';
+      
+      const rep = {
+        ...orig,
+        type: orig.type || 'Line',
+        isUnknown: false
+      };
+
+      if (isCurve) {
+        rep.chordBearing = tieBearing;
+        rep.chordDistance = Math.round(segDist * 100) / 100;
+      } else {
+        rep.bearing = tieBearing;
+        rep.distance = Math.round(segDist * 100) / 100;
+      }
+      replacements.push(rep);
+    }
+  } else {
+    replacements.push({
+      type: 'Line',
+      bearing: tieBearing,
+      distance: Math.round(chordDist * 100) / 100,
+      isUnknown: false,
+    });
+  }
 
   const result = [...courses];
-  result.splice(run.start, run.end - run.start + 1, replacement);
+  result.splice(run.start, k, ...replacements);
 
-  log.info({ run: `${run.start}-${run.end}`, tieBearing, dist: replacement.distance.toFixed(2) }, 'Inverse Gap Solver: Solved run');
+  log.info({ run: `${run.start}-${run.end}`, tieBearing, count: replacements.length }, 'Inverse Gap Solver: Solved run');
   return result;
 }
 
 function computeVector(c) {
   try {
-    if (c.type?.toLowerCase() === 'line' || c.type?.toLowerCase() === 'squiggle') {
+    if (c.type?.toLowerCase() === 'line') {
       const { azimuthRad } = bp.parse(c.bearing);
       const dist = parseFloat(c.distance);
       if (isNaN(dist) || isNaN(azimuthRad)) return { dn: 0, de: 0 };

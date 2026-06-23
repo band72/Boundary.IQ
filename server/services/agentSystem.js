@@ -4,7 +4,6 @@
 import * as gemini from './geminiVision.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
-import { tryBowtieAutoFix, trySurveyorShapeCorrection, detectBacktracking, isMeanderDeed, tryScrivenerErrorSolver, applyCompassRuleIfEligible } from './repair.js';
 
 /**
  * Rec 3 helper — produce up to 3 course-set variants by flipping the bearing
@@ -55,8 +54,9 @@ export class ExtractionAgent {
  * Computes loops, closure errors, areas, and solves meander gaps.
  */
 export class CogoAgent {
-  constructor() {
+  constructor(helpers = {}) {
     this.name = 'COGO Agent (Coordinate Geometry)';
+    this.helpers = helpers;
   }
 
   analyze(courses, pointOfBeginning = { northing: 5000, easting: 5000 }, units = 'Feet', isOpenEnded = false) {
@@ -83,8 +83,8 @@ export class CogoAgent {
       // Rec 1: linearError === 0 must always pass regardless of precisionVal parsing
       let isPassing = isOpenEnded || linearError === 0 || linearError < 0.30 || precisionVal >= 10000;
       let finalResult = result;
-      if (!isPassing) {
-        const adjusted = applyCompassRuleIfEligible(result);
+      if (!isPassing && this.helpers.applyCompassRuleIfEligible) {
+        const adjusted = this.helpers.applyCompassRuleIfEligible(result);
         if (adjusted.compassRuleApplied) {
           finalResult = adjusted;
           isPassing = true;
@@ -130,8 +130,9 @@ export class CogoAgent {
  * Now also leverages parseConfidence flags from bearingParser (Fix #4).
  */
 export class LegalSurveyorAgent {
-  constructor() {
+  constructor(helpers = {}) {
     this.name = 'Legal Surveyor Agent';
+    this.helpers = helpers;
   }
 
   diagnose(courses, cogoReport, pob = { northing: 5000, easting: 5000 }, units = 'Feet', extraction = null, isOpenEnded = false) {
@@ -140,7 +141,7 @@ export class LegalSurveyorAgent {
 
     // 1. Hypothesis: 3-Side Meander Loop
     if (courses.length === 3) {
-      const isMeander = extraction ? isMeanderDeed(extraction) : false;
+      const isMeander = (extraction && this.helpers.isMeanderDeed) ? this.helpers.isMeanderDeed(extraction) : false;
       if (isMeander) {
         diagnoses.push({
           type: 'MEANDER_COMPLETION',
@@ -158,42 +159,44 @@ export class LegalSurveyorAgent {
     }
 
     // 2. Hypothesis: 4-Course Rectangular alignment scrivener
-    if (courses.length === 4) {
+    if (courses.length === 4 && this.helpers.trySurveyorShapeCorrection) {
       diagnoses.push({
         type: 'RECTANGULAR_ALIGNMENT',
         confidence: 0.85,
         message: 'Exactly 4 courses detected. Evaluating rectangular coordinate alignments.',
         apply: () => {
-          const corrected = trySurveyorShapeCorrection({ courses }, pob, units);
+          const corrected = this.helpers.trySurveyorShapeCorrection({ courses }, pob, units);
           return corrected?.courses || courses;
         }
       });
     }
 
     // 3. Hypothesis: Backtracking / Riddle Loop
-    const hasBacktracking = detectBacktracking(courses);
-    if (hasBacktracking) {
+    const hasBacktracking = this.helpers.detectBacktracking ? this.helpers.detectBacktracking(courses) : false;
+    if (hasBacktracking && this.helpers.trySurveyorShapeCorrection) {
       diagnoses.push({
         type: 'BACKTRACK_CORRECTION',
         confidence: 0.90,
         message: 'Backtracking detected. Running box shape alignment corrector.',
         apply: () => {
-          const corrected = trySurveyorShapeCorrection({ courses }, pob, units);
+          const corrected = this.helpers.trySurveyorShapeCorrection({ courses }, pob, units);
           return corrected?.courses || courses;
         }
       });
     }
 
     // 4. Hypothesis: Bowtie self-intersection
-    diagnoses.push({
-      type: 'BOWTIE_COMBINATORIAL_FLIP',
-      confidence: 0.70,
-      message: 'Evaluating combinatoric quadrant bearing flips (N <-> S, E <-> W).',
-      apply: () => {
-        const corrected = tryBowtieAutoFix({ courses }, pob, units);
-        return corrected?.courses || courses;
-      }
-    });
+    if (this.helpers.tryBowtieAutoFix) {
+      diagnoses.push({
+        type: 'BOWTIE_COMBINATORIAL_FLIP',
+        confidence: 0.70,
+        message: 'Evaluating combinatoric quadrant bearing flips (N <-> S, E <-> W).',
+        apply: () => {
+          const corrected = this.helpers.tryBowtieAutoFix({ courses }, pob, units);
+          return corrected?.courses || courses;
+        }
+      });
+    }
 
     // 5. Hypothesis: Specific OCR Transcription Bust (Vector Dot-Product Projection)
     if (cogoReport.linearError > 0.30 && cogoReport.linearError < 500) {
@@ -324,13 +327,13 @@ export class LegalSurveyorAgent {
       }
     }
     // 7. Hypothesis: Scrivener error (distance typo, bearing typo, etc.)
-    if (courses.length >= 3) {
+    if (courses.length >= 3 && this.helpers.tryScrivenerErrorSolver) {
       diagnoses.push({
         type: 'SCRIVENER_CORRECTION',
         confidence: 0.82,
         message: 'Evaluating deterministic scrivener corrections (single-course bearing/distance flips/typos).',
         apply: () => {
-          const sRes = tryScrivenerErrorSolver({ courses }, pob, units, isOpenEnded);
+          const sRes = this.helpers.tryScrivenerErrorSolver({ courses }, pob, units, isOpenEnded);
           return sRes?.courses || courses;
         }
       });
@@ -442,11 +445,12 @@ export class ConfidenceScorerAgent {
  * Fix #12: Emits agentTurns telemetry array for persistence in diagnosticsDb.
  */
 export class SupervisorAgent {
-  constructor() {
+  constructor(helpers = {}) {
     this.name = 'Supervisor Agent (Central Orchestrator)';
+    this.helpers = helpers;
     this.extractor = new ExtractionAgent();
-    this.cogo = new CogoAgent();
-    this.surveyor = new LegalSurveyorAgent();
+    this.cogo = new CogoAgent(helpers);
+    this.surveyor = new LegalSurveyorAgent(helpers);
     this.scorer = new ConfidenceScorerAgent();
   }
 
@@ -553,8 +557,8 @@ export class SupervisorAgent {
         let appliedScrivener = false;
         let scrivenerMsg = '';
 
-        if (!testReport.isPassing && diag.type !== 'SCRIVENER_CORRECTION') {
-          const sRes = tryScrivenerErrorSolver({ courses: candidateCourses }, pob, units, isOpenEnded);
+        if (!testReport.isPassing && diag.type !== 'SCRIVENER_CORRECTION' && this.helpers.tryScrivenerErrorSolver) {
+          const sRes = this.helpers.tryScrivenerErrorSolver({ courses: candidateCourses }, pob, units, isOpenEnded);
           if (sRes && sRes.courses) {
             const sReport = this.cogo.analyze(sRes.courses, pob, units, isOpenEnded);
             if (sReport.success && sReport.isPassing) {

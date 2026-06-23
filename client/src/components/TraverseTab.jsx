@@ -509,9 +509,9 @@ export default function TraverseTab() {
         </div>
       )}
 
-      <div className="split-layout">
+      <div className="split-layout" style={{ alignItems: 'start' }}>
         {/* Left Column: Input Panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', alignSelf: 'start' }}>
           {/* ── Setup ───────────────────────────────────────────────────── */}
           <div className="card">
             <div className="card-header">
@@ -972,7 +972,7 @@ export default function TraverseTab() {
         </div>
 
         {/* Right Column: Dynamic Map, Error & Results */}
-        <div className="sticky-column">
+        <div className="sticky-column" style={{ alignSelf: 'start' }}>
           {/* Map — Always visible if there are courses! */}
           <div className="card">
             <div className="card-header">

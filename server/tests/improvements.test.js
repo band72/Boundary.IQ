@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import * as bp from '../services/bearingParser.js';
 import { parseExtractionJson, solveFromCourses } from '../services/deedTextSolver.js';
 import { generateGeoJson, generateLandXml } from '../services/exportService.js';
-import { parseDmsToDecimal } from '../services/traverse.js';
+import { parseDmsToDecimal, autoFixUnknownRuns } from '../services/traverse.js';
 
 describe('Boundary.IQ Improvements Tests', () => {
 
@@ -132,7 +132,7 @@ describe('Boundary.IQ Improvements Tests', () => {
 
       expect(solved.status).toBe('PASS');
       expect(solved.repairedCourses[0].distance).toBe(150.25);
-      expect(solved.primaryHypothesis).toBe('DISTANCE_TRANSPOSITION_REPAIR');
+      expect(solved.primaryHypothesis).toContain('distance 105.25→150.25ft');
     });
 
     it('corrects transposed components in segment bearing', () => {
@@ -154,7 +154,7 @@ describe('Boundary.IQ Improvements Tests', () => {
 
       expect(solved.status).toBe('PASS');
       expect(solved.repairedCourses[1].bearing).toBe('N45°22\'10"E');
-      expect(solved.primaryHypothesis).toBe('BEARING_TRANSPOSITION_REPAIR');
+      expect(solved.primaryHypothesis).toContain('min/sec digit swap');
     });
   });
 
@@ -395,76 +395,133 @@ describe('Boundary.IQ Improvements Tests', () => {
     });
   });
 
-  describe('11. Squiggle and Meandering Line Unification', () => {
-    it('calculates traverse coordinates correctly for Squiggle line types', async () => {
-      const traverseSvc = await import('../services/traverse.js');
+  describe('11. 2-Unknown-Runs Iterative Solver', () => {
+    it('successfully runs the iterative solver for two non-adjacent unknown runs', () => {
       const courses = [
         { type: 'Line', bearing: 'N00°00\'00"E', distance: 100 },
-        { type: 'Squiggle', bearing: 'N90°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: null, distance: null, isUnknown: true }, // Run 0
+        { type: 'Line', bearing: 'N90°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: null, distance: null, isUnknown: true }, // Run 1
         { type: 'Line', bearing: 'S00°00\'00"W', distance: 100 },
-        { type: 'Squiggle', bearing: 'S90°00\'00"W', distance: 100 }
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 300 }
       ];
-      const res = traverseSvc.compute({
-        pointOfBeginning: { northing: 5000, easting: 5000 },
-        courses,
-        units: 'feet',
+      const resolved = autoFixUnknownRuns(courses, { northing: 5000, easting: 5000 });
+      expect(resolved[1].isUnknown).toBe(false);
+      expect(resolved[1].distance).toBeCloseTo(200, 1);
+      expect(resolved[1].bearing).toContain('E');
+    });
+  });
+
+  describe('12. Curve Course Scrivener Repairs (Principle 9)', () => {
+    it('corrects a transposed curve radius to achieve closure', () => {
+      // Perfect shape is:
+      // C1: N00E 100
+      // C2 (Curve): radius 100, delta 90, direction right, chord N45E 141.42, arc 157.08
+      // C3: S00E 200
+      // C4: N90W 100
+      // We transpose C2 radius 100 -> 10.
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 100.00 },
+        {
+          type: 'Curve',
+          radius: 10.00, // Transposed! Should be 100.00
+          delta: '90°00\'00"',
+          direction: 'right',
+          chordBearing: 'N45°00\'00"E',
+          chordDistance: 14.14,
+          arcLength: 15.71
+        },
+        { type: 'Line', bearing: 'S00°00\'00"E', distance: 200.00 },
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 100.00 }
+      ];
+
+      const solved = solveFromCourses(courses, {
+        pobNorthing: 5000,
+        pobEasting: 5000,
+        units: 'Feet',
         isOpenEnded: false
       });
-      expect(res.stations).toHaveLength(5);
-      expect(res.stations[1].northing).toBeCloseTo(5100, 2);
-      expect(res.stations[1].easting).toBeCloseTo(5000, 2);
-      expect(res.stations[2].northing).toBeCloseTo(5100, 2);
-      expect(res.stations[2].easting).toBeCloseTo(5100, 2);
-      expect(res.stations[3].northing).toBeCloseTo(5000, 2);
-      expect(res.stations[3].easting).toBeCloseTo(5100, 2);
-      expect(res.stations[4].northing).toBeCloseTo(5000, 2);
-      expect(res.stations[4].easting).toBeCloseTo(5000, 2);
-      expect(res.closure.linearError).toBeLessThan(0.01);
+
+      expect(solved.status).toBe('PASS');
+      expect(solved.repairedCourses[1].radius).toBe(100.00);
+      expect(solved.primaryHypothesis).toContain('radius 10→100ft');
+    });
+  });
+
+  describe('13. New Recommendations (Decimal, Typo, Crandall, Meander Splitting)', () => {
+    it('parses decimal degrees bearings with prefix and suffix', () => {
+      const res1 = bp.parse('N 45.369 E');
+      expect(res1.azimuthDeg).toBeCloseTo(45.369, 5);
+
+      const res2 = bp.parse('S89.12345W');
+      expect(res2.azimuthDeg).toBeCloseTo(180 + 89.12345, 5);
+
+      const res3 = bp.parse('45.5E'); // no prefix
+      expect(res3.azimuthDeg).toBeCloseTo(45.5, 5);
     });
 
-    it('generates correct legal descriptions for Squiggle and Meandering Line types', async () => {
-      const legalWriter = await import('../services/legalWriter.js');
-      
-      // 1. Squiggle with bearing and distance
-      const desc1 = legalWriter.write({
-        courses: [
-          { type: 'Squiggle', bearing: 'N45°00\'00"E', distance: 150 }
-        ],
-        units: 'feet'
-      });
-      expect(desc1).toContain('THENCE along a meandering line North 45°00\'00" East, a distance of 150.00 feet');
+    it('normalizes fuzzy quadrant OCR letters correctly', () => {
+      const res1 = bp.parse('M45.5P');
+      expect(res1.azimuthDeg).toBeCloseTo(45.5, 5);
 
-      // 2. Squiggle with description only
-      const desc2 = legalWriter.write({
-        courses: [
-          { type: 'Squiggle', description: 'along the shoreline of the river' }
-        ],
-        units: 'feet'
-      });
-      expect(desc2).toContain('THENCE along a meandering line (along the shoreline of the river)');
+      const res2 = bp.parse('H45.5F');
+      expect(res2.azimuthDeg).toBeCloseTo(45.5, 5);
 
-      // 3. Meandering Line legacy type
-      const desc3 = legalWriter.write({
-        courses: [
-          { type: 'Meandering Line', description: 'following the creek bed' }
-        ],
-        units: 'feet'
-      });
-      expect(desc3).toContain('THENCE along a meandering line (following the creek bed)');
+      const res3 = bp.parse('M 45.5 P');
+      expect(res3.azimuthDeg).toBeCloseTo(45.5, 5);
     });
 
-    it('retains the original course type when the gap solver solves an unknown course', async () => {
-      const traverseSvc = await import('../services/traverse.js');
+    it('normalizes double quotes in minutes and smashed decimal seconds from OCR', () => {
+      const res1 = bp.parse('N59°18"41E');
+      expect(bp.toDisplayString(res1.azimuthDeg)).toBe('N59°18\'41.00"E');
+
+      const res2 = bp.parse("S86°29'004E");
+      expect(bp.toDisplayString(res2.azimuthDeg)).toBe('S86°29\'00.40"E');
+    });
+
+
+    it('applies Crandall adjustment correctly when requested', () => {
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 101.0 },
+        { type: 'Line', bearing: 'N90°00\'00"E', distance: 100.0 },
+        { type: 'Line', bearing: 'S00°00\'00"W', distance: 100.0 },
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 100.0 }
+      ];
+
+      const res = solveFromCourses(courses, {
+        pobNorthing: 5000,
+        pobEasting: 5000,
+        units: 'Feet',
+        isOpenEnded: false,
+        adjustmentMethod: 'Crandall'
+      });
+
+      const stations = res.traverse.adjustedStations;
+      const last = stations[stations.length - 1];
+      expect(last.northing).toBeCloseTo(5000, 4);
+      expect(last.easting).toBeCloseTo(5000, 4);
+      expect(stations[1].easting).toBeCloseTo(5000, 4);
+    });
+
+    it('splits meander tie vectors proportionally over multiple unknown courses', () => {
       const courses = [
         { type: 'Line', bearing: 'N00°00\'00"E', distance: 100 },
-        { type: 'Squiggle', isUnknown: true, description: 'Meandering shoreline' },
-        { type: 'Line', bearing: 'S90°00\'00"W', distance: 100 }
+        { type: 'Line', bearing: 'N90°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: 'S00°00\'00"W', distance: 50 },
+        { type: 'Line', bearing: null, distance: 100, isUnknown: true },
+        { type: 'Line', bearing: null, distance: 300, isUnknown: true },
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 300 }
       ];
-      const solved = traverseSvc.autoFixUnknownRuns(courses, { northing: 5000, easting: 5000 });
-      expect(solved[1].type).toBe('Squiggle');
-      expect(solved[1].bearing).toBeDefined();
-      expect(solved[1].distance).toBeCloseTo(141.42, 1);
-      expect(solved[1].description).toBe('Meandering shoreline');
+
+      const resolved = autoFixUnknownRuns(courses, { northing: 5000, easting: 5000 });
+      expect(resolved).toHaveLength(6);
+      expect(resolved[3].isUnknown).toBe(false);
+      expect(resolved[4].isUnknown).toBe(false);
+
+      const totalTieDist = Math.sqrt(50 * 50 + 200 * 200);
+      expect(resolved[3].distance).toBeCloseTo(totalTieDist * 0.25, 1);
+      expect(resolved[4].distance).toBeCloseTo(totalTieDist * 0.75, 1);
+      expect(resolved[3].bearing).toBe(resolved[4].bearing);
     });
   });
 });
