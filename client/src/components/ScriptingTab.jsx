@@ -1097,6 +1097,7 @@ export default function ScriptingTab() {
   const canvasRef = useRef(null);
   const textareaRef = useRef(null);
   const dragDistanceRef = useRef(0);
+  const [canvasDimensions, setCanvasDimensions] = useState({ width: 360, height: 260 });
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [center, setCenter] = useState({ e: 5000, n: 5000 });
@@ -1704,7 +1705,7 @@ export default function ScriptingTab() {
       if (!trimmed || trimmed.startsWith('!') || trimmed.startsWith('#') || trimmed.startsWith('//')) return false;
       const parts = trimmed.split(/\s+/);
       const cmd = parts[0];
-      return cmd === 'TRAV' || cmd === 'STN' || cmd === 'BD' || cmd === 'NE' || cmd === 'BEG' || cmd === 'END' || cmd === 'TRANS' || cmd === 'ROTATE' || cmd === 'MAPCHK';
+      return cmd === 'TRAV' || cmd === 'STN' || cmd === 'BD' || cmd === 'NE' || cmd === 'NEZ' || cmd === 'BEG' || cmd === 'END' || cmd === 'TRANS' || cmd === 'ROTATE' || cmd === 'MAPCHK' || cmd === 'RKRK' || cmd === 'ARCARC' || cmd === 'SAVE' || cmd === 'XC';
     });
 
     if (isCogoScript) {
@@ -1713,6 +1714,8 @@ export default function ScriptingTab() {
       let currentStation = 1;
       let traverseMode = true;
       let currentBoundaryName = null;
+      let lastIntersectionSol1 = null;
+      let lastIntersectionSol2 = null;
       
       lines.forEach((line, index) => {
         const trimmed = line.trim();
@@ -1722,6 +1725,10 @@ export default function ScriptingTab() {
         const parts = cleanLine.split(' ');
         const cmd = parts[0].toUpperCase();
         
+        if (['AP', 'DEL', 'DISP', 'INV', 'LIST'].includes(cmd)) {
+          return;
+        }
+
         if (cmd === 'TRAV') {
           if (parts[1]?.toUpperCase() === 'ON') {
             traverseMode = true;
@@ -1731,23 +1738,48 @@ export default function ScriptingTab() {
           return;
         }
         
-        if (cmd === 'NE') {
-          const pt = parseInt(parts[1]);
-          const n = parseFloat(parts[2]);
-          const e = parseFloat(parts[3]);
-          if (!isNaN(pt) && !isNaN(n) && !isNaN(e)) {
-            pointsMap[pt] = {
-              id: String(pt),
-              northing: n,
-              easting: e,
-              elevation: 0,
-              rawDescription: parts.slice(4).join(' '),
-              tokens: parts.slice(4),
+        if (cmd === 'NE' || cmd === 'NEZ') {
+          let ptId = null;
+          let nVal = null;
+          let eVal = null;
+          let zVal = 0;
+          let descTokens = [];
+
+          if (parts.length >= 4 && !isNaN(parseInt(parts[1])) && parseInt(parts[1]) < 100000 && !isNaN(parseFloat(parts[2])) && !isNaN(parseFloat(parts[3]))) {
+            ptId = parseInt(parts[1]);
+            nVal = parseFloat(parts[2]);
+            eVal = parseFloat(parts[3]);
+            let descStart = 4;
+            if (parts.length >= 5 && !isNaN(parseFloat(parts[4]))) {
+              zVal = parseFloat(parts[4]);
+              descStart = 5;
+            }
+            descTokens = parts.slice(descStart);
+          } else if (parts.length >= 3 && !isNaN(parseFloat(parts[1])) && !isNaN(parseFloat(parts[2]))) {
+            ptId = currentStation || 1;
+            nVal = parseFloat(parts[1]);
+            eVal = parseFloat(parts[2]);
+            let descStart = 3;
+            if (parts.length >= 4 && !isNaN(parseFloat(parts[3]))) {
+              zVal = parseFloat(parts[3]);
+              descStart = 4;
+            }
+            descTokens = parts.slice(descStart);
+          }
+
+          if (ptId !== null && nVal !== null && eVal !== null) {
+            pointsMap[ptId] = {
+              id: String(ptId),
+              northing: nVal,
+              easting: eVal,
+              elevation: zVal,
+              rawDescription: descTokens.join(' '),
+              tokens: descTokens,
               lineIndex: index + 1
             };
-            pointsList.push(pointsMap[pt]);
+            pointsList.push(pointsMap[ptId]);
           } else {
-            parseErrors.push(`Line ${index + 1}: Invalid NE command format.`);
+            parseErrors.push(`Line ${index + 1}: Invalid NE/NEZ command format.`);
           }
           return;
         }
@@ -1850,6 +1882,102 @@ export default function ScriptingTab() {
           return;
         }
 
+        if (cmd === 'RKRK' || cmd === 'ARCARC') {
+          const id1 = parts[1];
+          const r1 = parseFloat(parts[2]);
+          const id2 = parts[3];
+          const r2 = parseFloat(parts[4]);
+          const p1 = pointsMap[parseInt(id1)] || pointsMap[id1];
+          const p2 = pointsMap[parseInt(id2)] || pointsMap[id2];
+          if (!p1 || !p2) {
+            parseErrors.push(`Line ${index + 1}: Point ${id1} or ${id2} not found for circle-circle intersection.`);
+            return;
+          }
+          if (isNaN(r1) || isNaN(r2)) {
+            parseErrors.push(`Line ${index + 1}: Invalid radius values for circle-circle intersection.`);
+            return;
+          }
+          const dx = p2.easting - p1.easting;
+          const dy = p2.northing - p1.northing;
+          const d = Math.hypot(dx, dy);
+          if (d > r1 + r2 || d < Math.abs(r1 - r2) || d < 0.0001) {
+            parseErrors.push(`Line ${index + 1}: Circles do not intersect (d=${d.toFixed(2)}, r1=${r1}, r2=${r2}).`);
+            return;
+          }
+          const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+          const h = Math.sqrt(Math.max(0, r1 * r1 - a * a));
+          const mx = p1.easting + a * dx / d;
+          const my = p1.northing + a * dy / d;
+          lastIntersectionSol1 = { northing: my + h * (dx / d), easting: mx - h * (dy / d) };
+          lastIntersectionSol2 = { northing: my - h * (dx / d), easting: mx + h * (dy / d) };
+          return;
+        }
+
+        if (cmd === 'SAVE') {
+          const direction = (parts[1] || '').toUpperCase();
+          const newId = parseInt(parts[2]) || parts[2];
+          if (!newId) {
+            parseErrors.push(`Line ${index + 1}: Missing point ID in SAVE command.`);
+            return;
+          }
+          if (!lastIntersectionSol1 || !lastIntersectionSol2) {
+            parseErrors.push(`Line ${index + 1}: No pending circle intersection solutions to save.`);
+            return;
+          }
+          let chosen = lastIntersectionSol1;
+          if (direction === 'NORTH') chosen = lastIntersectionSol1.northing >= lastIntersectionSol2.northing ? lastIntersectionSol1 : lastIntersectionSol2;
+          else if (direction === 'SOUTH') chosen = lastIntersectionSol1.northing <= lastIntersectionSol2.northing ? lastIntersectionSol1 : lastIntersectionSol2;
+          else if (direction === 'EAST') chosen = lastIntersectionSol1.easting >= lastIntersectionSol2.easting ? lastIntersectionSol1 : lastIntersectionSol2;
+          else if (direction === 'WEST') chosen = lastIntersectionSol1.easting <= lastIntersectionSol2.easting ? lastIntersectionSol1 : lastIntersectionSol2;
+
+          const desc = parts.slice(3).join(' ') || 'RAD PT';
+          pointsMap[newId] = {
+            id: String(newId),
+            northing: chosen.northing,
+            easting: chosen.easting,
+            elevation: 0,
+            rawDescription: desc,
+            tokens: [desc],
+            lineIndex: index + 1
+          };
+          pointsList.push(pointsMap[newId]);
+          return;
+        }
+
+        if (cmd === 'XC') {
+          if (parts[1]?.toUpperCase() === 'PTS' && currentBoundaryName) {
+            const radius = parseFloat(parts[2]);
+            const centerPtId = parts[3];
+            const toPtId = parts[4];
+            const fig = cogoActiveFigures[currentBoundaryName];
+            if (fig && fig.vertices.length > 0) {
+              const lastVert = fig.vertices[fig.vertices.length - 1];
+              lastVert.isCurveBegin = true;
+              lastVert.curveRadius = Math.abs(radius);
+              lastVert.curveDirection = radius < 0 ? 'LEFT' : 'RIGHT';
+              
+              const toPoint = pointsMap[parseInt(toPtId)] || pointsMap[toPtId];
+              if (toPoint) {
+                fig.vertices.push({
+                  id: String(toPtId),
+                  northing: toPoint.northing,
+                  easting: toPoint.easting,
+                  elevation: 0,
+                  hOffset: 0,
+                  vOffset: 0,
+                  isCurve: false,
+                  lineIndex: index + 1
+                });
+              } else {
+                parseErrors.push(`Line ${index + 1}: Point ${toPtId} not found for curve end.`);
+              }
+            } else {
+              parseErrors.push(`Line ${index + 1}: No starting point for XC PTS curve.`);
+            }
+          }
+          return;
+        }
+
         // Check if within a boundary block (just numbers list)
         if (currentBoundaryName && /^\d+$/.test(cleanLine)) {
           const pt = parseInt(cleanLine);
@@ -1942,33 +2070,59 @@ export default function ScriptingTab() {
 
       // Post-process figures (add denseVertices, offsets, area, length)
       cogoFiguresList.forEach(fig => {
-        fig.denseVertices = [...fig.vertices];
-        fig.offsetVertices = [...fig.vertices];
-        fig.selfIntersections = [];
+        const dense = [];
+        const v = fig.vertices;
+        if (v.length > 0) {
+          dense.push(v[0]);
+          let i = 0;
+          while (i < v.length - 1) {
+            const v1 = v[i];
+            const v2 = v[i + 1];
+            if (v1.isCurveBegin && v1.curveRadius) {
+              const arcPts = getCurvePointsRadius(v1, v2, v1.curveRadius, v1.curveDirection, 20);
+              for (let j = 1; j < arcPts.length; j++) {
+                dense.push({
+                  ...arcPts[j],
+                  hOffset: v1.hOffset,
+                  vOffset: v1.vOffset,
+                  isCurve: true,
+                  lineIndex: v1.lineIndex
+                });
+              }
+              i++;
+            } else {
+              dense.push(v2);
+              i++;
+            }
+          }
+        }
+        fig.denseVertices = dense;
+        fig.offsetVertices = computeParallelOffset(dense);
+        fig.selfIntersections = findSelfIntersections(dense, fig.isClosed);
         
         let len = 0;
-        for (let j = 0; j < fig.vertices.length - 1; j++) {
-          len += Math.hypot(fig.vertices[j+1].easting - fig.vertices[j].easting, fig.vertices[j+1].northing - fig.vertices[j].northing);
+        for (let j = 0; j < dense.length - 1; j++) {
+          len += Math.hypot(dense[j+1].easting - dense[j].easting, dense[j+1].northing - dense[j].northing);
         }
-        if (fig.isClosed && fig.vertices.length >= 2) {
-          len += Math.hypot(fig.vertices[0].easting - fig.vertices[fig.vertices.length-1].easting, fig.vertices[0].northing - fig.vertices[fig.vertices.length-1].northing);
+        if (fig.isClosed && dense.length >= 2) {
+          len += Math.hypot(dense[0].easting - dense[dense.length-1].easting, dense[0].northing - dense[dense.length-1].northing);
         }
         fig.length = len;
 
         let areaSum = 0;
-        if (fig.isClosed && fig.vertices.length >= 3) {
-          for (let j = 0; j < fig.vertices.length; j++) {
-            const next = fig.vertices[(j + 1) % fig.vertices.length];
-            areaSum += fig.vertices[j].easting * next.northing - next.easting * fig.vertices[j].northing;
+        if (fig.isClosed && dense.length >= 3) {
+          for (let j = 0; j < dense.length; j++) {
+            const next = dense[(j + 1) % dense.length];
+            areaSum += dense[j].easting * next.northing - next.easting * dense[j].northing;
           }
           fig.area = Math.abs(areaSum) / 2;
         } else {
           fig.area = 0;
         }
 
-        if (fig.vertices.length >= 2) {
-          const first = fig.vertices[0];
-          const last = fig.vertices[fig.vertices.length - 1];
+        if (dense.length >= 2) {
+          const first = dense[0];
+          const last = dense[dense.length - 1];
           fig.misclosure = Math.hypot(last.northing - first.northing, last.easting - first.easting);
         } else {
           fig.misclosure = 0;
@@ -2429,8 +2583,26 @@ export default function ScriptingTab() {
   // ── Auto-fit function definition ───────────────────────────────────────────
   const autoFit = useCallback((points, canvasWidth, canvasHeight) => {
     if (!points || points.length === 0) return;
-    const ns = points.map(p => p.northing);
-    const es = points.map(p => p.easting);
+    
+    // Select points to fit: prefer actual figure vertices to zoom in on the main boundaries
+    let ptsToFit = [];
+    if (figures && figures.length > 0) {
+      figures.forEach(fig => {
+        if (fig.denseVertices && fig.denseVertices.length > 0) {
+          ptsToFit.push(...fig.denseVertices);
+        } else if (fig.vertices && fig.vertices.length > 0) {
+          ptsToFit.push(...fig.vertices);
+        }
+      });
+    }
+    
+    // Fall back to all parsed points if no figure vertices are available
+    if (ptsToFit.length === 0) {
+      ptsToFit = points;
+    }
+
+    const ns = ptsToFit.map(p => p.northing);
+    const es = ptsToFit.map(p => p.easting);
     const minN = Math.min(...ns);
     const maxN = Math.max(...ns);
     const minE = Math.min(...es);
@@ -2447,7 +2619,7 @@ export default function ScriptingTab() {
     setZoom(newZoom);
     setPan({ x: 0, y: 0 });
     setCenter({ e: (minE + maxE) / 2, n: (minN + maxN) / 2 });
-  }, []);
+  }, [figures]);
 
   // ── Jump to Line helper ─────────────────────────────────────────────────────
   const jumpToLine = useCallback((lineIndex) => {
@@ -2466,14 +2638,32 @@ export default function ScriptingTab() {
     textarea.scrollTop = (lineIndex - 1) * lineHeight - textarea.clientHeight / 2;
   }, [script]);
 
-  // ── Auto-fit on load or when points change ──────────────────────────────────
+  // ── Resize Observer to dynamically resize canvas backing store ──────────────
   useEffect(() => {
-    if (parsedPoints.length > 0 && canvasRef.current) {
-      const W = canvasRef.current.width;
-      const H = canvasRef.current.height;
-      autoFit(parsedPoints, W, H);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    if (!parent) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        const { width, height } = entry.contentRect;
+        const w = Math.floor(width) || 360;
+        const h = Math.floor(height) || 260;
+        setCanvasDimensions({ width: w, height: h });
+      }
+    });
+
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+
+  // ── Auto-fit on load or when points/dimensions change ───────────────────────
+  useEffect(() => {
+    if (parsedPoints.length > 0) {
+      autoFit(parsedPoints, canvasDimensions.width, canvasDimensions.height);
     }
-  }, [parsedPoints, autoFit]);
+  }, [parsedPoints, autoFit, canvasDimensions.width, canvasDimensions.height]);
 
   // ── Canvas Rendering loop ──────────────────────────────────────────────────
   useEffect(() => {
@@ -2709,7 +2899,7 @@ export default function ScriptingTab() {
     ctx.fill();
     ctx.restore();
 
-  }, [zoom, pan, center, parsedPoints, figures, showGrid, showLabels, hoveredPoint, solvedCogoPoints]);
+  }, [zoom, pan, center, parsedPoints, figures, showGrid, showLabels, hoveredPoint, solvedCogoPoints, canvasDimensions.width, canvasDimensions.height]);
 
   // ── Canvas Event Listeners (Pan & Zoom) ────────────────────────────────────
   const handleMouseDown = (e) => {
@@ -2767,8 +2957,8 @@ export default function ScriptingTab() {
   };
 
   const handleDoubleClick = () => {
-    if (parsedPoints.length > 0 && canvasRef.current) {
-      autoFit(parsedPoints, canvasRef.current.width, canvasRef.current.height);
+    if (parsedPoints.length > 0) {
+      autoFit(parsedPoints, canvasDimensions.width, canvasDimensions.height);
     }
   };
 
@@ -3790,8 +3980,8 @@ export default function ScriptingTab() {
                   className="btn btn-ghost btn-sm"
                   style={{ padding: '2px 6px', fontSize: '0.65rem' }}
                   onClick={() => {
-                    if (parsedPoints.length > 0 && canvasRef.current) {
-                      autoFit(parsedPoints, canvasRef.current.width, canvasRef.current.height);
+                    if (parsedPoints.length > 0) {
+                      autoFit(parsedPoints, canvasDimensions.width, canvasDimensions.height);
                     }
                   }}
                 >
@@ -3804,8 +3994,8 @@ export default function ScriptingTab() {
             <div style={{ flex: 1, position: 'relative', overflow: 'hidden', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#090e1a' }}>
               <canvas
                 ref={canvasRef}
-                width={360}
-                height={260}
+                width={canvasDimensions.width}
+                height={canvasDimensions.height}
                 style={{ display: 'block', width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : 'grab' }}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
