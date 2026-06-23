@@ -53,7 +53,7 @@ export default function WriterTab() {
       if (data.repairedCourses) {
         const newCourses = data.repairedCourses.map(c => ({
           ...BLANK,
-          type: c.type || 'Line',
+          type: (c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type || 'Line'),
           bearing: c.bearing || '',
           distance: c.distance != null ? String(c.distance) : '',
           chordBearing: c.chordBearing || '',
@@ -103,7 +103,7 @@ export default function WriterTab() {
     try {
       const body = {
         courses: finalCourses.map(c => ({
-          type: c.type ?? 'Line',
+          type: (c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type ?? 'Line'),
           bearing: c.bearing || null,
           distance: c.distance ? parseFloat(c.distance) : null,
           chordBearing: c.chordBearing || null,
@@ -236,17 +236,17 @@ export default function WriterTab() {
                       {/* Main Input Row */}
                       <div style={{ display: 'grid', gridTemplateColumns: '28px 150px 1fr 120px 32px', gap: '0.5rem', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>{i + 1}</span>
-                        <select value={c.type || 'Line'} onChange={e => update(i, 'type', e.target.value)} style={{ fontSize: '0.8rem' }}>
+                        <select value={(c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type || 'Line')} onChange={e => update(i, 'type', e.target.value)} style={{ fontSize: '0.8rem' }}>
                           <option value="Line">Line</option>
                           <option value="Curve">Curve</option>
                           <option value="Point of Beginning">Point of Beginning</option>
                           <option value="Point of Reference">Point of Reference</option>
                           <option value="Point">Point</option>
-                          <option value="Meandering Line">Meandering Line</option>
+                          <option value="Squiggle">Squiggle</option>
                           <option value="Point of Terminus">Point of Terminus</option>
                         </select>
 
-                        {c.type === 'Line' && (
+                        {(c.type === 'Line' || c.type === 'Squiggle') && (
                           <>
                             <input type="text" placeholder="Bearing (e.g. N45°30'00&quot;E)" value={c.bearing} onChange={e => update(i, 'bearing', e.target.value)} />
                             <input type="number" placeholder="Distance" value={c.distance} onChange={e => update(i, 'distance', e.target.value)} />
@@ -264,7 +264,7 @@ export default function WriterTab() {
                           </>
                         )}
 
-                        {['Point of Beginning', 'Point of Reference', 'Point', 'Meandering Line', 'Point of Terminus'].includes(c.type) && (
+                        {['Point of Beginning', 'Point of Reference', 'Point', 'Point of Terminus'].includes(c.type) && (
                           <>
                             <input type="text" placeholder="Description / Details (Optional)" value={c.description || ''} style={{ gridColumn: 'span 2' }} onChange={e => update(i, 'description', e.target.value)} />
                           </>
@@ -303,6 +303,16 @@ export default function WriterTab() {
                           <option value="Easement">Easement</option>
                           <option value="Traverse Line">Traverse Line</option>
                         </select>
+
+                        {!['Point of Beginning', 'Point of Reference', 'Point', 'Point of Terminus'].includes(c.type) && (
+                          <input
+                            type="text"
+                            placeholder="Custom Description (e.g. along river bank)"
+                            value={c.description || ''}
+                            onChange={e => update(i, 'description', e.target.value)}
+                            style={{ flexGrow: 1, fontSize: '0.75rem', padding: '0.2rem 0.4rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }}
+                          />
+                        )}
                       </div>
                     </div>
                   ))}

@@ -140,7 +140,7 @@ export function compute(req) {
   let tempAz = null;
   if (req.commencementSegments && req.commencementSegments.length > 0) {
     for (const comm of req.commencementSegments) {
-      if (comm.type?.toLowerCase() === 'line' && comm.bearing) {
+      if ((comm.type?.toLowerCase() === 'line' || comm.type?.toLowerCase() === 'squiggle') && comm.bearing) {
         try { tempAz = bp.parse(comm.bearing).azimuthDeg; } catch {}
       } else if (comm.type?.toLowerCase() === 'curve') {
         resolveCurveProperties(comm, tempAz);
@@ -155,7 +155,7 @@ export function compute(req) {
   }
 
   for (const course of resolved) {
-    if (course.type?.toLowerCase() === 'line') {
+    if (course.type?.toLowerCase() === 'line' || course.type?.toLowerCase() === 'squiggle') {
       if (course.bearing) {
         try { tempAz = bp.parse(course.bearing).azimuthDeg; } catch {}
       }
@@ -200,7 +200,7 @@ export function compute(req) {
     for (const comm of req.commencementSegments) {
       commCoords.push({ startN: currN, startE: currE });
       let dn = 0, de = 0;
-      if (comm.type?.toLowerCase() === 'line' && comm.bearing && comm.distance != null) {
+      if ((comm.type?.toLowerCase() === 'line' || comm.type?.toLowerCase() === 'squiggle') && comm.bearing && comm.distance != null) {
         try {
           const parsed = bp.parse(comm.bearing);
           tempAz = parsed.azimuthDeg;
@@ -237,7 +237,7 @@ export function compute(req) {
       const startN = commCoords[idx].startN + shiftN;
       const startE = commCoords[idx].startE + shiftE;
       
-      if (comm.type?.toLowerCase() === 'line' && comm.bearing) {
+      if ((comm.type?.toLowerCase() === 'line' || comm.type?.toLowerCase() === 'squiggle') && comm.bearing) {
         try { tempAz = bp.parse(comm.bearing).azimuthDeg; } catch {}
       } else if (comm.type?.toLowerCase() === 'curve' && comm.radius) {
         let deltaDeg = parseDmsToDecimal(comm.delta);
@@ -273,9 +273,9 @@ export function compute(req) {
   for (const course of courses) {
     let dn, de, label;
 
-    if (course.type?.toLowerCase() === 'line') {
+    if (course.type?.toLowerCase() === 'line' || course.type?.toLowerCase() === 'squiggle') {
       if (!course.bearing || course.distance == null)
-        throw new Error(`Course ${seq}: Line requires Bearing and Distance.`);
+        throw new Error(`Course ${seq}: Line/Squiggle requires Bearing and Distance.`);
 
       const { azimuthDeg, azimuthRad } = bp.parse(course.bearing);
       const dist = course.distance * uf;
@@ -634,7 +634,7 @@ export function autoFixUnknownRuns(courses, pob) {
 
   const isIncompleteCourse = (c) => {
     if (c.isUnknown) return true;
-    if (c.type?.toLowerCase() === 'line') {
+    if (c.type?.toLowerCase() === 'line' || c.type?.toLowerCase() === 'squiggle') {
       // distance=0 is treated as unknown — meander courses often land here
       // when the AI sees "along meanderings thereof, 100 ft more or less"
       if (!c.bearing || c.distance == null || isNaN(c.distance) || c.distance === 0) return true;
@@ -768,7 +768,8 @@ function _solveOneRun(courses, run, pob) {
 
   const tieBearing = bp.vectorToBearing(dN_tie, dE_tie);
   const replacement = {
-    type: 'Line',
+    ...courses[run.start],
+    type: courses[run.start]?.type || 'Line',
     bearing: tieBearing,
     distance: Math.round(chordDist * 100) / 100,
     isUnknown: false,
@@ -783,7 +784,7 @@ function _solveOneRun(courses, run, pob) {
 
 function computeVector(c) {
   try {
-    if (c.type?.toLowerCase() === 'line') {
+    if (c.type?.toLowerCase() === 'line' || c.type?.toLowerCase() === 'squiggle') {
       const { azimuthRad } = bp.parse(c.bearing);
       const dist = parseFloat(c.distance);
       if (isNaN(dist) || isNaN(azimuthRad)) return { dn: 0, de: 0 };

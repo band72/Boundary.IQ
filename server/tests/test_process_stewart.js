@@ -22,12 +22,48 @@ async function run() {
     shortFileNames: 'true'
   });
 
+  // Authenticate first
+  let authToken = null;
+  const username = 'cli_tester';
+  const password = 'CliPassword123!';
+  try {
+    const loginRes = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    if (loginRes.ok) {
+      const data = await loginRes.json();
+      authToken = data.token;
+    }
+  } catch (err) {}
+  if (!authToken) {
+    try {
+      const regRes = await fetch(`${API}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (regRes.ok) {
+        const data = await regRes.json();
+        authToken = data.token;
+      }
+    } catch (err) {}
+  }
+  if (!authToken) {
+    console.error('Failed to authenticate.');
+    return;
+  }
+
   console.log(`Sending POST request to process single file: ${fileName}`);
   
   try {
     const start = Date.now();
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const res = await fetch(`${API}/folderscan/process-file?${params}`, {
       method: 'POST',
+      headers
     });
     
     console.log(`Response status: ${res.status} (${Date.now() - start}ms)`);

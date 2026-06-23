@@ -159,11 +159,30 @@ def generate_svg_map(vertices, courses, acreage, misclosure, course_metadata, ou
   <!-- Vertices and Labels -->
 """
     
+    # Map from actual vertex index in vertices list to its conceptual label index
+    conceptual_labels = {0: 0}
+    current_label_idx = 1
+    if course_metadata:
+        for meta in course_metadata:
+            end_idx = meta.get('end_vertex_idx')
+            if end_idx is not None and end_idx < len(vertices):
+                if end_idx == len(vertices) - 1:
+                    conceptual_labels[end_idx] = 0
+                else:
+                    conceptual_labels[end_idx] = current_label_idx
+                    current_label_idx += 1
+    else:
+        for idx in range(len(vertices)):
+            conceptual_labels[idx] = idx
+
     # Draw points and vertex indices
     for idx, (x, y) in enumerate(vertices[:-1]): # Exclude redundant final closing point in drawing labels
+        if idx not in conceptual_labels:
+            continue
+        label_idx = conceptual_labels[idx]
         tx, ty = transform(x, y)
         svg_content += f'  <circle cx="{tx}" cy="{ty}" r="4.5" fill="#ffffff" stroke="#ff7b72" stroke-width="2" />\n'
-        svg_content += f'  <text x="{tx+8}" y="{ty-8}" font-family="monospace" font-size="10" fill="#8b949e" font-weight="bold">P{idx}</text>\n'
+        svg_content += f'  <text x="{tx+8}" y="{ty-8}" font-family="monospace" font-size="10" fill="#8b949e" font-weight="bold">P{label_idx}</text>\n'
 
     # Assign line/curve tags matching the calls table
     course_tags = []
@@ -278,7 +297,23 @@ def generate_svg_map(vertices, courses, acreage, misclosure, course_metadata, ou
             r_str = f"{r:.1f}" if r is not None else "N/A"
             l = c.get('arcLength') or c.get('distance')
             l_str = f"{l:.1f}" if l is not None else "N/A"
-            text = f"{tag}: Curve R={r_str} L={l_str}"
+            
+            # Find a 3rd piece of information to show (Chord Bearing, Chord Distance, Delta, or Direction)
+            cb = c.get('chordBearing')
+            cd = c.get('chordDistance')
+            delta = c.get('delta')
+            dir_val = c.get('curveDirection') or c.get('direction') or 'Right'
+            
+            if cb:
+                third_str = f"CB={cb}"
+            elif cd is not None and cd > 0:
+                third_str = f"CD={cd:.1f}ft"
+            elif delta is not None:
+                third_str = f"Delta={delta:.1f}°"
+            else:
+                third_str = f"Dir={dir_val}"
+                
+            text = f"{tag}: Curve R={r_str} L={l_str} {third_str}"
         svg_content += f'    <text x="20" y="{y_offset}" font-family="monospace" font-size="11" fill="#c9d1d9">{text}</text>\n'
         y_offset += 20
         

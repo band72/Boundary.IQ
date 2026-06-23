@@ -366,6 +366,30 @@ function getDistanceToSegment(px, py, x1, y1, x2, y2) {
   const projY = y1 + t * dy;
   return Math.hypot(px - projX, py - projY);
 }
+ 
+function getWavyCreekPoints(p1, p2, frequency = 4, amplitude = 4, steps = 30) {
+  const pts = [];
+  const dx = p2.easting - p1.easting;
+  const dy = p2.northing - p1.northing;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return [p1, p2];
+
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const distAlong = t * len;
+    const wave = Math.sin(t * Math.PI * frequency) * amplitude;
+    pts.push({
+      easting: p1.easting + ux * distAlong + px * wave,
+      northing: p1.northing + uy * distAlong + py * wave
+    });
+  }
+  return pts;
+}
 
 function getDensePoints(pts, coursesList) {
   if (!pts || pts.length === 0) return pts;
@@ -376,12 +400,21 @@ function getDensePoints(pts, coursesList) {
     const p1 = pts[i];
     const p2 = pts[i + 1] || pts[0];
     const c = coursesList[i];
-    if (p1 && p2 && c && (c.type?.toLowerCase() === 'curve' || c.Type?.toLowerCase() === 'curve')) {
+    if (!p1 || !p2 || !c) continue;
+
+    const isCreek = (c.type || '').toLowerCase() === 'squiggle' || /stream|creek|river|meander|water|shoreline|center\s*line\s*of\s*an?\s*existing|along\s+said\s+center\s+line/i.test(c.description || c.label || c.bearing || '');
+
+    if (c.type?.toLowerCase() === 'curve' || c.Type?.toLowerCase() === 'curve') {
       const curvePts = getCurvePoints(p1, p2, c, 20);
       for (let j = 1; j < curvePts.length; j++) {
         dense.push(curvePts[j]);
       }
-    } else if (p2) {
+    } else if (isCreek) {
+      const creekPts = getWavyCreekPoints(p1, p2, 4, 3.5, 30);
+      for (let j = 1; j < creekPts.length; j++) {
+        dense.push(creekPts[j]);
+      }
+    } else {
       dense.push(p2);
     }
   }
@@ -642,11 +675,12 @@ export default function TraverseMap({
         if (!p1 || !p2 || !c) continue;
 
         const isCurve = c.type?.toLowerCase() === 'curve';
+        const isCreek = (c.type || '').toLowerCase() === 'squiggle' || /stream|creek|river|meander|water|shoreline|center\s*line\s*of\s*an?\s*existing|along\s+said\s+center\s+line/i.test(c.description || c.label || c.bearing || '');
         const isHovered = (activeHoveredIndex === i);
         const isSelected = (activeSelectedIndex === i);
 
         ctx.beginPath();
-        const segPts = isCurve ? getCurvePoints(p1, p2, c, 40) : [p1, p2];
+        const segPts = isCurve ? getCurvePoints(p1, p2, c, 40) : (isCreek ? getWavyCreekPoints(p1, p2, 4, 3.5, 30) : [p1, p2]);
         ctx.moveTo(tx(segPts[0].easting), ty(segPts[0].northing));
         for (let k = 1; k < segPts.length; k++) {
           ctx.lineTo(tx(segPts[k].easting), ty(segPts[k].northing));
@@ -992,14 +1026,15 @@ export default function TraverseMap({
 
   function getDistanceToCourse(mx, my, p1, p2, course, tx, ty) {
     const isCurve = (course.type || course.Type || '').toLowerCase() === 'curve';
-    if (isCurve) {
-      const curvePts = getCurvePoints(p1, p2, course, 20);
+    const isCreek = (course.type || course.Type || '').toLowerCase() === 'squiggle' || /stream|creek|river|meander|water|shoreline|center\s*line\s*of\s*an?\s*existing|along\s+said\s+center\s+line/i.test(course.description || course.label || course.bearing || '');
+    if (isCurve || isCreek) {
+      const segPts = isCurve ? getCurvePoints(p1, p2, course, 20) : getWavyCreekPoints(p1, p2, 4, 3.5, 30);
       let minDist = Infinity;
-      for (let k = 0; k < curvePts.length - 1; k++) {
+      for (let k = 0; k < segPts.length - 1; k++) {
         const dist = getDistanceToSegment(
           mx, my,
-          tx(curvePts[k].easting), ty(curvePts[k].northing),
-          tx(curvePts[k + 1].easting), ty(curvePts[k + 1].northing)
+          tx(segPts[k].easting), ty(segPts[k].northing),
+          tx(segPts[k + 1].easting), ty(segPts[k + 1].northing)
         );
         if (dist < minDist) minDist = dist;
       }

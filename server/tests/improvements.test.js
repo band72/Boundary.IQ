@@ -394,4 +394,77 @@ describe('Boundary.IQ Improvements Tests', () => {
       expect(bp.hasImpossibleBearings(null).hasImpossible).toBe(false);
     });
   });
+
+  describe('11. Squiggle and Meandering Line Unification', () => {
+    it('calculates traverse coordinates correctly for Squiggle line types', async () => {
+      const traverseSvc = await import('../services/traverse.js');
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 100 },
+        { type: 'Squiggle', bearing: 'N90°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: 'S00°00\'00"W', distance: 100 },
+        { type: 'Squiggle', bearing: 'S90°00\'00"W', distance: 100 }
+      ];
+      const res = traverseSvc.compute({
+        pointOfBeginning: { northing: 5000, easting: 5000 },
+        courses,
+        units: 'feet',
+        isOpenEnded: false
+      });
+      expect(res.stations).toHaveLength(5);
+      expect(res.stations[1].northing).toBeCloseTo(5100, 2);
+      expect(res.stations[1].easting).toBeCloseTo(5000, 2);
+      expect(res.stations[2].northing).toBeCloseTo(5100, 2);
+      expect(res.stations[2].easting).toBeCloseTo(5100, 2);
+      expect(res.stations[3].northing).toBeCloseTo(5000, 2);
+      expect(res.stations[3].easting).toBeCloseTo(5100, 2);
+      expect(res.stations[4].northing).toBeCloseTo(5000, 2);
+      expect(res.stations[4].easting).toBeCloseTo(5000, 2);
+      expect(res.closure.linearError).toBeLessThan(0.01);
+    });
+
+    it('generates correct legal descriptions for Squiggle and Meandering Line types', async () => {
+      const legalWriter = await import('../services/legalWriter.js');
+      
+      // 1. Squiggle with bearing and distance
+      const desc1 = legalWriter.write({
+        courses: [
+          { type: 'Squiggle', bearing: 'N45°00\'00"E', distance: 150 }
+        ],
+        units: 'feet'
+      });
+      expect(desc1).toContain('THENCE along a meandering line North 45°00\'00" East, a distance of 150.00 feet');
+
+      // 2. Squiggle with description only
+      const desc2 = legalWriter.write({
+        courses: [
+          { type: 'Squiggle', description: 'along the shoreline of the river' }
+        ],
+        units: 'feet'
+      });
+      expect(desc2).toContain('THENCE along a meandering line (along the shoreline of the river)');
+
+      // 3. Meandering Line legacy type
+      const desc3 = legalWriter.write({
+        courses: [
+          { type: 'Meandering Line', description: 'following the creek bed' }
+        ],
+        units: 'feet'
+      });
+      expect(desc3).toContain('THENCE along a meandering line (following the creek bed)');
+    });
+
+    it('retains the original course type when the gap solver solves an unknown course', async () => {
+      const traverseSvc = await import('../services/traverse.js');
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 100 },
+        { type: 'Squiggle', isUnknown: true, description: 'Meandering shoreline' },
+        { type: 'Line', bearing: 'S90°00\'00"W', distance: 100 }
+      ];
+      const solved = traverseSvc.autoFixUnknownRuns(courses, { northing: 5000, easting: 5000 });
+      expect(solved[1].type).toBe('Squiggle');
+      expect(solved[1].bearing).toBeDefined();
+      expect(solved[1].distance).toBeCloseTo(141.42, 1);
+      expect(solved[1].description).toBe('Meandering shoreline');
+    });
+  });
 });

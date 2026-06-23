@@ -334,7 +334,7 @@ function getDensePoints(pts, coursesList) {
     const c = coursesList[i];
     if (!p1 || !p2 || !c) continue;
 
-    const isCreek = /stream|creek|river|meander|water|shoreline|center\s*line\s*of\s*an?\s*existing|along\s+said\s+center\s+line/i.test(c.description || c.label || c.bearing || '');
+    const isCreek = (c.type || '').toLowerCase() === 'squiggle' || /stream|creek|river|meander|water|shoreline|center\s*line\s*of\s*an?\s*existing|along\s+said\s+center\s+line/i.test(c.description || c.label || c.bearing || '');
 
     if (c.type?.toLowerCase() === 'curve' || c.Type?.toLowerCase() === 'curve') {
       const curvePts = getCurvePoints(p1, p2, c, 20);
@@ -1138,7 +1138,7 @@ export default function PrintBlueprint({
 
         // E. Wavy Creek details (if any segment is a creek)
         courses.forEach((c, idx) => {
-          const isCreek = /stream|creek|river|meander|water|shoreline|center\s*line\s*of\s*an?\s*existing|along\s+said\s+center\s+line/i.test(c.description || c.label || c.bearing || '');
+          const isCreek = (c.type || '').toLowerCase() === 'squiggle' || /stream|creek|river|meander|water|shoreline|center\s*line\s*of\s*an?\s*existing|along\s+said\s+center\s+line/i.test(c.description || c.label || c.bearing || '');
           if (isCreek) {
             const p1_c = drawPts[idx];
             const p2_c = drawPts[(idx + 1) % drawPts.length];

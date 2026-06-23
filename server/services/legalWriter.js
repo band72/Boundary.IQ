@@ -44,6 +44,17 @@ export function write(req) {
       const brg = formatBearing(c.bearing || '');
       const dist = (c.distance || 0).toFixed(2);
       phrase = `THENCE ${brg}, a distance of ${dist} ${units}${subPhrase}`;
+    } else if (type === 'squiggle' || type === 'meandering line') {
+      const brg = formatBearing(c.bearing || '');
+      const dist = (c.distance != null && c.distance !== '' && !isNaN(c.distance) && parseFloat(c.distance) > 0) ? parseFloat(c.distance) : null;
+      const desc = c.description ? ` (${c.description})` : '';
+      if (brg && dist != null) {
+        phrase = `THENCE along a meandering line ${brg}, a distance of ${dist.toFixed(2)} ${units}${desc}${subPhrase}`;
+      } else if (dist != null) {
+        phrase = `THENCE along a meandering line, a distance of ${dist.toFixed(2)} ${units}${desc}${subPhrase}`;
+      } else {
+        phrase = `THENCE along a meandering line${desc}${subPhrase}`;
+      }
     } else if (type === 'curve') {
       const dir = c.curveDirection || c.Direction || c.direction || 'Right';
       const delta = formatDMS(c.delta || 0);
@@ -67,9 +78,7 @@ export function write(req) {
     } else if (type === 'point') {
       const desc = c.description ? ` (${c.description})` : '';
       phrase = `THENCE to a point${desc}${subPhrase}`;
-    } else if (type === 'meandering line') {
-      const desc = c.description ? ` (${c.description})` : '';
-      phrase = `THENCE along a meandering line${desc}${subPhrase}`;
+
     } else if (type === 'point of terminus') {
       const desc = c.description ? ` (${c.description})` : '';
       phrase = `THENCE to the Point of Terminus (POT)${desc}${subPhrase}`;

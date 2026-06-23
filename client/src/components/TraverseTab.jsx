@@ -45,7 +45,7 @@ function flipBearing(b) {
 function computeLinearError(courseList, pobN, pobE) {
   let n = pobN, e = pobE;
   for (const c of courseList) {
-    if (c.type !== 'Line') continue;
+    if (c.type !== 'Line' && c.type !== 'Squiggle') continue;
     const az = parseBearing(c.bearing);
     if (az === null || !c.distance) continue;
     const dist = parseFloat(c.distance);
@@ -86,11 +86,12 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
 
   const handleSave = () => {
     const updated = [...courses];
+    const isLineOrSquiggle = type === 'Line' || type === 'Squiggle';
     updated[index] = {
       ...BLANK_COURSE,
       type,
-      bearing: type === 'Line' ? bearing : null,
-      distance: type === 'Line' && distance !== '' ? distance : null,
+      bearing: isLineOrSquiggle ? bearing : null,
+      distance: isLineOrSquiggle && distance !== '' ? distance : null,
       curveDirection: type === 'Curve' ? curveDirection : null,
       delta: type === 'Curve' && delta !== '' ? delta : null,
       radius: type === 'Curve' && radius !== '' ? radius : null,
@@ -115,10 +116,11 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
             <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
               <option value="Line">Line</option>
               <option value="Curve">Curve</option>
+              <option value="Squiggle">Squiggle</option>
             </select>
           </div>
 
-          {type === 'Line' ? (
+          {type === 'Line' || type === 'Squiggle' ? (
             <>
               <div className="form-group">
                 <label className="form-label">Bearing</label>
@@ -266,7 +268,7 @@ export default function TraverseTab() {
     const baseError = computeLinearError(courses, pobN, pobE);
     let best = null;
     courses.forEach((c, i) => {
-      if (c.type !== 'Line' || !c.bearing) return;
+      if ((c.type !== 'Line' && c.type !== 'Squiggle') || !c.bearing) return;
       const flipped = flipBearing(c.bearing);
       const testCourses = courses.map((x, j) => j === i ? { ...x, bearing: flipped } : x);
       const newError = computeLinearError(testCourses, pobN, pobE);
@@ -291,17 +293,20 @@ export default function TraverseTab() {
         pointOfBeginning: { northing: parseFloat(pob.northing), easting: parseFloat(pob.easting) },
         units,
         isOpenEnded,
-        courses: targetCourses.map(c => ({
-          type: c.type,
-          bearing: c.type === 'Line' ? c.bearing : null,
-          distance: c.type === 'Line' && c.distance ? parseFloat(c.distance) : null,
-          delta: c.type === 'Curve' && c.delta ? parseFloat(c.delta) : null,
-          radius: c.type === 'Curve' && c.radius ? parseFloat(c.radius) : null,
-          arcLength: c.type === 'Curve' && c.arcLength ? parseFloat(c.arcLength) : null,
-          curveDirection: c.type === 'Curve' ? c.curveDirection : null,
-          chordBearing: c.type === 'Curve' ? c.chordBearing : null,
-          chordDistance: c.type === 'Curve' && c.chordDistance ? parseFloat(c.chordDistance) : null,
-        }))
+        courses: targetCourses.map(c => {
+          const isLineOrSquiggle = c.type === 'Line' || c.type === 'Squiggle';
+          return {
+            type: c.type,
+            bearing: isLineOrSquiggle ? c.bearing : null,
+            distance: isLineOrSquiggle && c.distance ? parseFloat(c.distance) : null,
+            delta: c.type === 'Curve' && c.delta ? parseFloat(c.delta) : null,
+            radius: c.type === 'Curve' && c.radius ? parseFloat(c.radius) : null,
+            arcLength: c.type === 'Curve' && c.arcLength ? parseFloat(c.arcLength) : null,
+            curveDirection: c.type === 'Curve' ? c.curveDirection : null,
+            chordBearing: c.type === 'Curve' ? c.chordBearing : null,
+            chordDistance: c.type === 'Curve' && c.chordDistance ? parseFloat(c.chordDistance) : null,
+          };
+        })
       };
       const res = await fetch(`${API}/traverse/compute`, {
         method: 'POST',
@@ -914,8 +919,9 @@ export default function TraverseTab() {
                   <select value={c.type} onChange={e => updateCourse(i, 'type', e.target.value)}>
                     <option>Line</option>
                     <option>Curve</option>
+                    <option>Squiggle</option>
                   </select>
-                  {c.type === 'Line' ? (
+                  {c.type === 'Line' || c.type === 'Squiggle' ? (
                     <>
                       <input type="text" placeholder='N45°30′00″E' value={c.bearing}
                         onChange={e => updateCourse(i, 'bearing', e.target.value)} />
