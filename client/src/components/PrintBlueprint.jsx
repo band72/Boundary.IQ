@@ -208,7 +208,7 @@ function computePointsFromCourses(courses, pob = { northing: 5000, easting: 5000
 
   courses.forEach(c => {
     let bearingStr = c.bearing || c.chordBearing || '';
-    let dist = parseFloat(c.distance ?? c.chordDistance ?? c.arcLength ?? 0);
+    let dist = parseFloat(c.distance || c.chordDistance || c.arcLength || 0);
 
     if (dist <= 0) return;
 
