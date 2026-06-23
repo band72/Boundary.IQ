@@ -69,6 +69,46 @@ function parseCogoBatchScript(scriptText) {
       continue;
     }
 
+    if (cleanLine.startsWith('TRANS')) {
+      const parts = cleanLine.split(' ');
+      const dx = parseFloat(parts[1]); // Easting shift
+      const dy = parseFloat(parts[2]); // Northing shift
+      for (let i = 3; i < parts.length; i++) {
+        const ptId = parseInt(parts[i]);
+        if (points[ptId]) {
+          points[ptId].easting += dx;
+          points[ptId].northing += dy;
+        }
+      }
+      continue;
+    }
+
+    if (cleanLine.startsWith('ROTATE')) {
+      const parts = cleanLine.split(' ');
+      const pivotPtId = parseInt(parts[1]);
+      const angleDeg = parseFloat(parts[2]); // Counter-clockwise angle in degrees
+      const rad = angleDeg * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      
+      const pivot = points[pivotPtId];
+      if (!pivot) {
+        throw new Error(`Rotate: Pivot point ${pivotPtId} not found`);
+      }
+      
+      for (let i = 3; i < parts.length; i++) {
+        const ptId = parseInt(parts[i]);
+        const pt = points[ptId];
+        if (pt) {
+          const dE = pt.easting - pivot.easting;
+          const dN = pt.northing - pivot.northing;
+          pt.easting = pivot.easting + dE * cos - dN * sin;
+          pt.northing = pivot.northing + dE * sin + dN * cos;
+        }
+      }
+      continue;
+    }
+
     // Check if within a boundary block (just numbers list)
     if (currentBoundaryName && /^\d+$/.test(cleanLine)) {
       boundaries[currentBoundaryName].push(parseInt(cleanLine));
@@ -314,6 +354,12 @@ BD 101 79.2655 2 50.00 OFFSET_29
 ! Point 105 is computed as (5812.9113, 4955.5775)
 NE 105 5812.9113 4955.5775 INTERSECT_PT
 
+! ─── TRANSLATION AND ROTATION DEMONSTRATION ───
+NE 200 5000.0000 5000.0000 TEST_ROT_P1
+NE 201 5000.0000 5100.0000 TEST_ROT_P2
+TRANS 50.0 100.0 201
+ROTATE 200 90.0 201
+
 ! ─── BOUNDARY DEFINITIONS (MAP CHECKS) ───
 BEG BND
 PNT 9
@@ -498,5 +544,17 @@ describe('COGO Command Batch Script Solver Tests', () => {
     expect(p100).toBeDefined();
     expect(p100.northing).toBeCloseTo(5417.9835 - 9.1553, 2);
     expect(p100.easting).toBeCloseTo(5228.8352 + 49.1542, 2);
+  });
+
+  it('verifies translation and rotation commands', () => {
+    const { points } = parseCogoBatchScript(comprehensiveCogoScript);
+
+    // Pt 201 should be shifted by dx=50, dy=100
+    // And then rotated 90 degrees CCW around Pt 200 (5000, 5000)
+    // Mathematical result: E = 4900, N = 5150
+    const p201 = points[201];
+    expect(p201).toBeDefined();
+    expect(p201.northing).toBeCloseTo(5150.0000, 4);
+    expect(p201.easting).toBeCloseTo(4900.0000, 4);
   });
 });
