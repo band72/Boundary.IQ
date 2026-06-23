@@ -133,7 +133,11 @@ export function parse(bearing) {
     // Fix OCR/LLM degree symbol used instead of minutes symbol (e.g. 0°18°50" -> 0°18'50")
     .replace(/(\d+)\s*°\s*(\d+)\s*°/g, "$1°$2'")
     // Fix OCR/LLM degree symbol used instead of seconds symbol (e.g. 0°18'50° -> 0°18'50")
-    .replace(/(\d+)\s*'\s*(\d+)\s*°/g, '$1\'$2"');
+    .replace(/(\d+)\s*'\s*(\d+)\s*°/g, '$1\'$2"')
+    // Fix double quote misread for minutes (e.g. N59°18"41E -> N59°18'41"E)
+    .replace(/(\d+)\s*"\s*(\d+)(?:\s*")?\s*([EWew])?/gi, "$1'$2\"$3")
+    // Fix smashed decimal seconds digit (e.g. S86°29'004E -> S86°29'00.4"E)
+    .replace(/'\s*(\d{2})([0-9])\s*([EWew])$/i, "'$1.$2\"$3");
 
 
 

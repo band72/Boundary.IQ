@@ -471,6 +471,15 @@ describe('Boundary.IQ Improvements Tests', () => {
       expect(res3.azimuthDeg).toBeCloseTo(45.5, 5);
     });
 
+    it('normalizes double quotes in minutes and smashed decimal seconds from OCR', () => {
+      const res1 = bp.parse('N59°18"41E');
+      expect(bp.toDisplayString(res1.azimuthDeg)).toBe('N59°18\'41.00"E');
+
+      const res2 = bp.parse("S86°29'004E");
+      expect(bp.toDisplayString(res2.azimuthDeg)).toBe('S86°29\'00.40"E');
+    });
+
+
     it('applies Crandall adjustment correctly when requested', () => {
       const courses = [
         { type: 'Line', bearing: 'N00°00\'00"E', distance: 101.0 },
