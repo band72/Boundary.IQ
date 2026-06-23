@@ -15,3 +15,4 @@ export * as repair          from './repair.js';
 export * as legalWriter     from './legalWriter.js';
 export * as deedTextSolver  from './deedTextSolver.js';
 export * as chainedResolver from './chainedTraverseResolver.js';
+export * as agentSystem     from './agentSystem.js';

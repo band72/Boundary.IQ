@@ -11,10 +11,7 @@
 import * as gemini from '../geminiVision.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
-// NOTE: SupervisorAgent is intentionally NOT imported here at module level.
-// repair.js ↔ agentSystem.js form a mutual import cycle.  Loading SupervisorAgent
-// lazily (dynamic import inside runRepairPipeline) breaks the cycle at module
-// evaluation time while preserving identical runtime behaviour.
+import { SupervisorAgent } from './agentSystem.js';
 import { createChildLogger } from '../../logger.js';
 import { pdfOcrCache } from '../llm/pdfProcessor.js';
 import crypto from 'crypto';
@@ -135,8 +132,14 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
   log.info({ stage: 'stage5_agent', file: fileName }, 'Executing Hierarchical Multi-Agent System');
   let cachedExtraction = null; // Fix #2: cache Stage 5 extraction to avoid redundant Gemini call
   try {
-    const { SupervisorAgent } = await import('../agentSystem.js');
-    const supervisor = new SupervisorAgent();
+    const supervisor = new SupervisorAgent({
+      tryBowtieAutoFix,
+      trySurveyorShapeCorrection,
+      detectBacktracking,
+      isMeanderDeed,
+      tryScrivenerErrorSolver,
+      applyCompassRuleIfEligible
+    });
     const agentResult = await supervisor.solve(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
 
     // Always cache the extraction for Stage 0 reuse (Fix #2)

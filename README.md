@@ -106,8 +106,10 @@ Open **`http://localhost:5174`** in your browser.
 │  └── /api/diagnostics — Session logs, stats, dashboard  │
 │                                                         │
 │  Services:                                              │
-│  ├── agentSystem.js   — 6-stage self-healing agent      │
-│  ├── deedTextSolver.js— LLM extraction + repair         │
+│  ├── Scripting/                                         │
+│  │   ├── agentSystem.js — 6-stage self-healing agent    │
+│  │   ├── deedTextSolver.js— LLM extraction + repair     │
+│  │   └── traverse.js    — COGO engine & traverse math   │
 │  ├── geminiVision.js  — Gemini / OpenAI-compat adapter  │
 │  ├── ollamaVision.js  — Local Ollama vision adapter     │
 │  └── diagnosticsDb.js — SQLite session tracking (WAL)   │
