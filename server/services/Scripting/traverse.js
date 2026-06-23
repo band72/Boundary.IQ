@@ -315,13 +315,19 @@ export function compute(req) {
   const linearError = Math.sqrt(errorN * errorN + errorE * errorE);
   const precision = (perimeter > 0 && linearError > 0) ? perimeter / linearError : Number.MAX_SAFE_INTEGER;
 
-  // Compass Rule
-  const adjusted = compassRuleAdjust(
-    stations,
-    req.isOpenEnded ? 0 : errorN,
-    req.isOpenEnded ? 0 : errorE,
-    perimeter
-  );
+  // Adjustment Method
+  let adjusted;
+  const isCrandall = (req.adjustmentMethod || '').toLowerCase() === 'crandall';
+  if (isCrandall && !req.isOpenEnded) {
+    adjusted = crandallAdjust(stations, errorN, errorE);
+  } else {
+    adjusted = compassRuleAdjust(
+      stations,
+      req.isOpenEnded ? 0 : errorN,
+      req.isOpenEnded ? 0 : errorE,
+      perimeter
+    );
+  }
 
   const hasSelfIntersection = detectSelfIntersection(adjusted);
   const enforceFailsafe = process.env.ENFORCE_NO_SELF_INTERSECTION === 'true';
@@ -551,6 +557,63 @@ function compassRuleAdjust(stations, errN, errE, perimeter) {
   return result;
 }
 
+// ── Crandall Adjustment Method ────────────────────────────────────────────────
+export function crandallAdjust(stations, errN, errE) {
+  const result = [];
+  result.push({ seq: 0, northing: stations[0].northing, easting: stations[0].easting });
+
+  let A = 0;
+  let B = 0;
+  let C = 0;
+
+  for (let i = 1; i < stations.length; i++) {
+    const s = stations[i];
+    const legDist = Math.sqrt(s.depDN * s.depDN + s.depDE * s.depDE);
+    if (legDist > 0.00001) {
+      A += (s.depDN * s.depDN) / legDist;
+      B += (s.depDN * s.depDE) / legDist;
+      C += (s.depDE * s.depDE) / legDist;
+    }
+  }
+
+  const det = A * C - B * B;
+
+  if (Math.abs(det) <= 1e-9) {
+    // Fall back to compass rule
+    const perimeter = stations.reduce((acc, s, idx) => {
+      if (idx === 0) return acc;
+      return acc + Math.sqrt(s.depDN * s.depDN + s.depDE * s.depDE);
+    }, 0);
+    return compassRuleAdjust(stations, errN, errE, perimeter);
+  }
+
+  const lambda1 = (errN * C - errE * B) / det;
+  const lambda2 = (errE * A - errN * B) / det;
+
+  let curN = stations[0].northing;
+  let curE = stations[0].easting;
+
+  for (let i = 1; i < stations.length; i++) {
+    const s = stations[i];
+    const legDist = Math.sqrt(s.depDN * s.depDN + s.depDE * s.depDE);
+    let adjDN = s.depDN;
+    let adjDE = s.depDE;
+
+    if (legDist > 0.00001) {
+      const vi = lambda1 * s.depDN + lambda2 * s.depDE;
+      const factor = 1.0 + vi / legDist;
+      adjDN = s.depDN * factor;
+      adjDE = s.depDE * factor;
+    }
+
+    curN += adjDN;
+    curE += adjDE;
+    result.push({ seq: i, northing: curN, easting: curE });
+  }
+
+  return result;
+}
+
 // ── Shoelace Area ─────────────────────────────────────────────────────────────
 function shoelaceArea(pts) {
   let area = 0;
@@ -766,17 +829,55 @@ function _solveOneRun(courses, run, pob) {
   if (chordDist < 0.01 || isNaN(chordDist)) return courses; // too small or invalid to solve
 
   const tieBearing = bp.vectorToBearing(dN_tie, dE_tie);
-  const replacement = {
-    type: 'Line',
-    bearing: tieBearing,
-    distance: Math.round(chordDist * 100) / 100,
-    isUnknown: false,
-  };
+
+  const k = run.end - run.start + 1;
+  const replacements = [];
+
+  if (k > 1) {
+    const weights = [];
+    let totalWeight = 0;
+    for (let i = run.start; i <= run.end; i++) {
+      const dist = parseFloat(courses[i].distance);
+      const w = (!isNaN(dist) && dist > 0) ? dist : 1.0;
+      weights.push(w);
+      totalWeight += w;
+    }
+
+    for (let idx = 0; idx < k; idx++) {
+      const i = run.start + idx;
+      const p = totalWeight > 0 ? weights[idx] / totalWeight : 1.0 / k;
+      const segDist = chordDist * p;
+      const orig = courses[i];
+      const isCurve = orig.type?.toLowerCase() === 'curve';
+      
+      const rep = {
+        ...orig,
+        type: orig.type || 'Line',
+        isUnknown: false
+      };
+
+      if (isCurve) {
+        rep.chordBearing = tieBearing;
+        rep.chordDistance = Math.round(segDist * 100) / 100;
+      } else {
+        rep.bearing = tieBearing;
+        rep.distance = Math.round(segDist * 100) / 100;
+      }
+      replacements.push(rep);
+    }
+  } else {
+    replacements.push({
+      type: 'Line',
+      bearing: tieBearing,
+      distance: Math.round(chordDist * 100) / 100,
+      isUnknown: false,
+    });
+  }
 
   const result = [...courses];
-  result.splice(run.start, run.end - run.start + 1, replacement);
+  result.splice(run.start, k, ...replacements);
 
-  log.info({ run: `${run.start}-${run.end}`, tieBearing, dist: replacement.distance.toFixed(2) }, 'Inverse Gap Solver: Solved run');
+  log.info({ run: `${run.start}-${run.end}`, tieBearing, count: replacements.length }, 'Inverse Gap Solver: Solved run');
   return result;
 }
 

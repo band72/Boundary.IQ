@@ -447,4 +447,72 @@ describe('Boundary.IQ Improvements Tests', () => {
       expect(solved.primaryHypothesis).toContain('radius 10→100ft');
     });
   });
+
+  describe('13. New Recommendations (Decimal, Typo, Crandall, Meander Splitting)', () => {
+    it('parses decimal degrees bearings with prefix and suffix', () => {
+      const res1 = bp.parse('N 45.369 E');
+      expect(res1.azimuthDeg).toBeCloseTo(45.369, 5);
+
+      const res2 = bp.parse('S89.12345W');
+      expect(res2.azimuthDeg).toBeCloseTo(180 + 89.12345, 5);
+
+      const res3 = bp.parse('45.5E'); // no prefix
+      expect(res3.azimuthDeg).toBeCloseTo(45.5, 5);
+    });
+
+    it('normalizes fuzzy quadrant OCR letters correctly', () => {
+      const res1 = bp.parse('M45.5P');
+      expect(res1.azimuthDeg).toBeCloseTo(45.5, 5);
+
+      const res2 = bp.parse('H45.5F');
+      expect(res2.azimuthDeg).toBeCloseTo(45.5, 5);
+
+      const res3 = bp.parse('M 45.5 P');
+      expect(res3.azimuthDeg).toBeCloseTo(45.5, 5);
+    });
+
+    it('applies Crandall adjustment correctly when requested', () => {
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 101.0 },
+        { type: 'Line', bearing: 'N90°00\'00"E', distance: 100.0 },
+        { type: 'Line', bearing: 'S00°00\'00"W', distance: 100.0 },
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 100.0 }
+      ];
+
+      const res = solveFromCourses(courses, {
+        pobNorthing: 5000,
+        pobEasting: 5000,
+        units: 'Feet',
+        isOpenEnded: false,
+        adjustmentMethod: 'Crandall'
+      });
+
+      const stations = res.traverse.adjustedStations;
+      const last = stations[stations.length - 1];
+      expect(last.northing).toBeCloseTo(5000, 4);
+      expect(last.easting).toBeCloseTo(5000, 4);
+      expect(stations[1].easting).toBeCloseTo(5000, 4);
+    });
+
+    it('splits meander tie vectors proportionally over multiple unknown courses', () => {
+      const courses = [
+        { type: 'Line', bearing: 'N00°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: 'N90°00\'00"E', distance: 100 },
+        { type: 'Line', bearing: 'S00°00\'00"W', distance: 50 },
+        { type: 'Line', bearing: null, distance: 100, isUnknown: true },
+        { type: 'Line', bearing: null, distance: 300, isUnknown: true },
+        { type: 'Line', bearing: 'N90°00\'00"W', distance: 300 }
+      ];
+
+      const resolved = autoFixUnknownRuns(courses, { northing: 5000, easting: 5000 });
+      expect(resolved).toHaveLength(6);
+      expect(resolved[3].isUnknown).toBe(false);
+      expect(resolved[4].isUnknown).toBe(false);
+
+      const totalTieDist = Math.sqrt(50 * 50 + 200 * 200);
+      expect(resolved[3].distance).toBeCloseTo(totalTieDist * 0.25, 1);
+      expect(resolved[4].distance).toBeCloseTo(totalTieDist * 0.75, 1);
+      expect(resolved[3].bearing).toBe(resolved[4].bearing);
+    });
+  });
 });
