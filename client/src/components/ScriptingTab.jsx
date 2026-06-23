@@ -653,7 +653,7 @@ function civil3dBDToAzimuth(packedBearing, quadrant) {
  * Parse Civil 3D batch text into { points: Map, figures: Array, warnings: Array }.
  * @param {string} text  Raw batch file content
  */
-export function parseCivil3DBatch(text) {
+function parseCivil3DBatch(text) {
   const pts = new Map();  // id(string) → { northing, easting, desc }
   const figures = [];     // { name, pointIds: [], arcs: Map<afterPtId, {radius, centerPtId, toPtId}> }
   const warnings = [];
@@ -967,7 +967,7 @@ export function parseCivil3DBatch(text) {
  * PointID Northing Easting 0.00 Description
  * + figure codes (B / CLS / BC / OC / EC)
  */
-export function emitScriptFromBatch(parsed, sourceFileName = '') {
+function emitScriptFromBatch(parsed, sourceFileName = '') {
   const { pts, figures, warnings } = parsed;
   const lines = [];
 
@@ -1693,10 +1693,291 @@ export default function ScriptingTab() {
 
   // ── Parser & Solver Core ────────────────────────────────────────────────────
   const { parsedPoints, figures, errors } = useMemo(() => {
-    const lines = script.split('\n');
+    const lines = script.split(/\r?\n/);
     const pointsList = [];
     const pointsMap = {};
     const parseErrors = [];
+
+    // Detect if this is a COGO command script
+    const isCogoScript = lines.some(line => {
+      const trimmed = line.trim().toUpperCase();
+      if (!trimmed || trimmed.startsWith('!') || trimmed.startsWith('#') || trimmed.startsWith('//')) return false;
+      const parts = trimmed.split(/\s+/);
+      const cmd = parts[0];
+      return cmd === 'TRAV' || cmd === 'STN' || cmd === 'BD' || cmd === 'NE' || cmd === 'BEG' || cmd === 'END' || cmd === 'TRANS' || cmd === 'ROTATE' || cmd === 'MAPCHK';
+    });
+
+    if (isCogoScript) {
+      const cogoActiveFigures = {};
+      const cogoFiguresList = [];
+      let currentStation = 1;
+      let traverseMode = true;
+      let currentBoundaryName = null;
+      
+      lines.forEach((line, index) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('!') || trimmed.startsWith('#') || trimmed.startsWith('//')) return;
+        
+        const cleanLine = trimmed.replace(/\s+/g, ' ');
+        const parts = cleanLine.split(' ');
+        const cmd = parts[0].toUpperCase();
+        
+        if (cmd === 'TRAV') {
+          if (parts[1]?.toUpperCase() === 'ON') {
+            traverseMode = true;
+          } else if (parts[1]?.toUpperCase() === 'OFF') {
+            traverseMode = false;
+          }
+          return;
+        }
+        
+        if (cmd === 'NE') {
+          const pt = parseInt(parts[1]);
+          const n = parseFloat(parts[2]);
+          const e = parseFloat(parts[3]);
+          if (!isNaN(pt) && !isNaN(n) && !isNaN(e)) {
+            pointsMap[pt] = {
+              id: String(pt),
+              northing: n,
+              easting: e,
+              elevation: 0,
+              rawDescription: parts.slice(4).join(' '),
+              tokens: parts.slice(4),
+              lineIndex: index + 1
+            };
+            pointsList.push(pointsMap[pt]);
+          } else {
+            parseErrors.push(`Line ${index + 1}: Invalid NE command format.`);
+          }
+          return;
+        }
+        
+        if (cmd === 'STN') {
+          const pt = parseInt(parts[1]);
+          if (!isNaN(pt)) {
+            currentStation = pt;
+          } else {
+            parseErrors.push(`Line ${index + 1}: Invalid STN command format.`);
+          }
+          return;
+        }
+
+        if (cmd === 'BEG') {
+          currentBoundaryName = parts[1];
+          cogoActiveFigures[currentBoundaryName] = {
+            name: currentBoundaryName,
+            vertices: [],
+            isClosed: true,
+            isCurveActive: false,
+            hOffset: 0,
+            vOffset: 0,
+            isCircle: false,
+            circleCenter: null,
+            circleRadius: 0
+          };
+          cogoFiguresList.push(cogoActiveFigures[currentBoundaryName]);
+          return;
+        }
+
+        if (cmd === 'PNT') {
+          const pt = parseInt(parts[1]);
+          if (currentBoundaryName && pointsMap[pt]) {
+            cogoActiveFigures[currentBoundaryName].vertices.push({
+              id: String(pt),
+              northing: pointsMap[pt].northing,
+              easting: pointsMap[pt].easting,
+              elevation: 0,
+              hOffset: 0,
+              vOffset: 0,
+              isCurve: false,
+              lineIndex: index + 1
+            });
+          }
+          return;
+        }
+
+        if (cmd === 'END') {
+          currentBoundaryName = null;
+          return;
+        }
+
+        if (cmd === 'MAPCHK') {
+          return;
+        }
+
+        if (cmd === 'TRANS') {
+          const dx = parseFloat(parts[1]);
+          const dy = parseFloat(parts[2]);
+          if (!isNaN(dx) && !isNaN(dy)) {
+            for (let i = 3; i < parts.length; i++) {
+              const ptId = parseInt(parts[i]);
+              if (pointsMap[ptId]) {
+                pointsMap[ptId].easting += dx;
+                pointsMap[ptId].northing += dy;
+              }
+            }
+          } else {
+            parseErrors.push(`Line ${index + 1}: Invalid TRANS command format.`);
+          }
+          return;
+        }
+
+        if (cmd === 'ROTATE') {
+          const pivotPtId = parseInt(parts[1]);
+          const angleDeg = parseFloat(parts[2]);
+          if (!isNaN(pivotPtId) && !isNaN(angleDeg)) {
+            const rad = angleDeg * Math.PI / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const pivot = pointsMap[pivotPtId];
+            if (pivot) {
+              for (let i = 3; i < parts.length; i++) {
+                const ptId = parseInt(parts[i]);
+                const pt = pointsMap[ptId];
+                if (pt) {
+                  const dE = pt.easting - pivot.easting;
+                  const dN = pt.northing - pivot.northing;
+                  pt.easting = pivot.easting + dE * cos - dN * sin;
+                  pt.northing = pivot.northing + dE * sin + dN * cos;
+                }
+              }
+            } else {
+              parseErrors.push(`Line ${index + 1}: Rotate pivot point ${pivotPtId} not found.`);
+            }
+          } else {
+            parseErrors.push(`Line ${index + 1}: Invalid ROTATE command format.`);
+          }
+          return;
+        }
+
+        // Check if within a boundary block (just numbers list)
+        if (currentBoundaryName && /^\d+$/.test(cleanLine)) {
+          const pt = parseInt(cleanLine);
+          if (pointsMap[pt]) {
+            cogoActiveFigures[currentBoundaryName].vertices.push({
+              id: String(pt),
+              northing: pointsMap[pt].northing,
+              easting: pointsMap[pt].easting,
+              elevation: 0,
+              hOffset: 0,
+              vOffset: 0,
+              isCurve: false,
+              lineIndex: index + 1
+            });
+          }
+          return;
+        }
+
+        // BD command or raw traverse call
+        let startIdx = 0;
+        if (cmd === 'BD') {
+          startIdx = 1;
+        }
+
+        if (parts.length - startIdx >= 4) {
+          const pt = parseInt(parts[startIdx]);
+          const dms = parts[startIdx + 1];
+          const quad = parseInt(parts[startIdx + 2]);
+          const dist = parseFloat(parts[startIdx + 3]);
+          const desc = parts.slice(startIdx + 4).join(' ');
+
+          const stnPoint = pointsMap[currentStation];
+          if (!stnPoint) {
+            parseErrors.push(`Line ${index + 1}: Station point ${currentStation} not defined.`);
+            return;
+          }
+
+          if (isNaN(pt) || isNaN(quad) || isNaN(dist)) {
+            parseErrors.push(`Line ${index + 1}: Invalid bearing-distance command parameters.`);
+            return;
+          }
+
+          let ns = 'N', ew = 'E';
+          if (quad === 1) { ns = 'N'; ew = 'E'; }
+          else if (quad === 2) { ns = 'S'; ew = 'E'; }
+          else if (quad === 3) { ns = 'S'; ew = 'W'; }
+          else if (quad === 4) { ns = 'N'; ew = 'W'; }
+
+          const dotIdx = dms.indexOf('.');
+          let degStr = dms;
+          let minStr = '00';
+          let secStr = '00';
+          if (dotIdx !== -1) {
+            degStr = dms.substring(0, dotIdx);
+            const frac = dms.substring(dotIdx + 1);
+            minStr = frac.substring(0, 2) || '00';
+            secStr = frac.substring(2, 4) || '00';
+            if (frac.length > 4) {
+              secStr += '.' + frac.substring(4);
+            }
+          }
+
+          const bearingStr = `${ns}${degStr}°${minStr}'${secStr}"${ew}`;
+          const ang = parseFloat(degStr) + parseFloat(minStr)/60 + parseFloat(secStr)/3600;
+          let azimuthRad = 0;
+          if (ns === 'N' && ew === 'E') azimuthRad = ang * Math.PI / 180;
+          else if (ns === 'S' && ew === 'E') azimuthRad = (180 - ang) * Math.PI / 180;
+          else if (ns === 'S' && ew === 'W') azimuthRad = (180 + ang) * Math.PI / 180;
+          else if (ns === 'N' && ew === 'W') azimuthRad = (360 - ang) * Math.PI / 180;
+
+          const dN = dist * Math.cos(azimuthRad);
+          const dE = dist * Math.sin(azimuthRad);
+
+          pointsMap[pt] = {
+            id: String(pt),
+            northing: stnPoint.northing + dN,
+            easting: stnPoint.easting + dE,
+            elevation: 0,
+            rawDescription: desc,
+            tokens: [desc],
+            lineIndex: index + 1
+          };
+          pointsList.push(pointsMap[pt]);
+
+          if (traverseMode) {
+            currentStation = pt;
+          }
+        }
+      });
+
+      // Post-process figures (add denseVertices, offsets, area, length)
+      cogoFiguresList.forEach(fig => {
+        fig.denseVertices = [...fig.vertices];
+        fig.offsetVertices = [...fig.vertices];
+        fig.selfIntersections = [];
+        
+        let len = 0;
+        for (let j = 0; j < fig.vertices.length - 1; j++) {
+          len += Math.hypot(fig.vertices[j+1].easting - fig.vertices[j].easting, fig.vertices[j+1].northing - fig.vertices[j].northing);
+        }
+        if (fig.isClosed && fig.vertices.length >= 2) {
+          len += Math.hypot(fig.vertices[0].easting - fig.vertices[fig.vertices.length-1].easting, fig.vertices[0].northing - fig.vertices[fig.vertices.length-1].northing);
+        }
+        fig.length = len;
+
+        let areaSum = 0;
+        if (fig.isClosed && fig.vertices.length >= 3) {
+          for (let j = 0; j < fig.vertices.length; j++) {
+            const next = fig.vertices[(j + 1) % fig.vertices.length];
+            areaSum += fig.vertices[j].easting * next.northing - next.easting * fig.vertices[j].northing;
+          }
+          fig.area = Math.abs(areaSum) / 2;
+        } else {
+          fig.area = 0;
+        }
+
+        if (fig.vertices.length >= 2) {
+          const first = fig.vertices[0];
+          const last = fig.vertices[fig.vertices.length - 1];
+          fig.misclosure = Math.hypot(last.northing - first.northing, last.easting - first.easting);
+        } else {
+          fig.misclosure = 0;
+        }
+      });
+
+      return { parsedPoints: pointsList, figures: cogoFiguresList, errors: parseErrors };
+    }
+
     const delim = getDelimiterRegExp(codes);
 
     // 1. First Pass: Parse all coordinate points
