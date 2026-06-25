@@ -1,0 +1,48 @@
+# ─── Fly.io Deployment Config ─────────────────────────────────────────────────
+# Deploy with:  fly launch  (first time)
+#               fly deploy  (subsequent deploys)
+#
+# Set secrets:
+#   fly secrets set GEMINI_API_KEY=your_key_here \
+#     STRIPE_SECRET_KEY=sk_live_... \
+#     RESEND_API_KEY=re_...
+
+app = "boundary-iq"
+primary_region = "ord"  # Chicago — change to nearest: lax, iad, lhr, fra, syd
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV        = "production"
+  ACTIVE_PROVIDER = "gemini"
+  ACTIVE_MODEL    = "gemini-2.5-flash"
+  ALLOW_API_FALLBACK = "true"
+  PORT            = "5050"
+
+[http_service]
+  internal_port       = 5050
+  force_https         = true
+  auto_stop_machines  = true   # scale to zero when idle
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type       = "requests"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[checks]
+  [checks.health]
+    grace_period    = "10s"
+    interval        = "30s"
+    method          = "GET"
+    path            = "/api/health"
+    port            = 5050
+    timeout         = "5s"
+    type            = "http"

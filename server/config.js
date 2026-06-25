@@ -50,15 +50,32 @@ export const ALLOW_API_FALLBACK = getBool('ALLOW_API_FALLBACK', true);
 export const DATABASE_PATH = getEnv('DATABASE_PATH');
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-export const FRONTEND_URL = getEnv('FRONTEND_URL') || 'http://localhost:5174';
+export const FRONTEND_URL   = getEnv('FRONTEND_URL')   || 'http://localhost:5174';
+export const CLOUD_RUN_URL  = getEnv('CLOUD_RUN_URL');   // e.g. https://boundary-iq-xxxx-uc.a.run.app
+export const FLY_APP_URL    = getEnv('FLY_APP_URL');     // e.g. https://boundary-iq.fly.dev
 
+// Dynamic origin validator — accepts localhost dev origins plus any deployment URL
+// explicitly provided, plus wildcard subdomains for Cloud Run / Fly.io.
 export const ALLOWED_ORIGINS = getEnv('ALLOWED_ORIGINS')
   ? getEnv('ALLOWED_ORIGINS').split(';').filter(Boolean).map(o => o.trim())
-  : [
-      'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175',
-      'http://127.0.0.1:5173', 'http://127.0.0.1:5174', 'http://127.0.0.1:5175',
-      FRONTEND_URL,
-    ].filter(Boolean);
+  : (function buildOrigins() {
+      const fixed = [
+        'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175',
+        'http://127.0.0.1:5173', 'http://127.0.0.1:5174', 'http://127.0.0.1:5175',
+        FRONTEND_URL,
+        CLOUD_RUN_URL,
+        FLY_APP_URL,
+      ].filter(Boolean);
+
+      // Accept any *.run.app or *.fly.dev origin dynamically (Cloud Run / Fly.io)
+      return (origin) => {
+        if (!origin) return true; // allow non-browser callers (curl, server-to-server)
+        if (fixed.includes(origin)) return true;
+        if (/^https:\/\/[\w-]+\.a\.run\.app$/.test(origin)) return true;  // Cloud Run
+        if (/^https:\/\/[\w-]+\.fly\.dev$/.test(origin)) return true;     // Fly.io
+        return false;
+      };
+    })();
 
 // ── Auth & Email ──────────────────────────────────────────────────────────────
 export const GOOGLE_CLIENT_ID = getEnv('GOOGLE_CLIENT_ID');
@@ -100,7 +117,7 @@ export const cfg = {
   OLLAMA_URL, OLLAMA_PATH, OLLAMA_RUNS_ON_WSL, OLLAMA_FALLBACK_MODEL,
   OPENAI_BASE_URL, DEFAULT_LOCAL_MODEL, ALLOW_API_FALLBACK,
   DATABASE_PATH,
-  FRONTEND_URL, ALLOWED_ORIGINS,
+  FRONTEND_URL, CLOUD_RUN_URL, FLY_APP_URL, ALLOWED_ORIGINS,
   GOOGLE_CLIENT_ID, INVITE_ONLY, RESEND_API_KEY, EMAIL_FROM, EMAIL_FROM_NAME,
   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
   BOUNDARY_SCAN_ROOTS, BOUNDARY_PATH_USER_MAP,
