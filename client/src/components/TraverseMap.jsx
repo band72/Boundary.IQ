@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { resolveLabels, getLeaderIntersection } from '../utils/labelLayout';
 
 const PAD = 50;
@@ -575,6 +575,10 @@ export default function TraverseMap({
   const [canvasElement, setCanvasElement] = useState(null);
   const [hoveredCourseIndexLocal, setHoveredCourseIndexLocal] = useState(null);
   const [hoveredVertexIndexLocal, setHoveredVertexIndexLocal] = useState(null);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const panAtDragStart = useRef({ x: 0, y: 0 });
 
   const activeHoveredIndex = hoveredCourseIndexProp !== undefined ? hoveredCourseIndexProp : hoveredCourseIndexLocal;
   const activeSelectedIndex = selectedCourseIndexProp !== undefined ? selectedCourseIndexProp : null;
@@ -622,10 +626,12 @@ export default function TraverseMap({
     const scaleY = (H - PAD * 2) / rangeN;
     const scale = Math.min(scaleX, scaleY);
 
-    const tx = e => PAD + (e - minE) * scale;
-    const ty = n => H - PAD - (n - minN) * scale;
+    const tx = e => PAD + (e - minE) * scale + panOffset.x;
+    const ty = n => H - PAD - (n - minN) * scale + panOffset.y;
 
-    // Grid lines (Surveyor Draft grid)
+    // Grid lines (Surveyor Draft grid) – shifted by pan offset
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
     ctx.strokeStyle = 'rgba(31, 46, 77, 0.4)';
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 5; i++) {
@@ -935,14 +941,33 @@ export default function TraverseMap({
 
   }, [canvasElement, pts, courses, activeHoveredIndex, activeSelectedIndex, hoveredVertexIndexLocal, tracts, activeTractIndex]);
 
+  const handleMouseDown = (e) => {
+    isPanning.current = true;
+    dragStart.current = { x: e.clientX, y: e.clientY };
+    panAtDragStart.current = { ...panOffset };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
   const handleMouseMove = (e) => {
     if (!canvasElement || pts.length < 2) return;
+
+    // ── Pan drag ──────────────────────────────────────────────────────────────
+    if (isPanning.current) {
+      const canvas = canvasElement;
+      const rect = canvas.getBoundingClientRect();
+      const scaleRatio = (canvas.width / rect.width) * 0.55;  // CSS px → canvas px, damped
+      const dx = (e.clientX - dragStart.current.x) * scaleRatio;
+      const dy = (e.clientY - dragStart.current.y) * scaleRatio;
+      setPanOffset({ x: panAtDragStart.current.x + dx, y: panAtDragStart.current.y + dy });
+      return;  // skip hit-testing while dragging
+    }
+
     const canvas = canvasElement;
     const rect = canvas.getBoundingClientRect();
     const mouseX = ((e.clientX - rect.left) / rect.width) * canvas.width;
     const mouseY = ((e.clientY - rect.top) / rect.height) * canvas.height;
 
-    // Scale calculation matching draw function
+    // Scale calculation matching draw function (including panOffset)
     const ns = allPtsForBounds.map(p => p.northing), es = allPtsForBounds.map(p => p.easting);
     const minN = ns.length ? Math.min(...ns) : 5000;
     const maxN = ns.length ? Math.max(...ns) : 5000;
@@ -954,8 +979,8 @@ export default function TraverseMap({
     const scaleY = (canvas.height - PAD * 2) / rangeN;
     const scale = Math.min(scaleX, scaleY);
 
-    const tx = e => PAD + (e - minE) * scale;
-    const ty = n => canvas.height - PAD - (n - minN) * scale;
+    const tx = e => PAD + (e - minE) * scale + panOffset.x;
+    const ty = n => canvas.height - PAD - (n - minN) * scale + panOffset.y;
 
     // 1. Vertex hit-testing
     let closestVertex = null;
@@ -1000,7 +1025,12 @@ export default function TraverseMap({
     }
   };
 
+  const handleMouseUp = () => {
+    isPanning.current = false;
+  };
+
   const handleMouseLeave = () => {
+    isPanning.current = false;
     setHoveredVertexIndexLocal(null);
     setHoveredCourseIndexLocal(null);
     if (setHoveredCourseIndexProp) setHoveredCourseIndexProp(null);
@@ -1107,19 +1137,38 @@ export default function TraverseMap({
 
   const { lines, curves } = getTablesData();
 
+  const panCursor = isPanning.current ? 'grabbing' : (hoveredCourseIndexLocal !== null || hoveredVertexIndexLocal !== null) ? 'pointer' : 'grab';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div className="map-container" style={{ height: 340 }}>
+      <div className="map-container" style={{ height: 340, position: 'relative' }}>
         <canvas
           ref={setCanvasElement}
           className="map-canvas"
           width={700}
           height={340}
-          style={{ cursor: (hoveredCourseIndexLocal !== null || hoveredVertexIndexLocal !== null) ? 'pointer' : 'default' }}
-          onMouseMove={handleMouseMove}
+          style={{ cursor: panCursor }}
+          onPointerDown={handleMouseDown}
+          onPointerMove={handleMouseMove}
+          onPointerUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
           onClick={handleCanvasClick}
         />
+        {(panOffset.x !== 0 || panOffset.y !== 0) && (
+          <button
+            onClick={() => setPanOffset({ x: 0, y: 0 })}
+            title="Reset view"
+            style={{
+              position: 'absolute', top: 8, right: 8,
+              background: 'rgba(9,14,26,0.82)', border: '1px solid rgba(168,196,255,0.25)',
+              color: '#a8c4ff', borderRadius: 6, padding: '3px 9px',
+              fontSize: '0.72rem', cursor: 'pointer', letterSpacing: '0.03em',
+              backdropFilter: 'blur(6px)', transition: 'opacity 0.2s',
+            }}
+          >
+            ⌖ Reset View
+          </button>
+        )}
         <div className="map-legend">
           <span style={{ color: 'var(--success)', fontWeight: 600 }}>● POB</span>
           {'  '}

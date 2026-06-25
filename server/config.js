@@ -30,7 +30,7 @@ function getBool(key, fallback = false) {
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
-export const PORT = getInt('PORT', 5050);
+export const PORT = getInt('PORT', 5051);
 export const NODE_ENV = getEnv('NODE_ENV') || 'development';
 export const IS_PROD = NODE_ENV === 'production';
 

@@ -1092,6 +1092,10 @@ export default function ScriptingTab() {
   const [curveParam2Type, setCurveParam2Type] = useState('delta');
   const [curveParam2Val, setCurveParam2Val] = useState('');
   const [solvedCurve, setSolvedCurve] = useState(null);
+
+  // DD ↔ DMS converter states
+  const [dmsInput, setDmsInput] = useState('');
+  const [ddInput, setDdInput] = useState('');
   
   // Canvas states
   const canvasRef = useRef(null);
@@ -3859,6 +3863,75 @@ export default function ScriptingTab() {
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* DD ↔ DMS Converter */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+              <div style={{ fontWeight: 600, color: '#a855f7', marginBottom: '0.5rem', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DD ↔ DMS</div>
+
+              {/* Decimal Degrees input */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '0.4rem', alignItems: 'center', marginBottom: '0.3rem' }}>
+                <span className="text-muted" style={{ fontSize: '0.72rem' }}>Decimal °</span>
+                <input
+                  id="dd-input"
+                  type="text"
+                  placeholder="e.g. 45.5083"
+                  value={ddInput}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    setDdInput(raw);
+                    const dd = parseFloat(raw);
+                    if (!isNaN(dd)) {
+                      const sign = dd < 0 ? '-' : '';
+                      const abs = Math.abs(dd);
+                      const deg = Math.floor(abs);
+                      const minFull = (abs - deg) * 60;
+                      const min = Math.floor(minFull);
+                      const sec = (minFull - min) * 60;
+                      setDmsInput(`${sign}${deg}°${String(min).padStart(2,'0')}'${sec.toFixed(4).replace(/\.?0+$/,'')}"`);
+                    } else if (raw.trim() === '' || raw.trim() === '-') {
+                      setDmsInput('');
+                    }
+                  }}
+                  style={{ padding: '2px 4px', fontSize: '0.75rem', background: '#090e1a', border: '1px solid var(--border)', color: 'var(--text-primary)', textAlign: 'right', borderRadius: 4 }}
+                />
+              </div>
+
+              {/* DMS input */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '0.4rem', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <span className="text-muted" style={{ fontSize: '0.72rem' }}>D° M′ S″</span>
+                <input
+                  id="dms-input"
+                  type="text"
+                  placeholder={`45°30'30"`}
+                  value={dmsInput}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    setDmsInput(raw);
+                    // Parse: optional sign, then D[°d ] M['m ] S["s]
+                    const m = raw.trim().match(/^(-?)\s*(\d+)[°d\s]\s*(\d+)['\'m\s]\s*([\d.]+)["\u201ds]?\s*$/);
+                    if (m) {
+                      const sign = m[1] === '-' ? -1 : 1;
+                      const deg = parseFloat(m[2]);
+                      const min = parseFloat(m[3]);
+                      const sec = parseFloat(m[4]);
+                      const dd = sign * (deg + min / 60 + sec / 3600);
+                      setDdInput(dd.toFixed(8).replace(/\.?0+$/, ''));
+                    } else if (raw.trim() === '' || raw.trim() === '-') {
+                      setDdInput('');
+                    }
+                  }}
+                  style={{ padding: '2px 4px', fontSize: '0.75rem', background: '#090e1a', border: '1px solid var(--border)', color: 'var(--text-primary)', textAlign: 'right', borderRadius: 4 }}
+                />
+              </div>
+
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ width: '100%', justifyContent: 'center', fontSize: '0.68rem', padding: '2px 4px', color: '#a855f7', borderColor: 'rgba(168,85,247,0.35)' }}
+                onClick={() => { setDmsInput(''); setDdInput(''); }}
+              >
+                Clear
+              </button>
             </div>
 
           </div>

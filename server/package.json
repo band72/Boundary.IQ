@@ -22,6 +22,8 @@
     "reconstruct-plat": "node scripts/reconstruct_plat_to_dxf.js"
   },
   "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "pg": "^8.12.0",
     "archiver": "^8.0.0",
     "better-sqlite3": "^11.0.0",
     "canvas": "^3.2.3",
