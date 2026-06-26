@@ -6,6 +6,7 @@ import * as bp from './bearingParser.js';
 import { createChildLogger } from '../logger.js';
 
 const log = createChildLogger('traverse');
+import { getEnforceNoSelfIntersection } from './db/context.js';
 
 // ── Unit Scale Factors (Fix #10) ─────────────────────────────────────────────
 // All internal math is in feet. Metric deed distances are converted on input.
@@ -330,7 +331,7 @@ export function compute(req) {
   }
 
   const hasSelfIntersection = detectSelfIntersection(adjusted);
-  const enforceFailsafe = process.env.ENFORCE_NO_SELF_INTERSECTION === 'true';
+  const enforceFailsafe = getEnforceNoSelfIntersection();
 
   let ratio, status;
   if (req.isOpenEnded) {

@@ -11,6 +11,7 @@ import * as dbSvc from '../services/diagnosticsDb.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { createChildLogger } from '../logger.js';
+import { getAllowApiFallback, getEnforceNoSelfIntersection } from '../services/db/context.js';
 
 const log = createChildLogger('settings');
 const router = Router();
@@ -57,8 +58,8 @@ router.get('/model', asyncHandler(async (req, res) => {
   res.json({
     activeProvider: gemini.getActiveProvider(),
     activeModel: gemini.getActiveModel(),
-    allowApiFallback: process.env.ALLOW_API_FALLBACK !== 'false',
-    enforceNoSelfIntersection: process.env.ENFORCE_NO_SELF_INTERSECTION === 'true',
+    allowApiFallback: getAllowApiFallback(),
+    enforceNoSelfIntersection: getEnforceNoSelfIntersection(),
     ollama: {
       online: ollamaStatus.online,
       url: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
@@ -78,31 +79,50 @@ router.get('/model', asyncHandler(async (req, res) => {
   });
 }));
 
-// ── POST /api/settings/model — switch active provider & model (admin only) ────
-router.post('/model', requireRole(['admin']), asyncHandler(async (req, res) => {
+// ── POST /api/settings/model — switch active provider & model (admin default / per-user local settings) ────
+router.post('/model', asyncHandler(async (req, res) => {
   const { provider, model, openaiBaseUrl, allowApiFallback, enforceNoSelfIntersection } = req.body;
   if (!provider) return res.status(400).json({ error: 'provider is required.' });
 
-  gemini.setProvider(provider, model, openaiBaseUrl || undefined);
+  if (req.user.role === 'admin') {
+    gemini.setProvider(provider, model, openaiBaseUrl || undefined);
 
-  if (allowApiFallback !== undefined) {
-    process.env.ALLOW_API_FALLBACK = allowApiFallback ? 'true' : 'false';
+    if (allowApiFallback !== undefined) {
+      process.env.ALLOW_API_FALLBACK = allowApiFallback ? 'true' : 'false';
+    }
+
+    if (enforceNoSelfIntersection !== undefined) {
+      process.env.ENFORCE_NO_SELF_INTERSECTION = enforceNoSelfIntersection ? 'true' : 'false';
+    }
+
+    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback, enforceNoSelfIntersection);
+    log.info({ provider, model, actor: req.user?.username }, 'Global AI provider switched by Admin');
+
+    res.json({
+      message: `Switched global default to ${provider}/${model || '(default)'}`,
+      activeProvider: gemini.getActiveProvider(),
+      activeModel: gemini.getActiveModel(),
+      allowApiFallback: getAllowApiFallback(),
+      enforceNoSelfIntersection: getEnforceNoSelfIntersection(),
+    });
+  } else {
+    dbSvc.saveUserSettings(req.user.id, {
+      activeProvider: provider,
+      activeModel: model,
+      openaiBaseUrl,
+      allowApiFallback,
+      enforceNoSelfIntersection
+    });
+    log.info({ provider, model, actor: req.user?.username }, 'User local AI provider switched');
+
+    res.json({
+      message: `Switched your local settings to ${provider}/${model || '(default)'}`,
+      activeProvider: provider,
+      activeModel: model,
+      allowApiFallback: allowApiFallback !== undefined ? allowApiFallback : true,
+      enforceNoSelfIntersection: enforceNoSelfIntersection !== undefined ? enforceNoSelfIntersection : false,
+    });
   }
-
-  if (enforceNoSelfIntersection !== undefined) {
-    process.env.ENFORCE_NO_SELF_INTERSECTION = enforceNoSelfIntersection ? 'true' : 'false';
-  }
-
-  saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback, enforceNoSelfIntersection);
-  log.info({ provider, model, actor: req.user?.username }, 'AI provider switched');
-
-  res.json({
-    message: `Switched to ${provider}/${model || '(default)'}`,
-    activeProvider: gemini.getActiveProvider(),
-    activeModel: gemini.getActiveModel(),
-    allowApiFallback: process.env.ALLOW_API_FALLBACK !== 'false',
-    enforceNoSelfIntersection: process.env.ENFORCE_NO_SELF_INTERSECTION === 'true',
-  });
 }));
 
 // ── GET /api/settings/ollama/status — detailed Ollama health check ────────────
@@ -158,20 +178,29 @@ router.post('/ollama/start', requireRole(['admin']), asyncHandler(async (req, re
   }
 }));
 
-// ── POST /api/settings/keys — update API keys in memory (admin only) ──────────
-router.post('/keys', requireRole(['admin']), asyncHandler(async (req, res) => {
+// ── POST /api/settings/keys — update API keys (admin default / per-user local settings) ──────────
+router.post('/keys', asyncHandler(async (req, res) => {
   const { geminiApiKey, openAiApiKey } = req.body;
-  if (geminiApiKey) {
-    gemini.init(geminiApiKey);
-    process.env.GEMINI_API_KEY = geminiApiKey;
-    log.info({ actor: req.user?.username }, 'Gemini API key updated dynamically');
+  
+  if (req.user.role === 'admin') {
+    if (geminiApiKey) {
+      gemini.init(geminiApiKey);
+      process.env.GEMINI_API_KEY = geminiApiKey;
+    }
+    if (openAiApiKey) {
+      process.env.OPENAI_API_KEY = openAiApiKey;
+    }
+    saveSystemSettingsToEnv(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, geminiApiKey);
+    log.info({ actor: req.user?.username }, 'Global API keys updated dynamically by Admin');
+    res.json({ success: true, message: 'API keys updated successfully in server memory and persisted to .env.' });
+  } else {
+    dbSvc.saveUserSettings(req.user.id, {
+      geminiApiKey,
+      openaiApiKey: openAiApiKey
+    });
+    log.info({ actor: req.user?.username }, 'User local API keys updated dynamically');
+    res.json({ success: true, message: 'Your API keys updated successfully.' });
   }
-  if (openAiApiKey) {
-    process.env.OPENAI_API_KEY = openAiApiKey;
-    log.info({ actor: req.user?.username }, 'OpenAI API key updated dynamically');
-  }
-  saveSystemSettingsToEnv(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, geminiApiKey);
-  res.json({ success: true, message: 'API keys updated successfully in server memory and persisted to .env.' });
 }));
 
 // ── GET /api/settings/system — retrieve SQLite path, scan roots, path overrides ─

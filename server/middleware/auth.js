@@ -1,4 +1,5 @@
-import { getSession } from '../services/diagnosticsDb.js';
+import { getSession, getUserSettings } from '../services/diagnosticsDb.js';
+import { userSettingsStore } from '../services/db/context.js';
 import { createChildLogger } from '../logger.js';
 
 const log = createChildLogger('auth');
@@ -50,7 +51,20 @@ export function requireAuth(req, res, next) {
       plan: sessionUser.plan || 'free',
     };
 
-    next();
+    const userSettings = getUserSettings(sessionUser.userId) || {};
+    const contextSettings = {
+      activeProvider: userSettings.ActiveProvider || undefined,
+      activeModel: userSettings.ActiveModel || undefined,
+      openaiBaseUrl: userSettings.OpenaiBaseUrl || undefined,
+      allowApiFallback: userSettings.AllowApiFallback !== undefined ? (userSettings.AllowApiFallback === 1) : undefined,
+      enforceNoSelfIntersection: userSettings.EnforceNoSelfIntersection !== undefined ? (userSettings.EnforceNoSelfIntersection === 1) : undefined,
+      geminiApiKey: userSettings.GeminiApiKey || undefined,
+      openaiApiKey: userSettings.OpenaiApiKey || undefined,
+    };
+
+    userSettingsStore.run(contextSettings, () => {
+      next();
+    });
   } catch (err) {
     log.error({ err: err.message }, 'Authentication middleware error');
     return res.status(500).json({ error: 'Internal server error during authentication.' });

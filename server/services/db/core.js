@@ -208,6 +208,18 @@ function _initializeSchema() {
       FOREIGN KEY (UsedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS UserSettings (
+      UserId INTEGER PRIMARY KEY,
+      ActiveProvider TEXT,
+      ActiveModel TEXT,
+      OpenaiBaseUrl TEXT,
+      AllowApiFallback INTEGER,
+      EnforceNoSelfIntersection INTEGER,
+      GeminiApiKey TEXT,
+      OpenaiApiKey TEXT,
+      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS _Migrations (
       Name TEXT PRIMARY KEY,
       AppliedAt TEXT NOT NULL

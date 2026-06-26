@@ -41,9 +41,18 @@ export function init(key) {
   }
 }
 
-export function getActiveProvider()  { return activeProvider; }
-export function getActiveModel()     { return activeModel; }
-export function getOpenAiBaseUrl()   { return activeOpenAiBaseUrl; }
+import {
+  getActiveProvider as _getProvider,
+  getActiveModel as _getModel,
+  getOpenAiBaseUrl as _getBaseUrl,
+  getAllowApiFallback as _getAllowFallback,
+} from '../db/context.js';
+
+export { userSettingsStore } from '../db/context.js';
+
+export function getActiveProvider()  { return _getProvider(activeProvider); }
+export function getActiveModel()     { return _getModel(activeModel); }
+export function getOpenAiBaseUrl()   { return _getBaseUrl(activeOpenAiBaseUrl); }
 
 export function setProvider(provider, model, baseUrl) {
   if (!['gemini', 'ollama', 'openai'].includes(provider)) {
@@ -140,8 +149,8 @@ function shouldRunOcrForImage(mimeType, provider, model) {
 }
 
 export async function extractRaw(buffer, mimeType, prompt) {
-  const provider = activeProvider;
-  const model    = activeModel;
+  const provider = getActiveProvider();
+  const model    = getActiveModel();
 
   let activePrompt = prompt;
   let activeBuffer = buffer;
@@ -173,13 +182,13 @@ export async function extractRaw(buffer, mimeType, prompt) {
   log.info({ provider, model, bufferKb: (activeBuffer.length / 1024).toFixed(0) }, 'AI extract started');
 
   if (provider === 'ollama') return extractViaOllama(activeBuffer, activeMime, activePrompt, model);
-  if (provider === 'openai') return extractViaOpenAI(activeBuffer, activeMime, activePrompt, model, activeOpenAiBaseUrl);
+  if (provider === 'openai') return extractViaOpenAI(activeBuffer, activeMime, activePrompt, model, getOpenAiBaseUrl());
 
   // Gemini with Ollama fallback on quota, timeout, or network connection errors
   try {
     return await extractViaGemini(activeBuffer, activeMime, activePrompt, model);
   } catch (err) {
-    const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
+    const allowFallback = _getAllowFallback(process.env.ALLOW_API_FALLBACK !== 'false');
     const isQuota = isGeminiQuotaError(err);
     const isNetOrTimeout = isNetworkOrTimeoutError(err);
     if (allowFallback && (isQuota || isNetOrTimeout)) {

@@ -10,11 +10,13 @@ const MAX_RETRIES   = 5;
 const BASE_DELAY_MS = 3000;
 const FETCH_TIMEOUT_MS = 90_000;
 
+import { getGeminiApiKey } from '../db/context.js';
+
 let _geminiApiKey = GEMINI_API_KEY || null;
 
 /** Override at runtime (called from dispatcher.init) */
 export function setGeminiKey(key) { _geminiApiKey = key; }
-export function getGeminiKey()    { return _geminiApiKey; }
+export function getGeminiKey()    { return getGeminiApiKey(_geminiApiKey); }
 
 // ── Retry-aware POST ──────────────────────────────────────────────────────────
 async function postWithRetry(url, payload, customHeaders = {}) {
@@ -47,7 +49,8 @@ async function postWithRetry(url, payload, customHeaders = {}) {
 
 // ── Core Gemini extraction ────────────────────────────────────────────────────
 export async function extractViaGemini(buffer, mimeType, prompt, model) {
-  if (!_geminiApiKey) throw new Error('Gemini API key not configured.');
+  const apiKey = getGeminiApiKey(_geminiApiKey);
+  if (!apiKey) throw new Error('Gemini API key not configured.');
 
   const parts = [{ text: prompt }];
   if (mimeType !== 'text/plain') {
@@ -62,11 +65,11 @@ export async function extractViaGemini(buffer, mimeType, prompt, model) {
   let url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const customHeaders = {};
 
-  const isAccessToken = !_geminiApiKey.startsWith('AIzaSy') && !_geminiApiKey.startsWith('AQ.');
+  const isAccessToken = !apiKey.startsWith('AIzaSy') && !apiKey.startsWith('AQ.');
   if (isAccessToken) {
-    customHeaders['Authorization'] = `Bearer ${_geminiApiKey}`;
+    customHeaders['Authorization'] = `Bearer ${apiKey}`;
   } else {
-    url += `?key=${_geminiApiKey}`;
+    url += `?key=${apiKey}`;
   }
 
   const { status, body } = await postWithRetry(url, payload, customHeaders);

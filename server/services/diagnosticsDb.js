@@ -59,3 +59,5 @@ export {
   createInviteToken, getInviteToken, redeemInviteToken,
   listInvites, revokeInviteToken,
 } from './db/invites.js';
+
+export { getUserSettings, saveUserSettings } from './db/userSettings.js';

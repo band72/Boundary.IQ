@@ -74,7 +74,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   });
 
-  return res.status(201).json({ token, username: user.username, role: user.role, plan: user.plan || 'free' });
+  return res.status(201).json({ id: user.id, token, username: user.username, role: user.role, plan: user.plan || 'free' });
 }));
 
 // ── POST /api/auth/login ───────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ router.post('/login', asyncHandler(async (req, res) => {
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   });
 
-  return res.json({ token, username: user.username, role: user.role, plan: user.plan || 'free', forcePasswordReset: forceReset });
+  return res.json({ id: user.id, token, username: user.username, role: user.role, plan: user.plan || 'free', forcePasswordReset: forceReset });
 }));
 
 // ── POST /api/auth/logout ──────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ router.post('/google-login', asyncHandler(async (req, res) => {
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   });
 
-  return res.json({ token, username: user.username, role: user.role, plan: user.plan || 'free' });
+  return res.json({ id: user.id, token, username: user.username, role: user.role, plan: user.plan || 'free' });
 }));
 
 // ── GET /api/auth/users ───────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ import { SupervisorAgent } from './agentSystem.js';
 import { createChildLogger } from '../logger.js';
 import { pdfOcrCache } from './llm/pdfProcessor.js';
 import crypto from 'crypto';
-import { GEMINI_API_KEY, ALLOW_API_FALLBACK } from '../config.js';
+import { getGeminiApiKey, getAllowApiFallback } from './db/context.js';
 
 const log = createChildLogger('repair');
 
@@ -44,8 +44,8 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
   if (allowEscalation &&
       (result.status === 'FAIL' || result.status === 'ERROR') &&
       (currentProvider === 'ollama' || currentProvider === 'openai') &&
-      GEMINI_API_KEY &&
-      ALLOW_API_FALLBACK !== false) {
+      getGeminiApiKey() &&
+      getAllowApiFallback()) {
 
     const fallbackModel = 'gemini-2.5-flash';
     log.info(` Escalating failed deed "${fileName}" (status=${result.status}) from local model [${gemini.getActiveModel()}] to cloud model [${fallbackModel}] for another look.`);

@@ -5,6 +5,7 @@ import { OPENAI_BASE_URL } from '../../config.js';
 import { createChildLogger } from '../../logger.js';
 import { extractTextFromPdf, convertPdfToPng } from './pdfProcessor.js';
 import { hasBoundaryKeywords, pruneLongText } from './ocrPostProcess.js';
+import { getOpenaiApiKey, getOpenAiBaseUrl } from '../db/context.js';
 
 const log = createChildLogger('openaiProvider');
 
@@ -13,6 +14,7 @@ const BASE_DELAY_MS = 3000;
 const FETCH_TIMEOUT_MS = 90_000;
 
 export async function extractViaOpenAI(buffer, mimeType, prompt, model, baseUrl = OPENAI_BASE_URL) {
+  const resolvedBaseUrl = getOpenAiBaseUrl(baseUrl);
   let userContent;
 
   if (mimeType === 'text/plain') {
@@ -47,13 +49,19 @@ export async function extractViaOpenAI(buffer, mimeType, prompt, model, baseUrl 
     response_format: { type: 'json_object' },
   };
 
-  const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const url = `${resolvedBaseUrl.replace(/\/$/, '')}/chat/completions`;
   log.info({ url, model }, 'OpenAI-compat request');
+
+  const headers = { 'Content-Type': 'application/json' };
+  const apiKey = getOpenaiApiKey();
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });

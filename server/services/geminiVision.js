@@ -21,6 +21,7 @@ import { extractRaw, getActiveProvider, getActiveModel } from './llm/dispatcher.
 import { createChildLogger as _cl } from '../logger.js';
 
 const log = _cl('geminiVision');
+import { getAllowApiFallback } from './db/context.js';
 
 // Inline re-imports for internal use by extractViaOllama in dispatcher
 // (dispatcher.js handles the full provider routing — no duplicated code here)
@@ -63,7 +64,7 @@ Return ONLY valid JSON. No conversational text or markdown fences.`;
       try {
         rawText = await extractViaGemini(Buffer.alloc(0), 'text/plain', fallbackPrompt, model);
       } catch (err) {
-        const allowFallback = process.env.ALLOW_API_FALLBACK !== 'false';
+        const allowFallback = getAllowApiFallback(process.env.ALLOW_API_FALLBACK !== 'false');
         const isQuota = isGeminiQuotaError(err);
         const isNetOrTimeout = isNetworkOrTimeoutError(err);
         if (allowFallback && (isQuota || isNetOrTimeout)) {
