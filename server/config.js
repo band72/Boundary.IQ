@@ -67,13 +67,12 @@ export const ALLOWED_ORIGINS = getEnv('ALLOWED_ORIGINS')
         FLY_APP_URL,
       ].filter(Boolean);
 
-      // Accept any *.run.app or *.fly.dev origin dynamically (Cloud Run / Fly.io)
-      return (origin) => {
-        if (!origin) return true; // allow non-browser callers (curl, server-to-server)
-        if (fixed.includes(origin)) return true;
-        if (/^https:\/\/[\w-]+\.a\.run\.app$/.test(origin)) return true;  // Cloud Run
-        if (/^https:\/\/[\w-]+\.fly\.dev$/.test(origin)) return true;     // Fly.io
-        return false;
+      return (origin, callback) => {
+        if (!origin) return callback(null, true); // allow non-browser callers (curl, server-to-server)
+        if (fixed.includes(origin)) return callback(null, true);
+        if (/^https:\/\/[\w-]+\.a\.run\.app$/.test(origin)) return callback(null, true);  // Cloud Run
+        if (/^https:\/\/[\w-]+\.fly\.dev$/.test(origin)) return callback(null, true);     // Fly.io
+        return callback(null, false);
       };
     })();
 

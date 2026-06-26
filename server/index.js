@@ -111,7 +111,7 @@ if (fs.existsSync(envPath)) {
 
 // ── Initialize SQLite database ────────────────────────────────────────────────
 try {
-  diagnosticsDb.init();
+  await diagnosticsDb.init();
   logger.info('✓ Diagnostics database initialized.');
   // Purge stale sessions on startup, then every 24 hours
   diagnosticsDb.purgeExpiredSessions();

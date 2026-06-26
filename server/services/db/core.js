@@ -10,6 +10,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { DATABASE_PATH } from '../../config.js';
+import { downloadDb, uploadDb } from './persistence.js';
 
 let db = null;
 let dbPath = '';
@@ -33,7 +34,7 @@ export function getDbPath() {
 
 // ── Initialization ────────────────────────────────────────────────────────────
 
-export function init() {
+export async function init() {
   if (DATABASE_PATH) {
     dbPath = path.resolve(DATABASE_PATH);
   } else {
@@ -46,11 +47,45 @@ export function init() {
   const parent = path.dirname(dbPath);
   fs.mkdirSync(parent, { recursive: true });
 
+  // Download the database backup from GCS prior to opening
+  try {
+    await downloadDb(dbPath);
+  } catch (err) {
+    console.error('Failed to download database backup from GCS:', err);
+  }
+
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   _initializeSchema();
   _runMigrations();
   _seedHeuristics();
+
+  // Setup periodic database backup to GCS every 30 seconds
+  setInterval(async () => {
+    try {
+      await uploadDb(db, dbPath);
+    } catch (err) {
+      console.error('Periodic database backup upload to GCS failed:', err);
+    }
+  }, 30000);
+
+  // Setup process exit/termination signal handlers to perform a final backup
+  const handleExitSignal = async (signal) => {
+    console.log(`\nReceived ${signal} - performing final database backup to GCS...`);
+    if (db) {
+      try {
+        await uploadDb(db, dbPath, true);
+        console.log('✓ Final database backup completed successfully.');
+      } catch (err) {
+        console.error('Final database backup upload to GCS failed:', err);
+      }
+    }
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => handleExitSignal('SIGTERM'));
+  process.on('SIGINT', () => handleExitSignal('SIGINT'));
+
   // Purge old logs once on startup (deferred 5 s to avoid blocking boot),
   // then every 24 h. Prevents startup latency on large databases.
   setTimeout(() => _purgeOldLogs(90), 5000);

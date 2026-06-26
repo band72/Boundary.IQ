@@ -11,7 +11,7 @@ export default defineConfig({
     proxy: {
       // Forward all /api requests to the Express backend — eliminates CORS in dev
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:5051',
         changeOrigin: true,
         secure: false,
       },

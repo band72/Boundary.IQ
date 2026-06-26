@@ -1,11 +1,13 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
-// TODO: replace placeholders with your Firebase project values
 const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
+  apiKey: "AIzaSyCfCreItJCbR4EI6qNmRMoOaUajiSgNweU",
+  authDomain: "gen-lang-client-0357875004.firebaseapp.com",
+  projectId: "gen-lang-client-0357875004",
+  storageBucket: "gen-lang-client-0357875004.firebasestorage.app",
+  messagingSenderId: "318563891368",
+  appId: "1:318563891368:web:b20182ae1be400a96fea9d"
 };
 
 const app = initializeApp(firebaseConfig);
