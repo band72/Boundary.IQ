@@ -776,7 +776,13 @@ export default function BatchDeedTab() {
       try { data = JSON.parse(text); }
       catch { throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`); }
 
-      if (!res.ok) throw new Error(data?.error ?? `Server error ${res.status}`);
+      if (!res.ok) {
+        // Show a specific, actionable message for daily limit reached
+        if (res.status === 429 && data?.code === 'DAILY_LIMIT_REACHED') {
+          throw new Error(`Daily limit reached: You've used ${data.used}/${data.limit} free deed solves today. Upgrade to Pro for unlimited processing.`);
+        }
+        throw new Error(data?.error ?? `Server error ${res.status}`);
+      }
       setResults(data);
     } catch (e) {
       setError(String(e.message));

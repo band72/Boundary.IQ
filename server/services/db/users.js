@@ -195,8 +195,9 @@ export function incrementDailyUsage(userId) {
   `).run(userId, date);
 }
 
-export function checkDailyLimit(userId, userPlan) {
-  if (userPlan === 'pro' || userPlan === 'enterprise') return { allowed: true, used: null, limit: null };
+export function checkDailyLimit(userId, userPlan, userRole) {
+  // Admins and paid plans have no daily limit
+  if (userRole === 'admin' || userPlan === 'pro' || userPlan === 'enterprise') return { allowed: true, used: null, limit: null };
   const used = getDailyUsage(userId);
   return { allowed: used < FREE_DAILY_DEED_LIMIT, used, limit: FREE_DAILY_DEED_LIMIT };
 }

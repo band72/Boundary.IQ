@@ -127,7 +127,7 @@ export function trackDeedUsage(req, res, next) {
   if (!req.user) return next();
   // Import lazily to avoid circular deps
   import('../services/diagnosticsDb.js').then(({ checkDailyLimit, incrementDailyUsage }) => {
-    const limit = checkDailyLimit(req.user.id, req.user.plan);
+    const limit = checkDailyLimit(req.user.id, req.user.plan, req.user.role);
     req.usage = limit;
 
     if (!limit.allowed) {
