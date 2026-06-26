@@ -1,5 +1,5 @@
-import { trySurveyorShapeCorrection, detectBacktracking } from '../services/repair.js';
-import * as traverseSvc from '../services/traverse.js';
+import { trySurveyorShapeCorrection, detectBacktracking } from '../services/Scripting/repair.js';
+import * as traverseSvc from '../services/Scripting/traverse.js';
 
 // Test Case 1: The uncorrected classic riddle deed (one missing bearing):
 const degenerateRiddleWithMissing = {

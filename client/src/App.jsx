@@ -1,16 +1,17 @@
-import { useState, useEffect, Component, useMemo, useCallback } from 'react';
-import TraverseTab from './components/TraverseTab';
-import PlatTab from './components/PlatTab';
-import WriterTab from './components/WriterTab';
-import BatchDeedTab from './components/BatchDeedTab';
-import DashboardTab from './components/DashboardTab';
-import SettingsTab from './components/SettingsTab';
-import UserSettingsTab from './components/UserSettingsTab';
-import HelpModal from './components/HelpModal';
-import LoginScreen from './components/LoginScreen';
-import AdminPanel from './components/AdminPanel';
-import BillingTab from './components/BillingTab';
-import ScriptingTab from './components/ScriptingTab';
+import { useState, useEffect, Component, useMemo, useCallback, lazy, Suspense } from 'react';
+// ── Lazy-loaded tab components — each loads only when first visited ────────────
+const TraverseTab  = lazy(() => import('./components/TraverseTab'));
+const PlatTab      = lazy(() => import('./components/PlatTab'));
+const WriterTab    = lazy(() => import('./components/WriterTab'));
+const BatchDeedTab = lazy(() => import('./components/BatchDeedTab'));
+const DashboardTab = lazy(() => import('./components/DashboardTab'));
+const SettingsTab  = lazy(() => import('./components/SettingsTab'));
+const UserSettingsTab = lazy(() => import('./components/UserSettingsTab'));
+const HelpModal    = lazy(() => import('./components/HelpModal'));
+const AdminPanel   = lazy(() => import('./components/AdminPanel'));
+const BillingTab   = lazy(() => import('./components/BillingTab'));
+const ScriptingTab = lazy(() => import('./components/ScriptingTab'));
+const LoginScreen  = lazy(() => import('./components/LoginScreen'));
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { AuthProvider } from './context/AuthProvider';
@@ -66,7 +67,20 @@ class TabErrorBoundary extends Component {
   }
 }
 
-// ── Tab & access definitions ──────────────────────────────────────────────────
+// ── Tab lazy-load spinner ─────────────────────────────────────────────────────
+function TabSpinner() {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100%', gap: '0.75rem', color: 'var(--text-muted)',
+    }}>
+      <span className="spinner" style={{ width: 28, height: 28, borderWidth: 2 }} />
+      <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>Loading module…</span>
+    </div>
+  );
+}
+
+
 // minRole: 'user' = all logged-in users | 'admin' = admins only
 // minPlan: plan gate (only relevant when user already has minRole access)
 // status:  'live' | 'testing' — 'testing' shows a chip in the sidebar for admin
@@ -188,7 +202,11 @@ function AppShell() {
 
   // ── Login screen ────────────────────────────────────────────────────────────
   if (!user) {
-    return <LoginScreen onAuthSuccess={login} />;
+    return (
+      <Suspense fallback={<TabSpinner />}>
+        <LoginScreen onAuthSuccess={login} />
+      </Suspense>
+    );
   }
 
   // ── Main application shell ──────────────────────────────────────────────────
@@ -321,55 +339,61 @@ function AppShell() {
           {/* Workspace */}
           <TabErrorBoundary>
             <main className="workspace">
-              {tab === 'traverse'  && <TraverseTab />}
-              {tab === 'plat'      && (
-                hasAccess(user, TABS.find(t => t.id === 'plat'))
-                  ? <PlatTab />
-                  : <TestingWall feature="Plat Extraction" icon="🛰" />
-              )}
-              {tab === 'writer'    && (
-                hasAccess(user, TABS.find(t => t.id === 'writer'))
-                  ? <WriterTab />
-                  : <TestingWall feature="Legal Description Writer" icon="✍️" />
-              )}
-              {tab === 'batch'     && (
-                hasAccess(user, TABS.find(t => t.id === 'batch'))
-                  ? <BatchDeedTab />
-                  : <TestingWall feature="Batch Deed Processing" icon="📦" />
-              )}
-              {tab === 'scripting' && (
-                hasAccess(user, TABS.find(t => t.id === 'scripting'))
-                  ? <ScriptingTab />
-                  : <TestingWall feature="Linework Scripting" icon="📝" />
-              )}
-              {tab === 'dashboard' && (
-                hasAccess(user, TABS.find(t => t.id === 'dashboard'))
-                  ? <DashboardTab />
-                  : <TestingWall feature="Dashboard" icon="📊" />
-              )}
-              {tab === 'settings'  && (
-                isAdmin ? (
-                  <SettingsTab
-                    hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
-                    hidePlat={hidePlat}         setHidePlat={setHidePlat}
-                    hideWriter={hideWriter}     setHideWriter={setHideWriter}
-                  />
-                ) : (
-                  <UserSettingsTab
-                    hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
-                    hidePlat={hidePlat}         setHidePlat={setHidePlat}
-                    hideWriter={hideWriter}     setHideWriter={setHideWriter}
-                  />
-                )
-              )}
-              {tab === 'billing' && <BillingTab user={user} />}
-              {tab === 'admin'   && isAdmin && <AdminPanel />}
+              <Suspense fallback={<TabSpinner />}>
+                {tab === 'traverse'  && <TraverseTab />}
+                {tab === 'plat'      && (
+                  hasAccess(user, TABS.find(t => t.id === 'plat'))
+                    ? <PlatTab />
+                    : <TestingWall feature="Plat Extraction" icon="🛰" />
+                )}
+                {tab === 'writer'    && (
+                  hasAccess(user, TABS.find(t => t.id === 'writer'))
+                    ? <WriterTab />
+                    : <TestingWall feature="Legal Description Writer" icon="✍️" />
+                )}
+                {tab === 'batch'     && (
+                  hasAccess(user, TABS.find(t => t.id === 'batch'))
+                    ? <BatchDeedTab />
+                    : <TestingWall feature="Batch Deed Processing" icon="📦" />
+                )}
+                {tab === 'scripting' && (
+                  hasAccess(user, TABS.find(t => t.id === 'scripting'))
+                    ? <ScriptingTab />
+                    : <TestingWall feature="Linework Scripting" icon="📝" />
+                )}
+                {tab === 'dashboard' && (
+                  hasAccess(user, TABS.find(t => t.id === 'dashboard'))
+                    ? <DashboardTab />
+                    : <TestingWall feature="Dashboard" icon="📊" />
+                )}
+                {tab === 'settings'  && (
+                  isAdmin ? (
+                    <SettingsTab
+                      hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
+                      hidePlat={hidePlat}         setHidePlat={setHidePlat}
+                      hideWriter={hideWriter}     setHideWriter={setHideWriter}
+                    />
+                  ) : (
+                    <UserSettingsTab
+                      hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
+                      hidePlat={hidePlat}         setHidePlat={setHidePlat}
+                      hideWriter={hideWriter}     setHideWriter={setHideWriter}
+                    />
+                  )
+                )}
+                {tab === 'billing' && <BillingTab user={user} />}
+                {tab === 'admin'   && isAdmin && <AdminPanel />}
+              </Suspense>
             </main>
           </TabErrorBoundary>
         </div>
       </div>
 
-      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+      {helpOpen && (
+        <Suspense fallback={null}>
+          <HelpModal onClose={() => setHelpOpen(false)} />
+        </Suspense>
+      )}
     </StatsRefreshProvider>
   );
 }

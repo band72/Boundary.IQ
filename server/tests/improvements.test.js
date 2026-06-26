@@ -3,10 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import * as bp from '../services/bearingParser.js';
-import { parseExtractionJson, solveFromCourses } from '../services/deedTextSolver.js';
+import * as bp from '../services/Scripting/bearingParser.js';
+import { parseExtractionJson, solveFromCourses } from '../services/Scripting/deedTextSolver.js';
 import { generateGeoJson, generateLandXml } from '../services/exportService.js';
-import { parseDmsToDecimal, autoFixUnknownRuns } from '../services/traverse.js';
+import { parseDmsToDecimal, autoFixUnknownRuns } from '../services/Scripting/traverse.js';
 
 describe('Boundary.IQ Improvements Tests', () => {
 

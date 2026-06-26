@@ -1,0 +1,74 @@
+{
+  "success": true,
+  "isPassing": true,
+  "linearError": 0,
+  "precisionRatio": "1:∞ (Perfect)",
+  "errorNorthing": 0,
+  "errorEasting": 0,
+  "perimeter": 660.3,
+  "areaAcres": 0,
+  "stations": [
+    {
+      "seq": 0,
+      "course": "POB",
+      "northing": 5000,
+      "easting": 5000,
+      "depDN": 0,
+      "depDE": 0
+    },
+    {
+      "seq": 1,
+      "course": "N00°02'10.00\"W 330.15'",
+      "northing": 5330.149934428106,
+      "easting": 4999.791920405912,
+      "depDN": 330.1499344281057,
+      "depDE": -0.2080795940880287
+    },
+    {
+      "seq": 2,
+      "course": "S00°02'10.00\"E 330.15'",
+      "northing": 5000,
+      "easting": 5000,
+      "depDN": -330.1499344281057,
+      "depDE": 0.20807959408813487
+    }
+  ],
+  "adjustedStations": [
+    {
+      "seq": 0,
+      "northing": 5000,
+      "easting": 5000
+    },
+    {
+      "seq": 1,
+      "northing": 5330.149934428106,
+      "easting": 4999.791920405912
+    },
+    {
+      "seq": 2,
+      "northing": 5000,
+      "easting": 5000
+    }
+  ],
+  "courses": [
+    {
+      "type": "Line",
+      "bearing": "N00°02'10\"W",
+      "distance": 330.15,
+      "delta": null,
+      "radius": null,
+      "arcLength": null,
+      "curveDirection": null,
+      "chordBearing": null,
+      "chordDistance": null,
+      "isUnknown": false
+    },
+    {
+      "type": "Line",
+      "bearing": "S00°02'10.00\"E",
+      "distance": 330.15,
+      "isUnknown": false
+    }
+  ],
+  "hasSelfIntersection": false
+}

@@ -1,4 +1,4 @@
-import { compute } from '../services/traverse.js';
+import { compute } from '../services/Scripting/traverse.js';
 import assert from 'assert';
 
 console.log('Running curve resolution tests...');

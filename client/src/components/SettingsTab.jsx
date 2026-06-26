@@ -2075,7 +2075,6 @@ export default function SettingsTab({
 
       {/* ── Survey Command Language Settings Card ─────────────────────────────── */}
       <SurveyBatchLibraryCard API={API} />
-
     </div>
   );
 }
@@ -2349,3 +2348,4 @@ function SurveyBatchLibraryCard({ API }) {
     </div>
   );
 }
+

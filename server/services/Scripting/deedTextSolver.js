@@ -7,17 +7,17 @@
 
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
-import * as platLookup from './platLookupService.js';
-import * as plssParser from './plssParser.js';
+import * as platLookup from '../platLookupService.js';
+import * as plssParser from '../plssParser.js';
 import * as legalWriter from './legalWriter.js';
-import { extractRaw, getActiveProvider, getActiveModel, setProvider } from './llm/dispatcher.js';
+import { extractRaw, getActiveProvider, getActiveModel, setProvider } from '../llm/dispatcher.js';
 import { tryScrivenerErrorSolver } from './repair.js';
 
-import { isPlaceholderHallucination } from './geminiVision.js';
-import { postProcessOcrText } from './llm/ocrPostProcess.js';
-import { createChildLogger } from '../logger.js';
-import { httpFetch } from './httpFetch.js';
-import { OLLAMA_URL } from '../config.js';
+import { isPlaceholderHallucination } from '../geminiVision.js';
+import { postProcessOcrText } from '../llm/ocrPostProcess.js';
+import { createChildLogger } from '../../logger.js';
+import { httpFetch } from '../httpFetch.js';
+import { OLLAMA_URL } from '../../config.js';
 import { Agent } from 'undici';
 
 const log = createChildLogger('deedSolver');

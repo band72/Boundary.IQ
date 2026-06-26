@@ -1092,7 +1092,6 @@ export default function ScriptingTab() {
   const [curveParam2Type, setCurveParam2Type] = useState('delta');
   const [curveParam2Val, setCurveParam2Val] = useState('');
   const [solvedCurve, setSolvedCurve] = useState(null);
-
   // DD ↔ DMS converter states
   const [dmsInput, setDmsInput] = useState('');
   const [ddInput, setDdInput] = useState('');
@@ -3864,7 +3863,6 @@ export default function ScriptingTab() {
                 </div>
               )}
             </div>
-
             {/* DD ↔ DMS Converter */}
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
               <div style={{ fontWeight: 600, color: '#a855f7', marginBottom: '0.5rem', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DD ↔ DMS</div>
@@ -3933,7 +3931,6 @@ export default function ScriptingTab() {
                 Clear
               </button>
             </div>
-
           </div>
         </div>
 

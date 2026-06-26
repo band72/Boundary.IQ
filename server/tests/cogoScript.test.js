@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import * as bp from '../services/bearingParser.js';
+import * as bp from '../services/Scripting/bearingParser.js';
 
 // ─── COGO Parser for Batch Script Test ─────────────────────────────────────────
 

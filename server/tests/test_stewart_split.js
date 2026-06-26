@@ -1,4 +1,4 @@
-import { extractNamedParcels } from '../services/repair.js';
+import { extractNamedParcels } from '../services/Scripting/repair.js';
 // Usage: node test_stewart_split.js [ocrCacheJsonPath]
 import fs from 'fs/promises';
 

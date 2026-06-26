@@ -1,7 +1,7 @@
 // ─── Hierarchical Multi-Agent System ─────────────────────────────────────────
 // Implements a turn-based dialogue loop between Extractor, COGO, and Surveyor agents.
 
-import * as gemini from './geminiVision.js';
+import * as gemini from '../geminiVision.js';
 import * as traverseSvc from './traverse.js';
 import * as bp from './bearingParser.js';
 

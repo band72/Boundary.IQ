@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import * as bp from '../services/bearingParser.js';
-import * as traverseSvc from '../services/traverse.js';
+import * as bp from '../services/Scripting/bearingParser.js';
+import * as traverseSvc from '../services/Scripting/traverse.js';
 
 // ── Helpers for COGO Scripting Tests ──────────────────────────────────────────
 

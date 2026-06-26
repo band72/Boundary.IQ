@@ -1,9 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { runRepairPipeline } from '../services/repair.js';
+import { runRepairPipeline } from '../services/Scripting/repair.js';
 import { writeResultFiles } from '../services/output.js';
 import { init } from '../services/diagnosticsDb.js';
-import * as legalWriter from '../services/legalWriter.js';
+import * as legalWriter from '../services/Scripting/legalWriter.js';
 
 import * as geminiVision from '../services/geminiVision.js';
 

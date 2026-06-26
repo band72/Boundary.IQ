@@ -7,7 +7,7 @@ import path from 'path';
 import * as dxf    from './dxfExport.js';
 import * as sketch from './sketchRenderer.js';
 import { inferCountyStateFromText } from './geminiVision.js';
-import * as traverseSvc from './traverse.js';
+import * as traverseSvc from './Scripting/traverse.js';
 
 /**
  * Creates a dated output subfolder and returns its path.

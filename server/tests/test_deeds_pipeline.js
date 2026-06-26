@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs/promises';
 import path from 'path';
-import { runRepairPipeline } from '../services/repair.js';
+import { runRepairPipeline } from '../services/Scripting/repair.js';
 import * as geminiVision from '../services/geminiVision.js';
 import { init } from '../services/diagnosticsDb.js';
 

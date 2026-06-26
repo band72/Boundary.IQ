@@ -1,4 +1,4 @@
-import { compute } from '../services/traverse.js';
+import { compute } from '../services/Scripting/traverse.js';
 
 const courses = [
   {

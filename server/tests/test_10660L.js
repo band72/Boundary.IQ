@@ -1,4 +1,4 @@
-import { solveFromText } from '../services/deedTextSolver.js';
+import { solveFromText } from '../services/Scripting/deedTextSolver.js';
 import fs from 'fs';
 
 console.log('Testing 10660L problem deed...');

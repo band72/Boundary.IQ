@@ -3,10 +3,10 @@
 // Replaces RCS.Cogo.Core with pure JS math (bearingParser.js).
 
 import * as bp from './bearingParser.js';
-import { createChildLogger } from '../logger.js';
-
+import { createChildLogger } from '../../logger.js';
 const log = createChildLogger('traverse');
-import { getEnforceNoSelfIntersection } from './db/context.js';
+
+import { getEnforceNoSelfIntersection } from '../db/context.js';
 
 // ── Unit Scale Factors (Fix #10) ─────────────────────────────────────────────
 // All internal math is in feet. Metric deed distances are converted on input.
