@@ -120,6 +120,19 @@ try {
   logger.error({ err: ex }, '✗ Failed to initialize diagnostics database');
 }
 
+// ── Ensure Uploads Folder Exists ──────────────────────────────────────────────
+try {
+  const uploadsDir = process.cwd().endsWith('server')
+    ? path.join(process.cwd(), 'uploads')
+    : path.join(process.cwd(), 'server', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  logger.info(`✓ Uploads directory configured at: ${uploadsDir}`);
+} catch (ex) {
+  logger.error({ err: ex }, '✗ Failed to create uploads directory');
+}
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 
 // Helmet: adds ~12 security headers

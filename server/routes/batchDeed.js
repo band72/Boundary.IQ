@@ -20,7 +20,28 @@ const log = createChildLogger('batchDeed');
 const router = Router();
 router.use(requireAuth);
 
-const upload = multer({ limits: { fileSize: 51 * 1024 * 1024 } }); // 51MB per file
+const uploadsDir = process.cwd().endsWith('server')
+  ? path.join(process.cwd(), 'uploads')
+  : path.join(process.cwd(), 'server', 'uploads');
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = uuidv4();
+    cb(null, `${uniqueSuffix}-${file.originalname}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 51 * 1024 * 1024 }
+}); // 51MB per file
 
 const MAX_FILE_SIZE = 51 * 1024 * 1024;
 const PER_DEED_TIMEOUT_MS = 3 * 60 * 1000; // 3 min max per deed — prevents a single hung file from stalling the batch
@@ -125,7 +146,12 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
         if (file.size > MAX_FILE_SIZE)
           throw new Error(`File exceeds 51 MB (${(file.size / 1024 / 1024).toFixed(1)} MB).`);
 
-        fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+        if (!file.path || !fs.existsSync(file.path)) {
+          throw new Error('File not found on server disk.');
+        }
+
+        const fileBytes = fs.readFileSync(file.path);
+        fileHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
 
         // Check cache
         const solvedCase = db.findSolvedCase(fileName, fileHash);
@@ -168,7 +194,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
           return;
         }
 
-        let imageBytes = file.buffer;
+        let imageBytes = fileBytes;
         let mime = normalizeMime(file);
 
         // Word doc conversion
@@ -269,6 +295,15 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
         log.error({ fileName, err: ex.message }, 'Batch item failed');
         results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message, fileHash, agentTurns: null };
         db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE, fileHash);
+      } finally {
+        try {
+          if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+            log.info({ fileName }, 'Cleaned up uploaded file from server disk');
+          }
+        } catch (cleanupErr) {
+          log.warn({ fileName, err: cleanupErr.message }, 'Failed to clean up uploaded file');
+        }
       }
     });
 
@@ -288,7 +323,12 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
         const fileName = files[idx]?.originalname || `file[${idx}]`;
         log.error({ fileName, err: timeoutErr.message }, 'Deed timed out or failed');
         if (!results[idx]) {
-          const timeoutHash = files[idx]?.buffer ? crypto.createHash('sha256').update(files[idx].buffer).digest('hex') : null;
+          let timeoutHash = null;
+          try {
+            if (files[idx]?.path && fs.existsSync(files[idx].path)) {
+              timeoutHash = crypto.createHash('sha256').update(fs.readFileSync(files[idx].path)).digest('hex');
+            }
+          } catch {}
           results[idx] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: timeoutErr.message, fileHash: timeoutHash, agentTurns: null };
         }
       } finally {
@@ -315,6 +355,16 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
   } finally {
     if (hasLock) {
       lockService.release();
+    }
+    // Clean up any remaining files that were uploaded but not deleted yet
+    if (files && files.length > 0) {
+      for (const file of files) {
+        try {
+          if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch {}
+      }
     }
   }
 });
