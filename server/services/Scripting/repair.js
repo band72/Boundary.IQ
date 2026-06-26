@@ -143,7 +143,7 @@ async function _runRepairPipelineInner(imageBytes, mimeType, pob, units, isOpenE
     const agentResult = await supervisor.solve(imageBytes, mimeType, pob, units, isOpenEnded, fileName, maxTurns);
 
     // Always cache the extraction for Stage 0 reuse (Fix #2)
-    if (agentResult.extraction?.courses?.length > 0) {
+    if (agentResult.extraction) {
       cachedExtraction = agentResult.extraction;
     }
 

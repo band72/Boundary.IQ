@@ -121,13 +121,21 @@ export async function ensureOllamaServiceOnline() {
       const actualOllama = OLLAMA_PATH === 'ollama' ? 'ollama' : OLLAMA_PATH;
       args = ['sh', '-c', `OLLAMA_HOST=0.0.0.0 ${actualOllama} serve`];
     }
+    let spawnFailed = false;
     const child = spawn(cmd, args, {
       detached: true,
       stdio: 'ignore',
       env: { ...process.env, OLLAMA_HOST: '0.0.0.0' },
     });
-    child.on('error', (err) => log.warn({ err: err.message }, 'Ollama recovery spawn error'));
+    child.on('error', (err) => {
+      log.warn({ err: err.message }, 'Ollama recovery spawn error');
+      spawnFailed = true;
+    });
     child.unref();
+
+    // Allow event loop to fire the error event if spawn fails (e.g. ENOENT)
+    await new Promise(resolve => setTimeout(resolve, 50));
+    if (spawnFailed) return false;
 
     // Poll for up to 15s
     let waited = 0;
