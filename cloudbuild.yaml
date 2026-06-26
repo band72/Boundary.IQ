@@ -1,18 +1,20 @@
 # ─── Google Cloud Build — CI/CD Pipeline ─────────────────────────────────────
-# Triggered automatically on push to `main` (configure in Cloud Build console).
+# Project: BoundaryIQ (gen-lang-client-0357875004)
 #
-# Usage (one-time setup):
+# Manual deploy:
+#   gcloud builds submit --config cloudbuild.yaml . --project=gen-lang-client-0357875004
+#
+# Auto-deploy on push to main (one-time setup):
 #   gcloud builds triggers create github \
 #     --repo-name=Boundary.IQ --repo-owner=band72 \
-#     --branch-pattern=^main$ --build-config=cloudbuild.yaml
-#
-# Manual run:
-#   gcloud builds submit --config cloudbuild.yaml .
+#     --branch-pattern=^main$ --build-config=cloudbuild.yaml \
+#     --project=gen-lang-client-0357875004
 
 substitutions:
   _REGION: us-central1
   _SERVICE: boundary-iq
-  _IMAGE: gcr.io/$PROJECT_ID/boundary-iq
+  _IMAGE: gcr.io/gen-lang-client-0357875004/boundary-iq
+  _TAG: latest   # overridden to $SHORT_SHA in triggered builds via --substitutions
 
 steps:
   # ── 1. Build Docker image ───────────────────────────────────────────────────
@@ -20,7 +22,7 @@ steps:
     id: build
     args:
       - build
-      - '--tag=$_IMAGE:$SHORT_SHA'
+      - '--tag=$_IMAGE:$_TAG'
       - '--tag=$_IMAGE:latest'
       - '--cache-from=$_IMAGE:latest'
       - '.'
@@ -34,7 +36,7 @@ steps:
       - '$_IMAGE'
     waitFor: [build]
 
-  # ── 3. Deploy to Cloud Run ──────────────────────────────────────────────────
+  # ── 3. Deploy to Cloud Run (with secrets from Secret Manager) ───────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: deploy
     entrypoint: gcloud
@@ -42,7 +44,7 @@ steps:
       - run
       - deploy
       - '$_SERVICE'
-      - '--image=$_IMAGE:$SHORT_SHA'
+      - '--image=$_IMAGE:$_TAG'
       - '--region=$_REGION'
       - '--platform=managed'
       - '--allow-unauthenticated'
@@ -53,14 +55,11 @@ steps:
       - '--max-instances=10'
       - '--timeout=3600'
       - '--set-env-vars=NODE_ENV=production,ACTIVE_PROVIDER=gemini,ACTIVE_MODEL=gemini-2.5-flash,ALLOW_API_FALLBACK=true'
-      # Secrets below are stored in Secret Manager — not hardcoded here.
-      # Set them via:
-      #   gcloud run services update boundary-iq \
-      #     --update-secrets=GEMINI_API_KEY=gemini-api-key:latest,STRIPE_SECRET_KEY=stripe-secret:latest
+      - '--update-secrets=GEMINI_API_KEY=gemini-api-key:latest,STRIPE_SECRET_KEY=stripe-secret:latest,STRIPE_WEBHOOK_SECRET=stripe-webhook:latest'
     waitFor: [push]
 
 images:
-  - '$_IMAGE:$SHORT_SHA'
+  - '$_IMAGE:$_TAG'
   - '$_IMAGE:latest'
 
 options:
