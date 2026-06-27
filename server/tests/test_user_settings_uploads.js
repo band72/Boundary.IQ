@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
-const BASE_URL = 'http://localhost:5051/api';
+const PORT = process.env.PORT || 5050;
+const BASE_URL = `http://localhost:${PORT}/api`;
 
 async function test() {
   console.log('--- Testing Per-User Settings and Upload Subfolder ---');
@@ -99,7 +100,10 @@ async function test() {
 
   // Check if uploads folder was created for this user ID padded to 6 digits
   const paddedUserId = String(userId).padStart(6, '0');
-  const userUploadsDir = path.join(process.cwd(), 'server', 'uploads', paddedUserId);
+  const uploadsBase = process.cwd().endsWith('server')
+    ? path.join(process.cwd(), 'uploads')
+    : path.join(process.cwd(), 'server', 'uploads');
+  const userUploadsDir = path.join(uploadsBase, paddedUserId);
   console.log(`Checking if user uploads folder exists at: ${userUploadsDir}`);
 
   if (fs.existsSync(userUploadsDir)) {

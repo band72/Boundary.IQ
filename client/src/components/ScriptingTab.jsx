@@ -661,13 +661,6 @@ function parseCivil3DBatch(text) {
   let currentStn = null;   // current occupied station { northing, easting }
   let currentBsStn = null; // back-sight station point { northing, easting }
   let currentFig = null;   // active BEG…END figure being built
-  let ptCounter = 9000;    // auto-id for SAVE-computed points without explicit id
-
-  const getOrWarn = (id) => {
-    const p = pts.get(String(id));
-    if (!p) warnings.push(`Point ${id} not yet defined — skipped.`);
-    return p;
-  };
 
   // Strip BOM, split lines, normalize whitespace
   const lines = text.replace(/\uFEFF/g, '').split(/\r?\n/);
@@ -846,7 +839,6 @@ function parseCivil3DBatch(text) {
       const mx = p1.easting  + a * dx / d;
       const my = p1.northing + a * dy / d;
       // Two intersection solutions stored in a temp registry; SAVE will pick one
-      ptCounter++;
       const sol1 = { northing: my + h * (-dy / d), easting: mx + h * ( dx / d), desc: 'RKRK SOL1' };
       const sol2 = { northing: my - h * (-dy / d), easting: mx - h * ( dx / d), desc: 'RKRK SOL2' };
       // Store both temporarily; SAVE NORTH/SOUTH/EAST/WEST picks the right one
@@ -998,20 +990,15 @@ function emitScriptFromBatch(parsed, sourceFileName = '') {
   for (const [id, p] of pts.entries()) {
     if (id.startsWith('__')) continue; // temp solve slots
     const usage = figUsage.get(id) || [];
-    let desc = '';
-    if (usage.length > 0) {
-      // Build code string for each figure this point belongs to
-      const codeParts = usage.map(u => {
-        const fig = u.figName.replace(/\s+/g, '_');
-        if (u.isFirst) return `${fig} B`;
-        if (u.isLast)  return `${fig} CLS`;
-        if (u.arcAfter) return `${fig} BC`;
-        return fig;
-      });
-      desc = codeParts.join(' ');
-    } else {
-      desc = p.desc || 'COGO';
-    }
+    const desc = usage.length > 0
+      ? usage.map(u => {
+          const fig = u.figName.replace(/\s+/g, '_');
+          if (u.isFirst) return `${fig} B`;
+          if (u.isLast)  return `${fig} CLS`;
+          if (u.arcAfter) return `${fig} BC`;
+          return fig;
+        }).join(' ')
+      : p.desc || 'COGO';
     lines.push(
       `${id.padEnd(5)} ${p.northing.toFixed(4).padStart(13)} ${p.easting.toFixed(4).padStart(13)} ${'0.0000'.padStart(9)} ${desc}`
     );
@@ -1950,7 +1937,7 @@ export default function ScriptingTab() {
         if (cmd === 'XC') {
           if (parts[1]?.toUpperCase() === 'PTS' && currentBoundaryName) {
             const radius = parseFloat(parts[2]);
-            const centerPtId = parts[3];
+            // const centerPtId = parts[3];
             const toPtId = parts[4];
             const fig = cogoActiveFigures[currentBoundaryName];
             if (fig && fig.vertices.length > 0) {
@@ -2043,7 +2030,6 @@ export default function ScriptingTab() {
             }
           }
 
-          const bearingStr = `${ns}${degStr}°${minStr}'${secStr}"${ew}`;
           const ang = parseFloat(degStr) + parseFloat(minStr)/60 + parseFloat(secStr)/3600;
           let azimuthRad = 0;
           if (ns === 'N' && ew === 'E') azimuthRad = ang * Math.PI / 180;
@@ -3907,7 +3893,7 @@ export default function ScriptingTab() {
                     const raw = e.target.value;
                     setDmsInput(raw);
                     // Parse: optional sign, then D[°d ] M['m ] S["s]
-                    const m = raw.trim().match(/^(-?)\s*(\d+)[°d\s]\s*(\d+)['\'m\s]\s*([\d.]+)["\u201ds]?\s*$/);
+                    const m = raw.trim().match(/^(-?)\s*(\d+)[°d\s]\s*(\d+)['m\s]\s*([\d.]+)["\u201ds]?\s*$/);
                     if (m) {
                       const sign = m[1] === '-' ? -1 : 1;
                       const deg = parseFloat(m[2]);

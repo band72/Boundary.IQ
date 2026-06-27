@@ -85,6 +85,7 @@ function parsePrecisionRatio(precisionStr) {
 router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, res) => {
   let keepAlive = null;
   let hasLock = false;
+  let files = [];
   try {
     if (!lockService.acquire('batchdeed-process', 'upload')) {
       const info = lockService.status();
@@ -94,7 +95,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
     }
     hasLock = true;
 
-    const files = req.files;
+    files = req.files || [];
     if (!files || files.length === 0) return res.status(400).json({ error: 'No images provided.' });
     if (files.length > 20) return res.status(400).json({ error: 'Maximum 20 images per batch.' });
 

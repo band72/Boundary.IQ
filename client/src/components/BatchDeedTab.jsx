@@ -712,7 +712,11 @@ export default function BatchDeedTab() {
   const fileRef = useRef();
 
   const addFiles = newFiles => {
-    const arr = Array.from(newFiles).filter(f => f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.webp'];
+    const arr = Array.from(newFiles).filter(f => {
+      const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+      return f.type.startsWith('image/') || f.type === 'application/pdf' || allowedExtensions.includes(ext);
+    });
     setFiles(prev => {
       const names = new Set(prev.map(f => f.name));
       return [...prev, ...arr.filter(f => !names.has(f.name))].slice(0, 20);
@@ -1649,9 +1653,9 @@ export default function BatchDeedTab() {
           onDrop={e => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }}
         >
           <div className="drop-icon">🗂</div>
-          <p>Drop plat files, PDFs, or Word docs here or <strong>click to browse</strong><br />
-            <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF · DOC · DOCX — up to 20 files</span></p>
-          <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden onChange={e => addFiles(e.target.files)} />
+          <p>Drop plat files, PDFs, Word docs, or text files here or <strong>click to browse</strong><br />
+            <span className="text-muted" style={{ fontSize: '0.75rem' }}>JPG · PNG · WebP · PDF · DOC · DOCX · TXT — up to 20 files</span></p>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" multiple hidden onChange={e => addFiles(e.target.files)} />
         </div>
 
         {/* File queue — always visible once files are added */}

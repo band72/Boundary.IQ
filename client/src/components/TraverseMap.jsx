@@ -576,7 +576,7 @@ export default function TraverseMap({
   const [hoveredCourseIndexLocal, setHoveredCourseIndexLocal] = useState(null);
   const [hoveredVertexIndexLocal, setHoveredVertexIndexLocal] = useState(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const isPanning = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const panAtDragStart = useRef({ x: 0, y: 0 });
 
@@ -942,7 +942,7 @@ export default function TraverseMap({
   }, [canvasElement, pts, courses, activeHoveredIndex, activeSelectedIndex, hoveredVertexIndexLocal, tracts, activeTractIndex]);
 
   const handleMouseDown = (e) => {
-    isPanning.current = true;
+    setIsPanning(true);
     dragStart.current = { x: e.clientX, y: e.clientY };
     panAtDragStart.current = { ...panOffset };
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -952,7 +952,7 @@ export default function TraverseMap({
     if (!canvasElement || pts.length < 2) return;
 
     // ── Pan drag ──────────────────────────────────────────────────────────────
-    if (isPanning.current) {
+    if (isPanning) {
       const canvas = canvasElement;
       const rect = canvas.getBoundingClientRect();
       const scaleRatio = (canvas.width / rect.width) * 0.55;  // CSS px → canvas px, damped
@@ -1026,11 +1026,11 @@ export default function TraverseMap({
   };
 
   const handleMouseUp = () => {
-    isPanning.current = false;
+    setIsPanning(false);
   };
 
   const handleMouseLeave = () => {
-    isPanning.current = false;
+    setIsPanning(false);
     setHoveredVertexIndexLocal(null);
     setHoveredCourseIndexLocal(null);
     if (setHoveredCourseIndexProp) setHoveredCourseIndexProp(null);
@@ -1137,7 +1137,7 @@ export default function TraverseMap({
 
   const { lines, curves } = getTablesData();
 
-  const panCursor = isPanning.current ? 'grabbing' : (hoveredCourseIndexLocal !== null || hoveredVertexIndexLocal !== null) ? 'pointer' : 'grab';
+  const panCursor = isPanning ? 'grabbing' : (hoveredCourseIndexLocal !== null || hoveredVertexIndexLocal !== null) ? 'pointer' : 'grab';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
