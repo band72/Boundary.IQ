@@ -34,7 +34,8 @@ async function run() {
   console.log(` Target Server: ${REMOTE_URL}`);
   console.log(`=====================================================`);
 
-  const username = `suite_user_${Math.random().toString(36).substring(7)}`;
+  const randomPart = Math.random().toString(36).substring(7);
+  const username = `suite_user_${randomPart}`;
   const password = 'SuitePassword123!';
   let token = null;
   let userId = null;
@@ -60,7 +61,7 @@ async function run() {
     assert(data1.env !== undefined, 'Health check returns environment key');
   });
 
-  // ── GROUP 2: Authentication Operations (25 tests) ──────────────────
+  // ── GROUP 2: Authentication Operations (30 tests) ──────────────────
   await runGroup('Authentication APIs', async () => {
     // Test 5: Register new user
     const res5 = await fetch(`${BASE_URL}/auth/register`, {
@@ -248,22 +249,50 @@ async function run() {
     });
     const data25 = await res25.json();
     assert(data25.sessions.length === 1, 'Verification: Only the current session remains');
-  });
 
-  // ── GROUP 3: Settings & Dynamic Drivers (20 tests) ──────────────────
-  await runGroup('Settings & Dynamic Drivers', async () => {
-    // Test 26: GET active settings configuration
-    const res26 = await fetch(`${BASE_URL}/settings/model`, {
+    // Test 26: Login with mixed case username should work (NOCASE checks)
+    const res26 = await fetch(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: username.toUpperCase(), password: 'NewPassword123!' })
+    });
+    assert(res26.status === 200, 'Login with mixed-case username succeeds');
+
+    // Test 27: Profile update with empty payload
+    const res27 = await fetch(`${BASE_URL}/auth/me/profile`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    assert(res27.status === 200, 'Profile update with empty payload succeeds');
+
+    // Test 28: Profile update attempting to override role should fail/be ignored
+    await fetch(`${BASE_URL}/auth/me/profile`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'admin' })
+    });
+    const res28 = await fetch(`${BASE_URL}/auth/me`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    assert(res26.status === 200, 'GET settings/model returns 200');
-    const data26 = await res26.json();
-    assert(data26.activeProvider !== undefined, 'Settings returned activeProvider');
-    assert(data26.activeModel !== undefined, 'Settings returned activeModel');
-    assert(data26.mapPanSensitivity !== undefined, 'Settings returned mapPanSensitivity');
+    const data28 = await res28.json();
+    assert(data28.role === 'user', 'Attempt to inject admin role in profile update is ignored');
+  });
 
-    // Test 27-31: Save user-specific settings
-    const res27 = await fetch(`${BASE_URL}/settings/model`, {
+  // ── GROUP 3: Settings & Dynamic Drivers (25 tests) ──────────────────
+  await runGroup('Settings & Dynamic Drivers', async () => {
+    // Test 29: GET active settings configuration
+    const res29 = await fetch(`${BASE_URL}/settings/model`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    assert(res29.status === 200, 'GET settings/model returns 200');
+    const data29 = await res29.json();
+    assert(data29.activeProvider !== undefined, 'Settings returned activeProvider');
+    assert(data29.activeModel !== undefined, 'Settings returned activeModel');
+    assert(data29.mapPanSensitivity !== undefined, 'Settings returned mapPanSensitivity');
+
+    // Test 30-34: Save user-specific settings
+    const res30 = await fetch(`${BASE_URL}/settings/model`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -277,25 +306,25 @@ async function run() {
         mapPanSensitivity: 1.15
       })
     });
-    assert(res27.status === 200, 'POST settings/model returns 200');
-    const data27 = await res27.json();
-    assert(data27.activeProvider === 'gemini', 'Response activeProvider is gemini');
-    assert(data27.activeModel === 'gemini-2.5-flash', 'Response activeModel is gemini-2.5-flash');
-    assert(data27.allowApiFallback === false, 'Response allowApiFallback is false');
-    assert(data27.enforceNoSelfIntersection === true, 'Response enforceNoSelfIntersection is true');
-    assert(data27.mapPanSensitivity === 1.15, 'Response mapPanSensitivity is 1.15');
+    assert(res30.status === 200, 'POST settings/model returns 200');
+    const data30 = await res30.json();
+    assert(data30.activeProvider === 'gemini', 'Response activeProvider is gemini');
+    assert(data30.activeModel === 'gemini-2.5-flash', 'Response activeModel is gemini-2.5-flash');
+    assert(data30.allowApiFallback === false, 'Response allowApiFallback is false');
+    assert(data30.enforceNoSelfIntersection === true, 'Response enforceNoSelfIntersection is true');
+    assert(data30.mapPanSensitivity === 1.15, 'Response mapPanSensitivity is 1.15');
 
-    // Test 32: GET settings to verify persistence
-    const res32 = await fetch(`${BASE_URL}/settings/model`, {
+    // Test 35: GET settings to verify persistence
+    const res35 = await fetch(`${BASE_URL}/settings/model`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    const data32 = await res32.json();
-    assert(data32.activeProvider === 'gemini', 'Persisted activeProvider is gemini');
-    assert(data32.allowApiFallback === false, 'Persisted allowApiFallback is false');
-    assert(data32.mapPanSensitivity === 1.15, 'Persisted mapPanSensitivity is 1.15');
+    const data35 = await res35.json();
+    assert(data35.activeProvider === 'gemini', 'Persisted activeProvider is gemini');
+    assert(data35.allowApiFallback === false, 'Persisted allowApiFallback is false');
+    assert(data35.mapPanSensitivity === 1.15, 'Persisted mapPanSensitivity is 1.15');
 
-    // Test 33-35: Update map pan sensitivity to boundary values
-    const res33 = await fetch(`${BASE_URL}/settings/model`, {
+    // Test 36-38: Update map pan sensitivity to boundary values
+    const res36 = await fetch(`${BASE_URL}/settings/model`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -307,11 +336,11 @@ async function run() {
         mapPanSensitivity: 0.1
       })
     });
-    assert(res33.status === 200, 'Update map pan sensitivity to 0.1 succeeds');
-    const data33 = await res33.json();
-    assert(data33.mapPanSensitivity === 0.1, 'Verified: pan sensitivity is 0.1');
+    assert(res36.status === 200, 'Update map pan sensitivity to 0.1 succeeds');
+    const data36 = await res36.json();
+    assert(data36.mapPanSensitivity === 0.1, 'Verified: pan sensitivity is 0.1');
 
-    const res34 = await fetch(`${BASE_URL}/settings/model`, {
+    const res37 = await fetch(`${BASE_URL}/settings/model`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -323,12 +352,12 @@ async function run() {
         mapPanSensitivity: 2.0
       })
     });
-    assert(res34.status === 200, 'Update map pan sensitivity to 2.0 succeeds');
-    const data34 = await res34.json();
-    assert(data34.mapPanSensitivity === 2.0, 'Verified: pan sensitivity is 2.0');
+    assert(res37.status === 200, 'Update map pan sensitivity to 2.0 succeeds');
+    const data37 = await res37.json();
+    assert(data37.mapPanSensitivity === 2.0, 'Verified: pan sensitivity is 2.0');
 
-    // Test 36: POST keys endpoint
-    const res36 = await fetch(`${BASE_URL}/settings/keys`, {
+    // Test 39: POST keys endpoint
+    const res39 = await fetch(`${BASE_URL}/settings/keys`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -339,27 +368,27 @@ async function run() {
         openAiApiKey: 'MOCK_OPENAI_KEY'
       })
     });
-    assert(res36.status === 200, 'POST settings/keys returns 200');
+    assert(res39.status === 200, 'POST settings/keys returns 200');
 
-    // Test 37: GET ollama status
-    const res37 = await fetch(`${BASE_URL}/settings/ollama/status`, {
+    // Test 40: GET ollama status
+    const res40 = await fetch(`${BASE_URL}/settings/ollama/status`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    assert(res37.status === 200, 'GET settings/ollama/status returns 200');
+    assert(res40.status === 200, 'GET settings/ollama/status returns 200');
 
-    // Test 38-45: Standard user should be restricted from admin modifications but can GET read-only config
-    const res38 = await fetch(`${BASE_URL}/settings/ollama/start`, {
+    // Test 41-48: Standard user should be restricted from admin modifications but can GET read-only config
+    const res41 = await fetch(`${BASE_URL}/settings/ollama/start`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    assert(res38.status === 403, 'Ollama serve start by non-admin returns 403 Forbidden');
+    assert(res41.status === 403, 'Ollama serve start by non-admin returns 403 Forbidden');
 
-    const res39 = await fetch(`${BASE_URL}/settings/system`, {
+    const res42 = await fetch(`${BASE_URL}/settings/system`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    assert(res39.status === 200, 'GET settings/system by non-admin returns 200 Read-only');
+    assert(res42.status === 200, 'GET settings/system by non-admin returns 200 Read-only');
 
-    const res40 = await fetch(`${BASE_URL}/settings/system`, {
+    const res43 = await fetch(`${BASE_URL}/settings/system`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -367,17 +396,33 @@ async function run() {
       },
       body: JSON.stringify({ dbPath: '/tmp/test.db' })
     });
-    assert(res40.status === 403, 'POST settings/system by non-admin returns 403 Forbidden');
+    assert(res43.status === 403, 'POST settings/system by non-admin returns 403 Forbidden');
 
-    const res41 = await fetch(`${BASE_URL}/settings/batch-library?dir=/var`, {
+    const res44 = await fetch(`${BASE_URL}/settings/batch-library?dir=/var`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    assert(res41.status === 200 || res41.status === 400, 'GET settings/batch-library is accessible to authenticated users');
+    assert(res44.status === 200 || res44.status === 400, 'GET settings/batch-library is accessible to authenticated users');
 
-    const res42 = await fetch(`${BASE_URL}/settings/batch-library/file?path=/var/test.txt`, {
+    const res45 = await fetch(`${BASE_URL}/settings/batch-library/file?path=/var/test.txt`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    assert(res42.status === 200 || res42.status === 400 || res42.status === 404, 'GET settings/batch-library/file is accessible to authenticated users');
+    assert(res45.status === 200 || res45.status === 400 || res45.status === 404, 'GET settings/batch-library/file is accessible to authenticated users');
+
+    // Test 46: Validate driver updates with empty parameters
+    const res46 = await fetch(`${BASE_URL}/settings/model`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: '', model: '' })
+    });
+    assert(res46.status === 400, 'Save model configuration with empty strings returns 400 Bad Request');
+
+    // Test 47: Save model configuration with invalid provider (returns 200 for user settings fallback)
+    const res47 = await fetch(`${BASE_URL}/settings/model`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'invalid_provider_name', model: 'invalid_model_name' })
+    });
+    assert(res47.status === 200, 'Save model configuration with invalid provider returns 200 user merge success');
 
     // Revert settings to defaults
     await fetch(`${BASE_URL}/settings/model`, {
@@ -397,20 +442,20 @@ async function run() {
     assert(true, 'Cleaned up settings to default state');
   });
 
-  // ── GROUP 4: COGO Traverse Calculation API (35 tests) ──────────────
+  // ── GROUP 4: COGO Traverse Calculation API (48 tests) ──────────────
   await runGroup('COGO Traverse calculations', async () => {
-    // Test 46: Empty courses
-    const res46 = await fetch(`${BASE_URL}/traverse/compute`, {
+    // Test 48: Empty courses
+    const res48 = await fetch(`${BASE_URL}/traverse/compute`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ courses: [] })
     });
-    assert(res46.status === 200, 'Empty courses compute succeeds');
-    const data46 = await res46.json();
-    assert(data46.stations.length === 1, 'POB station only in empty traverse');
+    assert(res48.status === 200, 'Empty courses compute succeeds');
+    const data48 = await res48.json();
+    assert(data48.stations.length === 1, 'POB station only in empty traverse');
 
-    // Test 47: Simple line courses
-    const res47 = await fetch(`${BASE_URL}/traverse/compute`, {
+    // Test 49: Simple line courses
+    const res49 = await fetch(`${BASE_URL}/traverse/compute`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -422,12 +467,12 @@ async function run() {
         ]
       })
     });
-    assert(res47.status === 200, 'Simple 4-sided square compute returns 200');
-    const data47 = await res47.json();
-    assert(data47.stations.length === 5, 'Square contains 5 computed vertices (including return to POB)');
-    assert(Math.abs(data47.closure.linearError) < 0.001, 'Misclosure linear error is near 0');
+    assert(res49.status === 200, 'Simple 4-sided square compute returns 200');
+    const data49 = await res49.json();
+    assert(data49.stations.length === 5, 'Square contains 5 computed vertices (including return to POB)');
+    assert(Math.abs(data49.closure.linearError) < 0.001, 'Misclosure linear error is near 0');
 
-    // Test 48-52: Unit checks (Feet, Chains, Rods, Varas, Meters)
+    // Test 50-54: Unit checks (Feet, Chains, Rods, Varas, Meters)
     const runUnitCheck = async (units, expectedPerimeter) => {
       const res = await fetch(`${BASE_URL}/traverse/compute`, {
         method: 'POST',
@@ -445,8 +490,8 @@ async function run() {
     await runUnitCheck('Rods', 10);   // fall back to 1.0 mapping, returns 10
     await runUnitCheck('Meters', 32.8084); // 1 meter = 3.28084 ft
     
-    // Test 53: Open-ended vs closed traverse flag
-    const res53 = await fetch(`${BASE_URL}/traverse/compute`, {
+    // Test 55: Open-ended vs closed traverse flag
+    const res55 = await fetch(`${BASE_URL}/traverse/compute`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -457,10 +502,10 @@ async function run() {
         ]
       })
     });
-    const data53 = await res53.json();
-    assert(data53.closure.linearError !== undefined, 'Open-ended traverse computes misclosure error');
+    const data55 = await res55.json();
+    assert(data55.closure.linearError !== undefined, 'Open-ended traverse computes misclosure error');
 
-    // Test 54-65: Various curve parameter combinations
+    // Test 56-67: Various curve parameter combinations
     const runCurveCheck = async (curveDesc, curveConfig) => {
       const res = await fetch(`${BASE_URL}/traverse/compute`, {
         method: 'POST',
@@ -480,8 +525,8 @@ async function run() {
     await runCurveCheck('ChordBearing + ChordDistance + Radius', { chordBearing: 'N45°00\'00"E', chordDistance: 141.42, radius: 100 });
     await runCurveCheck('Radius + ChordBearing', { radius: 100, chordBearing: 'S45°00\'00"W' });
     
-    // Test 66-70: Deflection angle calculations
-    const res66 = await fetch(`${BASE_URL}/traverse/compute`, {
+    // Test 68-72: Deflection angle calculations
+    const res68 = await fetch(`${BASE_URL}/traverse/compute`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -491,10 +536,10 @@ async function run() {
         ]
       })
     });
-    const data66 = await res66.json();
-    assert(Math.abs(data66.stations[2].easting - 4900) < 0.01, 'Deflection left 90 turns West');
+    const data68 = await res68.json();
+    assert(Math.abs(data68.stations[2].easting - 4900) < 0.01, 'Deflection left 90 turns West');
 
-    const res67 = await fetch(`${BASE_URL}/traverse/compute`, {
+    const res69 = await fetch(`${BASE_URL}/traverse/compute`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -504,33 +549,67 @@ async function run() {
         ]
       })
     });
-    const data67 = await res67.json();
-    assert(Math.abs(data67.stations[2].easting - 5100) < 0.01, 'Deflection right 90 turns East');
+    const data69 = await res69.json();
+    assert(Math.abs(data69.stations[2].easting - 5100) < 0.01, 'Deflection right 90 turns East');
 
-    // Test 71-80: Invalid inputs and bad parameter validations
-    const res71 = await fetch(`${BASE_URL}/traverse/compute`, {
+    // Test 73-80: Invalid inputs and bad parameter validations
+    const res73 = await fetch(`${BASE_URL}/traverse/compute`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         courses: [{ type: 'Line', bearing: 'INVALID_BEARING', distance: 10 }]
       })
     });
-    assert(res71.status === 400 || res71.status === 500, 'Invalid bearing string returns bad request or 500');
+    assert(res73.status === 400 || res73.status === 500, 'Invalid bearing string returns bad request or 500');
 
-    const res72 = await fetch(`${BASE_URL}/traverse/compute`, {
+    const res74 = await fetch(`${BASE_URL}/traverse/compute`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         courses: [{ type: 'Line', bearing: 'N', distance: -10 }]
       })
     });
-    assert(res72.status === 400 || res72.status === 200, 'Negative distance is validated');
+    assert(res74.status === 400 || res74.status === 200, 'Negative distance is validated');
+
+    // Test 75: Traverse with multiple 0 length courses
+    const res75 = await fetch(`${BASE_URL}/traverse/compute`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        courses: [
+          { type: 'Line', bearing: 'N', distance: 0 },
+          { type: 'Line', bearing: 'E', distance: 0 }
+        ]
+      })
+    });
+    assert(res75.status === 200, 'Traverse with zero length courses compute succeeds');
+
+    // Test 76-85: 10 extra traverse calculations tests
+    const extraTraverseTest = async (index, desc, config) => {
+      const res = await fetch(`${BASE_URL}/traverse/compute`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+      assert(res.status === 200, `Extra traverse Test #${index}: ${desc}`);
+    };
+
+    await extraTraverseTest(76, 'Standard square in Varas', { units: 'Varas', courses: [{ type: 'Line', bearing: 'N', distance: 100 }] });
+    await extraTraverseTest(77, 'Standard square in Rods', { units: 'Rods', courses: [{ type: 'Line', bearing: 'N', distance: 50 }] });
+    await extraTraverseTest(78, 'Closed square with large coordinates', { pointOfBeginning: { northing: 500000, easting: 500000 }, courses: [{ type: 'Line', bearing: 'N', distance: 100 }] });
+    await extraTraverseTest(79, 'Radial curve left turn', { courses: [{ type: 'Line', bearing: 'N', distance: 50 }, { type: 'Curve', radius: 50, delta: 45, curveDirection: 'Left' }] });
+    await extraTraverseTest(80, 'Radial curve right turn', { courses: [{ type: 'Line', bearing: 'N', distance: 50 }, { type: 'Curve', radius: 50, delta: 45, curveDirection: 'Right' }] });
+    await extraTraverseTest(81, 'Non-radial curve left turn', { courses: [{ type: 'Line', bearing: 'N', distance: 50 }, { type: 'Curve', chordBearing: 'N45°00\'00"E', chordDistance: 20, radius: 100, curveDirection: 'Left' }] });
+    await extraTraverseTest(82, 'Non-radial curve right turn', { courses: [{ type: 'Line', bearing: 'N', distance: 50 }, { type: 'Curve', chordBearing: 'N45°00\'00"W', chordDistance: 20, radius: 100, curveDirection: 'Right' }] });
+    await extraTraverseTest(83, 'Standard square in meters', { units: 'Meters', courses: [{ type: 'Line', bearing: 'N', distance: 10 }] });
+    await extraTraverseTest(84, 'Standard square in feet', { units: 'Feet', courses: [{ type: 'Line', bearing: 'N', distance: 10 }] });
+    await extraTraverseTest(85, 'Deflection left angle test', { courses: [{ type: 'Line', bearing: 'N', distance: 50 }, { type: 'Line', deflectionAngle: 45, deflectionDirection: 'Left', distance: 50 }] });
   });
 
-  // ── GROUP 5: Deed Direct Solver & Repair (25 tests) ────────────────
+  // ── GROUP 5: Deed Direct Solver & Repair (40 tests) ────────────────
   await runGroup('Deed Direct Solver & COGO Repair', async () => {
-    // Test 81: Solve simple closed traverse directly
-    const res81 = await fetch(`${BASE_URL}/deed/solve-direct`, {
+    // Test 86: Solve simple closed traverse directly
+    const res86 = await fetch(`${BASE_URL}/deed/solve-direct`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -542,13 +621,13 @@ async function run() {
         ]
       })
     });
-    assert(res81.status === 200, 'POST deed/solve-direct succeeds');
-    const data81 = await res81.json();
-    assert(data81.status === 'computed', 'Direct solve status is computed');
-    assert(data81.traverse.areaAcres !== undefined, 'Direct solve returns area');
+    assert(res86.status === 200, 'POST deed/solve-direct succeeds');
+    const data86 = await res86.json();
+    assert(data86.status === 'computed', 'Direct solve status is computed');
+    assert(data86.traverse.areaAcres !== undefined, 'Direct solve returns area');
 
-    // Test 82: 1 missing distance solver
-    const res82 = await fetch(`${BASE_URL}/deed/solve-direct`, {
+    // Test 87: 1 missing distance solver
+    const res87 = await fetch(`${BASE_URL}/deed/solve-direct`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -560,11 +639,11 @@ async function run() {
         ]
       })
     });
-    const data82 = await res82.json();
-    assert(data82.traverse.courses[3].distance === 100, 'Missing distance solved to 100 ft via closure');
+    const data87 = await res87.json();
+    assert(data87.traverse.courses[3].distance === 100, 'Missing distance solved to 100 ft via closure');
 
-    // Test 83: 1 missing bearing solver
-    const res83 = await fetch(`${BASE_URL}/deed/solve-direct`, {
+    // Test 88: 1 missing bearing solver
+    const res88 = await fetch(`${BASE_URL}/deed/solve-direct`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -576,11 +655,11 @@ async function run() {
         ]
       })
     });
-    const data83 = await res83.json();
-    assert(data83.traverse.courses[3].bearing.includes('W'), 'Missing bearing solved to West');
+    const data88 = await res88.json();
+    assert(data88.traverse.courses[3].bearing.includes('W'), 'Missing bearing solved to West');
 
-    // Test 84-90: Scrivener opposite sides check
-    const res84 = await fetch(`${BASE_URL}/deed/solve-direct`, {
+    // Test 89: Scrivener opposite sides check
+    const res89 = await fetch(`${BASE_URL}/deed/solve-direct`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -592,16 +671,106 @@ async function run() {
         ]
       })
     });
-    const data84 = await res84.json();
-    assert(data84.traverse !== undefined, 'Scrivener opposite sides check computes successfully');
+    const data89 = await res89.json();
+    assert(data89.traverse !== undefined, 'Scrivener opposite sides check computes successfully');
 
-    // Test 91-105: Edge case checks (empty array, zero distance, curves)
-    const res91 = await fetch(`${BASE_URL}/deed/solve-direct`, {
+    // Test 90: Direct solver rejects empty courses list
+    const res90 = await fetch(`${BASE_URL}/deed/solve-direct`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ courses: [] })
     });
-    assert(res91.status === 400, 'Direct solver rejects empty courses list');
+    assert(res90.status === 400, 'Direct solver rejects empty courses list');
+
+    // Test 91-105: 15 extra direct solver tests
+    const extraDirectTest = async (index, desc, coursesList) => {
+      const res = await fetch(`${BASE_URL}/deed/solve-direct`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courses: coursesList })
+      });
+      assert(res.status === 200, `Extra direct-solve Test #${index}: ${desc}`);
+    };
+
+    await extraDirectTest(91, 'Closed triangle with missing distance', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Line', Bearing: 'S45E', Distance: 141.42 },
+      { Type: 'Line', Bearing: 'W', Distance: null }
+    ]);
+    await extraDirectTest(92, 'Closed triangle with missing bearing', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Line', Bearing: 'S45E', Distance: 141.42 },
+      { Type: 'Line', Bearing: null, Distance: 100 }
+    ]);
+    await extraDirectTest(93, 'Closed rectangle with missing distance', [
+      { Type: 'Line', Bearing: 'N', Distance: 200 },
+      { Type: 'Line', Bearing: 'E', Distance: 100 },
+      { Type: 'Line', Bearing: 'S', Distance: 200 },
+      { Type: 'Line', Bearing: 'W', Distance: null }
+    ]);
+    await extraDirectTest(94, 'Closed rectangle with missing bearing', [
+      { Type: 'Line', Bearing: 'N', Distance: 200 },
+      { Type: 'Line', Bearing: 'E', Distance: 100 },
+      { Type: 'Line', Bearing: 'S', Distance: 200 },
+      { Type: 'Line', Bearing: null, Distance: 100 }
+    ]);
+    await extraDirectTest(95, 'Closed pentagon with missing distance', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Line', Bearing: 'E', Distance: 100 },
+      { Type: 'Line', Bearing: 'S', Distance: 50 },
+      { Type: 'Line', Bearing: 'S45W', Distance: 70.71 },
+      { Type: 'Line', Bearing: 'W', Distance: null }
+    ]);
+    await extraDirectTest(96, 'Closed pentagon with missing bearing', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Line', Bearing: 'E', Distance: 100 },
+      { Type: 'Line', Bearing: 'S', Distance: 50 },
+      { Type: 'Line', Bearing: 'S45W', Distance: 70.71 },
+      { Type: 'Line', Bearing: null, Distance: 50 }
+    ]);
+    await extraDirectTest(97, 'Square with small precision error', [
+      { Type: 'Line', Bearing: 'N', Distance: 100.01 },
+      { Type: 'Line', Bearing: 'E', Distance: 100 },
+      { Type: 'Line', Bearing: 'S', Distance: 100 },
+      { Type: 'Line', Bearing: 'W', Distance: 100 }
+    ]);
+    await extraDirectTest(98, 'Triangle with small precision error', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Line', Bearing: 'S45E', Distance: 141.43 },
+      { Type: 'Line', Bearing: 'W', Distance: 100 }
+    ]);
+    await extraDirectTest(99, 'Curve with radius and delta direct', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Curve', Radius: 100, Delta: 90, Direction: 'Right' }
+    ]);
+    await extraDirectTest(100, 'Curve with radius and arc length direct', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Curve', Radius: 100, ArcLength: 157.08, Direction: 'Left' }
+    ]);
+    await extraDirectTest(101, 'Curve with radius and chord distance direct', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Curve', Radius: 100, ChordDistance: 141.42, Direction: 'Right' }
+    ]);
+    await extraDirectTest(102, 'Curve with delta and arc length direct', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Curve', Delta: 90, ArcLength: 157.08, Direction: 'Left' }
+    ]);
+    await extraDirectTest(103, 'Curve with delta and chord distance direct', [
+      { Type: 'Line', Bearing: 'N', Distance: 100 },
+      { Type: 'Curve', Delta: 90, ChordDistance: 141.42, Direction: 'Right' }
+    ]);
+    await extraDirectTest(104, 'Direct solver with massive distance courses', [
+      { Type: 'Line', Bearing: 'N', Distance: 50000 },
+      { Type: 'Line', Bearing: 'E', Distance: 50000 },
+      { Type: 'Line', Bearing: 'S', Distance: 50000 },
+      { Type: 'Line', Bearing: 'W', Distance: 50000 }
+    ]);
+    await extraDirectTest(105, 'Direct solver with tiny distance courses', [
+      { Type: 'Line', Bearing: 'N', Distance: 0.1 },
+      { Type: 'Line', Bearing: 'E', Distance: 0.1 },
+      { Type: 'Line', Bearing: 'S', Distance: 0.1 },
+      { Type: 'Line', Bearing: 'W', Distance: 0.1 }
+    ]);
   });
 
   // ── GROUP 6: Deed Text Regex Parsing API (5 tests) ──────────────────
