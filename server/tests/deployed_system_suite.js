@@ -231,6 +231,10 @@ async function run() {
     const res23 = await fetch(`${BASE_URL}/auth/me/sessions`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    if (res23.status !== 200) {
+      console.error('DEBUG: GET /auth/me/sessions returned status', res23.status);
+      console.error('DEBUG: GET /auth/me/sessions returned body', await res23.text());
+    }
     assert(res23.status === 200, 'GET /auth/me/sessions returns 200');
     const data23 = await res23.json();
     assert(Array.isArray(data23.sessions), 'Sessions list is an array');
