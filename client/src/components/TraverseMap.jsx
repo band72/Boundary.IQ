@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { resolveLabels, getLeaderIntersection } from '../utils/labelLayout';
+import { authFetch } from '../api';
 
 const PAD = 50;
 
@@ -570,7 +571,8 @@ export default function TraverseMap({
   selectedCourseIndex: selectedCourseIndexProp,
   setSelectedCourseIndex: setSelectedCourseIndexProp,
   activeTractIndex = 0,
-  tracts = []
+  tracts = [],
+  mapPanSensitivity
 }) {
   const [canvasElement, setCanvasElement] = useState(null);
   const [hoveredCourseIndexLocal, setHoveredCourseIndexLocal] = useState(null);
@@ -578,6 +580,21 @@ export default function TraverseMap({
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [localSensitivity, setLocalSensitivity] = useState(0.55);
+
+  useEffect(() => {
+    let active = true;
+    authFetch('/settings/model')
+      .then(data => {
+        if (active && data?.mapPanSensitivity !== undefined) {
+          setLocalSensitivity(data.mapPanSensitivity);
+        }
+      })
+      .catch(err => console.error('Error fetching map sensitivity:', err));
+    return () => { active = false; };
+  }, []);
+
+  const sensitivity = mapPanSensitivity !== undefined ? mapPanSensitivity : localSensitivity;
   const dragStart = useRef({ x: 0, y: 0 });
   const panAtDragStart = useRef({ x: 0, y: 0 });
 
@@ -959,7 +976,7 @@ export default function TraverseMap({
     if (isPanning) {
       const canvas = canvasElement;
       const rect = canvas.getBoundingClientRect();
-      const scaleRatio = (canvas.width / rect.width) * 0.55;  // CSS px → canvas px, damped
+      const scaleRatio = (canvas.width / rect.width) * sensitivity;  // CSS px → canvas px, user-configured pan sensitivity
       const dx = (e.clientX - dragStart.current.x) * scaleRatio;
       const dy = (e.clientY - dragStart.current.y) * scaleRatio;
       setPanOffset({ x: panAtDragStart.current.x + dx, y: panAtDragStart.current.y + dy });

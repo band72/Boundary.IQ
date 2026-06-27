@@ -45,6 +45,10 @@ export const OLLAMA_FALLBACK_MODEL = getEnv('OLLAMA_FALLBACK_MODEL') || 'gemma4:
 export const OPENAI_BASE_URL = getEnv('OPENAI_BASE_URL') || 'http://127.0.0.1:11434/v1';
 export const DEFAULT_LOCAL_MODEL = getEnv('DEFAULT_LOCAL_MODEL') || 'llama3.2';
 export const ALLOW_API_FALLBACK = getBool('ALLOW_API_FALLBACK', true);
+export const MAP_PAN_SENSITIVITY = (() => {
+  const v = parseFloat(getEnv('MAP_PAN_SENSITIVITY') || '');
+  return isNaN(v) ? 0.55 : v;
+})();
 
 // ── Database ──────────────────────────────────────────────────────────────────
 export const DATABASE_PATH = getEnv('DATABASE_PATH');

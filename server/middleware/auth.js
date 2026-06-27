@@ -60,6 +60,7 @@ export function requireAuth(req, res, next) {
       enforceNoSelfIntersection: userSettings.EnforceNoSelfIntersection !== undefined ? (userSettings.EnforceNoSelfIntersection === 1) : undefined,
       geminiApiKey: userSettings.GeminiApiKey || undefined,
       openaiApiKey: userSettings.OpenaiApiKey || undefined,
+      mapPanSensitivity: userSettings.MapPanSensitivity !== undefined ? userSettings.MapPanSensitivity : undefined,
     };
 
     userSettingsStore.run(contextSettings, () => {

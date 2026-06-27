@@ -18,12 +18,13 @@ export function saveUserSettings(userId, settings) {
   const enforceNoSelfIntersection = settings.enforceNoSelfIntersection !== undefined ? (settings.enforceNoSelfIntersection ? 1 : 0) : (existing.EnforceNoSelfIntersection ?? 0);
   const geminiApiKey = settings.geminiApiKey !== undefined ? settings.geminiApiKey : existing.GeminiApiKey;
   const openaiApiKey = settings.openaiApiKey !== undefined ? settings.openaiApiKey : existing.OpenaiApiKey;
+  const mapPanSensitivity = settings.mapPanSensitivity !== undefined ? parseFloat(settings.mapPanSensitivity) : (existing.MapPanSensitivity ?? 0.55);
 
   db.prepare(`
     INSERT INTO UserSettings (
       UserId, ActiveProvider, ActiveModel, OpenaiBaseUrl, 
-      AllowApiFallback, EnforceNoSelfIntersection, GeminiApiKey, OpenaiApiKey
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      AllowApiFallback, EnforceNoSelfIntersection, GeminiApiKey, OpenaiApiKey, MapPanSensitivity
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(UserId) DO UPDATE SET
       ActiveProvider = excluded.ActiveProvider,
       ActiveModel = excluded.ActiveModel,
@@ -31,10 +32,11 @@ export function saveUserSettings(userId, settings) {
       AllowApiFallback = excluded.AllowApiFallback,
       EnforceNoSelfIntersection = excluded.EnforceNoSelfIntersection,
       GeminiApiKey = excluded.GeminiApiKey,
-      OpenaiApiKey = excluded.OpenaiApiKey
+      OpenaiApiKey = excluded.OpenaiApiKey,
+      MapPanSensitivity = excluded.MapPanSensitivity
   `).run(
     userId, activeProvider, activeModel, openaiBaseUrl,
-    allowApiFallback, enforceNoSelfIntersection, geminiApiKey, openaiApiKey
+    allowApiFallback, enforceNoSelfIntersection, geminiApiKey, openaiApiKey, mapPanSensitivity
   );
 
   return getUserSettings(userId);

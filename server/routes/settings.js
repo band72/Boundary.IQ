@@ -11,7 +11,7 @@ import * as dbSvc from '../services/diagnosticsDb.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { createChildLogger } from '../logger.js';
-import { getAllowApiFallback, getEnforceNoSelfIntersection } from '../services/db/context.js';
+import { getAllowApiFallback, getEnforceNoSelfIntersection, getMapPanSensitivity } from '../services/db/context.js';
 
 const log = createChildLogger('settings');
 const router = Router();
@@ -59,6 +59,7 @@ router.get('/model', asyncHandler(async (req, res) => {
     activeModel: gemini.getActiveModel(),
     allowApiFallback: getAllowApiFallback(),
     enforceNoSelfIntersection: getEnforceNoSelfIntersection(),
+    mapPanSensitivity: getMapPanSensitivity(),
     ollama: {
       online: ollamaStatus.online,
       url: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
@@ -80,7 +81,7 @@ router.get('/model', asyncHandler(async (req, res) => {
 
 // ── POST /api/settings/model — switch active provider & model (admin default / per-user local settings) ────
 router.post('/model', asyncHandler(async (req, res) => {
-  const { provider, model, openaiBaseUrl, allowApiFallback, enforceNoSelfIntersection } = req.body;
+  const { provider, model, openaiBaseUrl, allowApiFallback, enforceNoSelfIntersection, mapPanSensitivity } = req.body;
   if (!provider) return res.status(400).json({ error: 'provider is required.' });
 
   if (req.user.role === 'admin') {
@@ -94,7 +95,11 @@ router.post('/model', asyncHandler(async (req, res) => {
       process.env.ENFORCE_NO_SELF_INTERSECTION = enforceNoSelfIntersection ? 'true' : 'false';
     }
 
-    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback, enforceNoSelfIntersection);
+    if (mapPanSensitivity !== undefined) {
+      process.env.MAP_PAN_SENSITIVITY = mapPanSensitivity.toString();
+    }
+
+    saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback, enforceNoSelfIntersection, undefined, undefined, undefined, undefined, undefined, mapPanSensitivity);
     log.info({ provider, model, actor: req.user?.username }, 'Global AI provider switched by Admin');
 
     res.json({
@@ -103,6 +108,7 @@ router.post('/model', asyncHandler(async (req, res) => {
       activeModel: gemini.getActiveModel(),
       allowApiFallback: getAllowApiFallback(),
       enforceNoSelfIntersection: getEnforceNoSelfIntersection(),
+      mapPanSensitivity: getMapPanSensitivity(),
     });
   } else {
     dbSvc.saveUserSettings(req.user.id, {
@@ -110,7 +116,8 @@ router.post('/model', asyncHandler(async (req, res) => {
       activeModel: model,
       openaiBaseUrl,
       allowApiFallback,
-      enforceNoSelfIntersection
+      enforceNoSelfIntersection,
+      mapPanSensitivity
     });
     log.info({ provider, model, actor: req.user?.username }, 'User local AI provider switched');
 
@@ -120,6 +127,7 @@ router.post('/model', asyncHandler(async (req, res) => {
       activeModel: model,
       allowApiFallback: allowApiFallback !== undefined ? allowApiFallback : true,
       enforceNoSelfIntersection: enforceNoSelfIntersection !== undefined ? enforceNoSelfIntersection : false,
+      mapPanSensitivity: mapPanSensitivity !== undefined ? parseFloat(mapPanSensitivity) : 0.55,
     });
   }
 }));
@@ -273,7 +281,7 @@ router.post('/system', requireRole(['admin']), asyncHandler(async (req, res) => 
 // ── Helper: persist system settings to .env file (atomic write) ───────────────
 // Reads existing .env, merges only the supplied keys, and atomically renames.
 // Comments and unrelated keys are preserved.
-function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir, newOcrEnabled, newGeminiApiKey) {
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir, newOcrEnabled, newGeminiApiKey, newMapPanSensitivity) {
   const envPath    = path.resolve(process.cwd(), '.env');
   const envTmpPath = envPath + '.tmp';
 
@@ -305,6 +313,7 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
   if (newWordDocTrainingDir !== undefined) vars['WORD_DOC_TRAINING_DIR']  = newWordDocTrainingDir;
   if (newOcrEnabled       !== undefined) vars['OCR_ENABLED']              = newOcrEnabled ? 'true' : 'false';
   if (newGeminiApiKey     !== undefined) vars['GEMINI_API_KEY']           = newGeminiApiKey;
+  if (newMapPanSensitivity !== undefined) vars['MAP_PAN_SENSITIVITY']      = newMapPanSensitivity.toString();
 
   const newLines = ['# Boundary.IQ — Environment Variables'];
   for (const [key, val] of Object.entries(vars)) {

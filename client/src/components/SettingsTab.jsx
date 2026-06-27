@@ -79,6 +79,7 @@ export default function SettingsTab({
   const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
   const [allowApiFallback, setAllowApiFallback] = useState(true);
   const [enforceNoSelfIntersection, setEnforceNoSelfIntersection] = useState(false);
+  const [mapPanSensitivity, setMapPanSensitivity] = useState(0.55);
 
   const fetchModelConfig = useCallback(async () => {
     setModelLoading(true);
@@ -125,6 +126,9 @@ export default function SettingsTab({
       if (modelConfig.enforceNoSelfIntersection !== undefined) {
         setEnforceNoSelfIntersection(modelConfig.enforceNoSelfIntersection);
       }
+      if (modelConfig.mapPanSensitivity !== undefined) {
+        setMapPanSensitivity(modelConfig.mapPanSensitivity);
+      }
     }
   }, [modelConfig]);
 
@@ -141,7 +145,7 @@ export default function SettingsTab({
     setSwitchingTo(`${provider}/${model}`);
     setModelLoading(true); setModelMsg('');
     try {
-      const body = { provider, model, allowApiFallback, enforceNoSelfIntersection };
+      const body = { provider, model, allowApiFallback, enforceNoSelfIntersection, mapPanSensitivity };
       if (provider === 'openai') body.openaiBaseUrl = openaiBaseUrl;
       const res = await fetch(`${API}/settings/model`, {
         method: 'POST',
@@ -167,7 +171,8 @@ export default function SettingsTab({
         provider: modelConfig.activeProvider, 
         model: modelConfig.activeModel, 
         allowApiFallback: newValue,
-        enforceNoSelfIntersection
+        enforceNoSelfIntersection,
+        mapPanSensitivity
       };
       if (modelConfig.activeProvider === 'openai') {
         body.openaiBaseUrl = openaiBaseUrl;
@@ -196,7 +201,8 @@ export default function SettingsTab({
         provider: modelConfig.activeProvider, 
         model: modelConfig.activeModel, 
         allowApiFallback,
-        enforceNoSelfIntersection: newValue 
+        enforceNoSelfIntersection: newValue,
+        mapPanSensitivity
       };
       if (modelConfig.activeProvider === 'openai') {
         body.openaiBaseUrl = openaiBaseUrl;
@@ -214,6 +220,36 @@ export default function SettingsTab({
       }
     } catch (e) {
       setModelMsg(`✗ Failsafe Connection Error: ${e.message}`);
+    }
+  };
+
+  const updateMapPanSensitivity = async (newValue) => {
+    setMapPanSensitivity(newValue);
+    if (!modelConfig) return;
+    try {
+      const body = { 
+        provider: modelConfig.activeProvider, 
+        model: modelConfig.activeModel, 
+        allowApiFallback,
+        enforceNoSelfIntersection,
+        mapPanSensitivity: newValue
+      };
+      if (modelConfig.activeProvider === 'openai') {
+        body.openaiBaseUrl = openaiBaseUrl;
+      }
+      const res = await fetch(`${API}/settings/model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchModelConfig();
+      } else {
+        setModelMsg(`✗ Failed to update sensitivity: ${data.error}`);
+      }
+    } catch (e) {
+      setModelMsg(`✗ Connection Error: ${e.message}`);
     }
   };
 
@@ -910,6 +946,38 @@ export default function SettingsTab({
             </div>
           </div>
 
+        </div>
+      </div>
+
+      {/* ── Interactive Map Settings ─────────────────────────────────── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid var(--border)',
+        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15)',
+        marginTop: '1.25rem'
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            🗺️ Interactive Map Configuration
+          </div>
+        </div>
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Map Pan Sensitivity</label>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.3)', color: 'var(--success)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>
+                {mapPanSensitivity.toFixed(2)}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <input type="range" min="0.1" max="2.0" step="0.05" value={mapPanSensitivity} onChange={e => updateMapPanSensitivity(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--success)', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
+              <input type="number" min="0.1" max="2.0" step="0.05" value={mapPanSensitivity} onChange={e => { let v = parseFloat(e.target.value); if (isNaN(v)) v = 0.55; updateMapPanSensitivity(Math.min(2.0, Math.max(0.1, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
+            </div>
+            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Adjust global default pan sensitivity multiplier when dragging the survey check plot map. Default is 0.55.
+            </p>
+          </div>
         </div>
       </div>
 

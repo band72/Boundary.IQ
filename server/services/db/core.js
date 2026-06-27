@@ -217,6 +217,7 @@ function _initializeSchema() {
       EnforceNoSelfIntersection INTEGER,
       GeminiApiKey TEXT,
       OpenaiApiKey TEXT,
+      MapPanSensitivity REAL,
       FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
     );
 
@@ -252,6 +253,7 @@ function _runMigrations() {
     { name: 'add_Sessions_IpAddress',      sql: 'ALTER TABLE Sessions ADD COLUMN IpAddress TEXT' },
     { name: 'add_Sessions_CreatedAt',      sql: 'ALTER TABLE Sessions ADD COLUMN CreatedAt TEXT' },
     { name: 'add_Users_ForceResetPw',      sql: 'ALTER TABLE Users ADD COLUMN ForceResetPw INTEGER NOT NULL DEFAULT 0' },
+    { name: 'add_UserSettings_MapPanSensitivity', sql: 'ALTER TABLE UserSettings ADD COLUMN MapPanSensitivity REAL' },
   ];
 
   const applyMigration = db.transaction((m) => {
