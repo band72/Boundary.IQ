@@ -32,7 +32,11 @@ window.fetch = async function (url, options = {}) {
     // If URL parsing fails (e.g. relative path with unusual format), fall through
     // and let the request proceed without the Authorization header.
   }
-  return originalFetch(url, options);
+  const response = await originalFetch(url, options);
+  if (response.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+  }
+  return response;
 };
 
 createRoot(document.getElementById('root')).render(
