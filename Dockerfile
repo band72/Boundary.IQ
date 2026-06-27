@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y \
     librsvg2-2 \
     libreoffice-nogui \
     fonts-dejavu \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 

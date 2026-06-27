@@ -6,10 +6,23 @@
 // A non-2xx response causes the container to be restarted.
 
 import { Router } from 'express';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { GEMINI_API_KEY, ACTIVE_PROVIDER, ACTIVE_MODEL, NODE_ENV } from '../config.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
+const execAsync = promisify(exec);
 const router = Router();
 const startTime = Date.now();
+
+async function checkBinary(binaryName) {
+  try {
+    await execAsync(`which ${binaryName}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ── GET /api/health — lightweight liveness probe ──────────────────────────────
 router.get('/', (req, res) => {
@@ -24,11 +37,20 @@ router.get('/', (req, res) => {
 });
 
 // ── GET /api/health/ready — readiness probe (checks AI provider config) ────────
-router.get('/ready', (req, res) => {
+router.get('/ready', asyncHandler(async (req, res) => {
+  const [libreofficeInstalled, python3Installed, pdftoppmInstalled] = await Promise.all([
+    checkBinary('libreoffice'),
+    checkBinary('python3'),
+    checkBinary('pdftoppm'),
+  ]);
+
   const checks = {
-    gemini_key: !!GEMINI_API_KEY,
-    provider:   ACTIVE_PROVIDER || 'ollama',
-    model:      ACTIVE_MODEL    || '(default)',
+    gemini_key:  !!GEMINI_API_KEY,
+    provider:    ACTIVE_PROVIDER || 'ollama',
+    model:       ACTIVE_MODEL    || '(default)',
+    libreoffice: libreofficeInstalled,
+    python3:     python3Installed,
+    pdftoppm:    pdftoppmInstalled,
   };
 
   const ready = ACTIVE_PROVIDER !== 'gemini' || checks.gemini_key;
@@ -38,6 +60,6 @@ router.get('/ready', (req, res) => {
     checks,
     utc: new Date().toISOString(),
   });
-});
+}));
 
 export default router;
