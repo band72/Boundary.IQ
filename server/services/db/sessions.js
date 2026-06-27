@@ -66,15 +66,18 @@ export function getUserSessions(userId) {
     FROM Sessions
     WHERE UserId = ?
     ORDER BY CreatedAt DESC
-  `).all(userId).map(s => ({
-    token: s.Token.substring(0, 8) + '…', // masked for security
-    tokenPrefix: s.Token.substring(0, 8),
-    fullToken: s.Token,
-    expiresAt: s.ExpiresAt,
-    ipAddress: s.IpAddress,
-    userAgent: s.UserAgent,
-    createdAt: s.CreatedAt,
-  }));
+  `).all(userId).map(s => {
+    const tok = s.Token || '';
+    return {
+      token: tok.substring(0, 8) + '…', // masked for security
+      tokenPrefix: tok.substring(0, 8),
+      fullToken: s.Token,
+      expiresAt: s.ExpiresAt,
+      ipAddress: s.IpAddress,
+      userAgent: s.UserAgent,
+      createdAt: s.CreatedAt,
+    };
+  });
 }
 
 export function revokeSession(token) {
