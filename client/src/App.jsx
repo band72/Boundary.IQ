@@ -31,6 +31,11 @@ class TabErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('[TabErrorBoundary] Uncaught render error:', error, info.componentStack);
+    const msg = (error?.message || String(error)).toLowerCase();
+    if (msg.includes('dynamically imported module') || msg.includes('failed to fetch') || msg.includes('loading chunk')) {
+      console.warn('Vite chunk load failure detected in TabErrorBoundary. Reloading page...');
+      window.location.reload();
+    }
   }
 
   render() {
