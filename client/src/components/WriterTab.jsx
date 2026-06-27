@@ -418,22 +418,25 @@ export default function WriterTab() {
         {/* Right Column: Sticky live map and results */}
         <div className="sticky-column" style={{ alignSelf: 'stretch' }}>
           {/* Live Map - Always visible! */}
-          <div className="card">
+          {/* Live Map - Always visible! */}
+          <div className="card" style={!result ? { flex: 1, display: 'flex', flexDirection: 'column' } : {}}>
             <div className="card-header">
               <div className="card-title">🗺️ Boundary Map (Draft)</div>
             </div>
-            <TraverseMap
-              key={`${courses.length}_${pobN}_${pobE}_${units}`}
-              courses={courses}
-              pob={{
-                northing: parseFloat(pobN) || 5000,
-                easting: parseFloat(pobE) || 5000
-              }}
-              hoveredCourseIndex={hoveredCourseIndex}
-              setHoveredCourseIndex={setHoveredCourseIndex}
-              selectedCourseIndex={selectedCourseIndex}
-              setSelectedCourseIndex={setSelectedCourseIndex}
-            />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TraverseMap
+                key={`${courses.length}_${pobN}_${pobE}_${units}`}
+                courses={courses}
+                pob={{
+                  northing: parseFloat(pobN) || 5000,
+                  easting: parseFloat(pobE) || 5000
+                }}
+                hoveredCourseIndex={hoveredCourseIndex}
+                setHoveredCourseIndex={setHoveredCourseIndex}
+                selectedCourseIndex={selectedCourseIndex}
+                setSelectedCourseIndex={setSelectedCourseIndex}
+              />
+            </div>
           </div>
 
           {/* Error */}
@@ -441,7 +444,7 @@ export default function WriterTab() {
 
           {/* Output: Legal Description result */}
           {result && (
-            <div className="card">
+            <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <div className="card-header">
                 <div className="card-title">📄 Legal Description</div>
                 <div className="flex-row">
@@ -455,6 +458,7 @@ export default function WriterTab() {
                 fontFamily: 'Georgia, "Times New Roman", serif',
                 fontSize: '0.9rem', lineHeight: 2.0, color: 'var(--text-primary)',
                 whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                flex: 1, overflowY: 'auto'
               }}>
                 {result}
               </pre>
