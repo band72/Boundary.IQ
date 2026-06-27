@@ -157,11 +157,11 @@ export default function WriterTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-      <div className="split-layout">
+      <div className="split-layout" style={{ alignItems: 'stretch' }}>
         {/* Left Column: Form entry card */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', alignSelf: 'stretch' }}>
           {/* ── Main card ─────────────────────────────────────────────────────────── */}
-          <div className="card">
+          <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div className="card-header">
               <div className="card-title">✍️ Legal Description Writer</div>
               <div className="flex-row">
@@ -416,7 +416,7 @@ export default function WriterTab() {
         </div>
 
         {/* Right Column: Sticky live map and results */}
-        <div className="sticky-column">
+        <div className="sticky-column" style={{ alignSelf: 'stretch' }}>
           {/* Live Map - Always visible! */}
           <div className="card">
             <div className="card-header">
