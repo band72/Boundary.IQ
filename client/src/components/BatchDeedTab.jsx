@@ -2967,7 +2967,7 @@ export default function BatchDeedTab() {
                     <td>{log.parcelName || '—'}</td>
                     <td>{log.geoCallCount}</td>
                     <td style={{ fontFamily: 'JetBrains Mono' }}>
-                      {log.linearError > 900 ? '—' : `${log.linearError.toFixed(4)}'`}
+                      {log.linearError == null || isNaN(log.linearError) || log.linearError > 900 ? '—' : `${parseFloat(log.linearError).toFixed(4)}'`}
                     </td>
                     <td style={{ fontFamily: 'JetBrains Mono' }}>
                       {log.precisionRatio > 0 ? `1:${log.precisionRatio.toLocaleString()}` : '—'}
