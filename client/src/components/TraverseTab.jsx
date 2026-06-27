@@ -509,9 +509,9 @@ export default function TraverseTab() {
         </div>
       )}
 
-      <div className="split-layout" style={{ alignItems: 'start' }}>
+      <div className="split-layout" style={{ alignItems: 'stretch' }}>
         {/* Left Column: Input Panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', alignSelf: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', alignSelf: 'stretch' }}>
           {/* ── Setup ───────────────────────────────────────────────────── */}
           <div className="card">
             <div className="card-header">
@@ -972,9 +972,9 @@ export default function TraverseTab() {
         </div>
 
         {/* Right Column: Dynamic Map, Error & Results */}
-        <div className="sticky-column" style={{ alignSelf: 'start' }}>
+        <div className="sticky-column" style={{ alignSelf: 'stretch' }}>
           {/* Map — Always visible if there are courses! */}
-          <div className="card">
+          <div className="card" style={!result ? { flex: 1, display: 'flex', flexDirection: 'column' } : {}}>
             <div className="card-header">
               <div className="card-title">🗺️ Traverse Map</div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -988,19 +988,21 @@ export default function TraverseTab() {
                 </button>
               </div>
             </div>
-            <TraverseMap
-              key={`${activeTractIndex}_${result?.stations?.length || 0}_${result?.closure?.linearError || 0}_${showAdjusted}_${courses.length}`}
-              stations={result?.stations}
-              adjusted={showAdjusted ? result?.adjustedStations : []}
-              courses={courses}
-              pob={{ northing: parseFloat(pob.northing) || 5000, easting: parseFloat(pob.easting) || 5000 }}
-              hoveredCourseIndex={hoveredCourseIndex}
-              setHoveredCourseIndex={setHoveredCourseIndex}
-              selectedCourseIndex={selectedCourseIndex}
-              setSelectedCourseIndex={setSelectedCourseIndex}
-              activeTractIndex={activeTractIndex}
-              tracts={result?.tracts || []}
-            />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TraverseMap
+                key={`${activeTractIndex}_${result?.stations?.length || 0}_${result?.closure?.linearError || 0}_${showAdjusted}_${courses.length}`}
+                stations={result?.stations}
+                adjusted={showAdjusted ? result?.adjustedStations : []}
+                courses={courses}
+                pob={{ northing: parseFloat(pob.northing) || 5000, easting: parseFloat(pob.easting) || 5000 }}
+                hoveredCourseIndex={hoveredCourseIndex}
+                setHoveredCourseIndex={setHoveredCourseIndex}
+                selectedCourseIndex={selectedCourseIndex}
+                setSelectedCourseIndex={setSelectedCourseIndex}
+                activeTractIndex={activeTractIndex}
+                tracts={result?.tracts || []}
+              />
+            </div>
           </div>
 
           {/* Error */}
