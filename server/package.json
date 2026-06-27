@@ -15,6 +15,7 @@
     "test:unit": "vitest run --config vitest.config.js",
     "test:unit:watch": "vitest --config vitest.config.js",
     "test:continuous": "node tests/continuous_test_runner.js",
+    "test:deployed": "node tests/deployed_system_suite.js",
     "batch:all": "node scripts/batchHeadless.js",
     "batch:fails": "node scripts/batchHeadless.js --fail-only",
     "batch:ai": "node scripts/batchHeadless.js --use-ai --model=gemini-2.5-flash --fail-only",

@@ -129,8 +129,9 @@ router.get('/me', asyncHandler(async (req, res) => {
   const sessionUser = getSession(token);
   if (!sessionUser) return res.status(401).json({ error: 'Session has expired or is invalid' });
 
+  const fullUser = getUserById(sessionUser.userId);
   const forceReset = checkForceReset(sessionUser.userId);
-  return res.json({ id: sessionUser.userId, username: sessionUser.username, role: sessionUser.role, plan: sessionUser.plan || 'free', forcePasswordReset: forceReset });
+  return res.json({ id: sessionUser.userId, username: sessionUser.username, role: sessionUser.role, plan: sessionUser.plan || 'free', displayName: fullUser?.displayName || null, forcePasswordReset: forceReset });
 }));
 
 // ── GET /api/auth/invite-only ──────────────────────────────────────────────────
