@@ -41,6 +41,8 @@ function normalizeCourses(arr) {
     chordBearing: c.chordBearing ?? c.ChordBearing ?? null,
     chordDistance: c.chordDistance ?? c.ChordDistance ?? null,
     isUnknown: c.isUnknown ?? c.IsUnknown ?? false,
+    deflectionAngle: c.deflectionAngle ?? c.DeflectionAngle ?? null,
+    deflectionDirection: c.deflectionDirection ?? c.DeflectionDirection ?? null,
   }));
 }
 
