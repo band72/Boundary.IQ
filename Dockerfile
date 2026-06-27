@@ -26,14 +26,17 @@ RUN cd server && npm ci --omit=dev
 # Stage 3: Clean runtime image
 FROM node:20-slim
 
-# Install runtime dependencies for canvas
+# Install runtime dependencies for canvas and document conversion
 RUN apt-get update && apt-get install -y \
     libcairo2 \
     libpango-1.0-0 \
     libjpeg62-turbo \
     libgif7 \
     librsvg2-2 \
+    libreoffice-nogui \
+    fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 
