@@ -39,6 +39,23 @@ window.fetch = async function (url, options = {}) {
   return response;
 };
 
+// Global chunk loading/dynamic import error handler
+window.addEventListener('error', (e) => {
+  const msg = e.message || '';
+  if (msg.includes('dynamically imported module') || msg.includes('loading chunk')) {
+    console.warn('Dynamic import chunk load error detected. Reloading page...');
+    window.location.reload();
+  }
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  const msg = e.reason?.message || '';
+  if (msg.includes('dynamically imported module') || msg.includes('Failed to fetch dynamically imported module')) {
+    console.warn('Unhandled chunk load error detected. Reloading page...');
+    window.location.reload();
+  }
+});
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
