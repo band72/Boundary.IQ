@@ -15,6 +15,7 @@ import { getAllowApiFallback, getEnforceNoSelfIntersection, getMapPanSensitivity
 
 const log = createChildLogger('settings');
 const router = Router();
+const getIp = (req) => req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
 
 // ── Auth: all settings routes require a valid session ────────────────────────
 router.use(requireAuth);
@@ -101,6 +102,12 @@ router.post('/model', asyncHandler(async (req, res) => {
 
     saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback, enforceNoSelfIntersection, undefined, undefined, undefined, undefined, undefined, mapPanSensitivity);
     log.info({ provider, model, actor: req.user?.username }, 'Global AI provider switched by Admin');
+    dbSvc.logAudit({
+      actorId: req.user.id,
+      action: 'admin_change_global_model',
+      detail: { provider, model, allowApiFallback, enforceNoSelfIntersection, mapPanSensitivity },
+      ipAddress: getIp(req)
+    });
 
     res.json({
       message: `Switched global default to ${provider}/${model || '(default)'}`,
@@ -120,6 +127,13 @@ router.post('/model', asyncHandler(async (req, res) => {
       mapPanSensitivity
     });
     log.info({ provider, model, actor: req.user?.username }, 'User local AI provider switched');
+    dbSvc.logAudit({
+      userId: req.user.id,
+      actorId: req.user.id,
+      action: 'change_user_model',
+      detail: { provider, model, mapPanSensitivity },
+      ipAddress: getIp(req)
+    });
 
     res.json({
       message: `Switched your local settings to ${provider}/${model || '(default)'}`,
@@ -179,6 +193,11 @@ router.post('/ollama/start', requireRole(['admin']), asyncHandler(async (req, re
 
   if (status.online) {
     log.info({ modelCount: status.models.length }, 'Ollama auto-started via settings');
+    dbSvc.logAudit({
+      actorId: req.user.id,
+      action: 'admin_start_ollama',
+      ipAddress: getIp(req)
+    });
     return res.json({ started: true, message: `Ollama started. ${status.models.length} model(s) available.`, models: status.models });
   } else {
     return res.json({ started: false, message: 'Ollama spawn attempted but server did not respond yet. Wait a few seconds and refresh.', error: status.error });
@@ -199,6 +218,12 @@ router.post('/keys', asyncHandler(async (req, res) => {
     }
     saveSystemSettingsToEnv(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, geminiApiKey);
     log.info({ actor: req.user?.username }, 'Global API keys updated dynamically by Admin');
+    dbSvc.logAudit({
+      actorId: req.user.id,
+      action: 'admin_change_global_keys',
+      detail: { hasGeminiKey: !!geminiApiKey, hasOpenAiKey: !!openAiApiKey },
+      ipAddress: getIp(req)
+    });
     res.json({ success: true, message: 'API keys updated successfully in server memory and persisted to .env.' });
   } else {
     dbSvc.saveUserSettings(req.user.id, {
@@ -206,6 +231,13 @@ router.post('/keys', asyncHandler(async (req, res) => {
       openaiApiKey: openAiApiKey
     });
     log.info({ actor: req.user?.username }, 'User local API keys updated dynamically');
+    dbSvc.logAudit({
+      userId: req.user.id,
+      actorId: req.user.id,
+      action: 'change_user_keys',
+      detail: { hasGeminiKey: !!geminiApiKey, hasOpenAiKey: !!openAiApiKey },
+      ipAddress: getIp(req)
+    });
     res.json({ success: true, message: 'Your API keys updated successfully.' });
   }
 }));
@@ -265,6 +297,13 @@ router.post('/system', requireRole(['admin']), asyncHandler(async (req, res) => 
 
   // 5. Persist to .env file for server restarts
   saveSystemSettingsToEnv(dbPath, scanRoots, undefined, undefined, undefined, undefined, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled);
+
+  dbSvc.logAudit({
+    actorId: req.user.id,
+    action: 'admin_change_system_settings',
+    detail: { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled },
+    ipAddress: getIp(req)
+  });
 
   res.json({
     success: true,

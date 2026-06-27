@@ -296,9 +296,9 @@ function AuditTab({ auth }) {
 
   const fetch_ = useCallback(async () => {
     setLoading(true);
-    const qs = actionFilter ? `?action=${actionFilter}` : '';
+    const qs = actionFilter ? `?action=${actionFilter}&limit=200` : '?limit=200';
     try {
-      const r = await fetch(`${API}/auth/audit-log${qs}&limit=200`, auth);
+      const r = await fetch(`${API}/auth/audit-log${qs}`, auth);
       const d = await r.json();
       setEntries(d.entries || []);
     } catch (err) {
