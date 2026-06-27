@@ -43,28 +43,69 @@ class TabErrorBoundary extends Component {
       return (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', height: '100%', gap: '1.25rem',
-          padding: '2rem', textAlign: 'center',
+          justifyContent: 'center', height: '100%', minHeight: '380px',
+          padding: '2rem', boxSizing: 'border-box'
         }}>
-          <div style={{ fontSize: '2.5rem' }}>⚠️</div>
-          <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.05rem' }}>
-            This tab encountered an unexpected error.
-          </div>
-          <div style={{
-            fontFamily: 'monospace', fontSize: '0.78rem',
-            color: 'var(--text-muted)', maxWidth: 520,
-            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem',
-            textAlign: 'left', wordBreak: 'break-word',
+          <div className="card" style={{
+            width: '100%', maxWidth: '600px', padding: 0, overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.3)', border: '1px solid var(--border)'
           }}>
-            {this.state.error?.message || String(this.state.error)}
+            {/* Professional Top Banner with Logo */}
+            <div style={{
+              background: 'var(--bg-elevated)',
+              borderBottom: '1px solid var(--border)',
+              padding: '1.25rem 2rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.75rem'
+            }}>
+              <span style={{ fontSize: '1.5rem', color: 'var(--accent)' }}>⬡</span>
+              <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                Boundary<span style={{ color: 'var(--accent)' }}>.IQ</span>
+              </span>
+            </div>
+
+            {/* Error Content Body */}
+            <div style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', alignItems: 'center' }}>
+              <div style={{ fontSize: '2.5rem' }}>⚠️</div>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)', fontWeight: 600 }}>
+                Application Error Detected
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '480px' }}>
+                The workspace encountered an unexpected runtime error. The details of the failure are listed below:
+              </p>
+              
+              <div style={{
+                width: '100%',
+                fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem',
+                color: 'var(--danger)',
+                background: 'rgba(255, 77, 109, 0.05)',
+                border: '1px solid rgba(255, 77, 109, 0.15)',
+                borderRadius: 'var(--radius-md)', padding: '1rem',
+                boxSizing: 'border-box',
+                textAlign: 'left', wordBreak: 'break-word',
+                maxHeight: '150px', overflowY: 'auto'
+              }}>
+                {this.state.error?.message || String(this.state.error)}
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => window.location.reload()}
+                >
+                  🔄 Reload Platform
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => this.setState({ hasError: false, error: null })}
+                >
+                  Dismiss & Retry
+                </button>
+              </div>
+            </div>
           </div>
-          <button
-            className="btn-primary"
-            onClick={() => this.setState({ hasError: false, error: null })}
-          >
-            🔄 Try Again
-          </button>
         </div>
       );
     }
