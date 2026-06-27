@@ -577,6 +577,7 @@ export default function TraverseMap({
   const [hoveredVertexIndexLocal, setHoveredVertexIndexLocal] = useState(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const dragStart = useRef({ x: 0, y: 0 });
   const panAtDragStart = useRef({ x: 0, y: 0 });
 
@@ -624,10 +625,13 @@ export default function TraverseMap({
 
     const scaleX = (W - PAD * 2) / rangeE;
     const scaleY = (H - PAD * 2) / rangeN;
-    const scale = Math.min(scaleX, scaleY);
+    const scale = Math.min(scaleX, scaleY) * zoom;
 
-    const tx = e => PAD + (e - minE) * scale + panOffset.x;
-    const ty = n => H - PAD - (n - minN) * scale + panOffset.y;
+    const midE = (minE + maxE) / 2;
+    const midN = (minN + maxN) / 2;
+
+    const tx = e => W / 2 + (e - midE) * scale + panOffset.x;
+    const ty = n => H / 2 - (n - midN) * scale + panOffset.y;
 
     // Grid lines (Surveyor Draft grid) – shifted by pan offset
     ctx.save();
@@ -939,7 +943,7 @@ export default function TraverseMap({
     ctx.fill();
     ctx.restore();
 
-  }, [canvasElement, pts, courses, activeHoveredIndex, activeSelectedIndex, hoveredVertexIndexLocal, tracts, activeTractIndex]);
+  }, [canvasElement, pts, courses, activeHoveredIndex, activeSelectedIndex, hoveredVertexIndexLocal, tracts, activeTractIndex, allPtsForBounds, panOffset.x, panOffset.y, zoom]);
 
   const handleMouseDown = (e) => {
     setIsPanning(true);
@@ -977,10 +981,13 @@ export default function TraverseMap({
 
     const scaleX = (canvas.width - PAD * 2) / rangeE;
     const scaleY = (canvas.height - PAD * 2) / rangeN;
-    const scale = Math.min(scaleX, scaleY);
+    const scale = Math.min(scaleX, scaleY) * zoom;
 
-    const tx = e => PAD + (e - minE) * scale + panOffset.x;
-    const ty = n => canvas.height - PAD - (n - minN) * scale + panOffset.y;
+    const midE = (minE + maxE) / 2;
+    const midN = (minN + maxN) / 2;
+
+    const tx = e => canvas.width / 2 + (e - midE) * scale + panOffset.x;
+    const ty = n => canvas.height / 2 - (n - midN) * scale + panOffset.y;
 
     // 1. Vertex hit-testing
     let closestVertex = null;
@@ -1034,6 +1041,12 @@ export default function TraverseMap({
     setHoveredVertexIndexLocal(null);
     setHoveredCourseIndexLocal(null);
     if (setHoveredCourseIndexProp) setHoveredCourseIndexProp(null);
+  };
+
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const zoomFactor = 1 - Math.max(-0.5, Math.min(0.5, e.deltaY * 0.0015));
+    setZoom(z => Math.max(0.1, Math.min(25, z * zoomFactor)));
   };
 
   const handleCanvasClick = () => {
@@ -1153,10 +1166,11 @@ export default function TraverseMap({
           onPointerUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
           onClick={handleCanvasClick}
+          onWheel={handleWheel}
         />
-        {(panOffset.x !== 0 || panOffset.y !== 0) && (
+        {(panOffset.x !== 0 || panOffset.y !== 0 || zoom !== 1) && (
           <button
-            onClick={() => setPanOffset({ x: 0, y: 0 })}
+            onClick={() => { setPanOffset({ x: 0, y: 0 }); setZoom(1); }}
             title="Reset view"
             style={{
               position: 'absolute', top: 8, right: 8,
