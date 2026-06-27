@@ -234,7 +234,7 @@ export default function UserSettingsTab({
   const [saveKeysLoading,  setSaveKeysLoading]    = useState(false);
   const [keysMsg,          setKeysMsg]            = useState('');
   const [selectedVendor,   setSelectedVendor]     = useState('gemini');
-  const [selectedModel,    setSelectedModel]      = useState('gemini-3.5-flash');
+  const [selectedModel,    setSelectedModel]      = useState('gemini-2.5-flash');
   const [allowApiFallback, setAllowApiFallback]   = useState(true);
   const [enforceNoSelfIntersection, setEnforceNoSelfIntersection] = useState(false);
   const [switchingTo,      setSwitchingTo]        = useState(null);
@@ -260,7 +260,7 @@ export default function UserSettingsTab({
   useEffect(() => {
     if (modelConfig) {
       setSelectedVendor(modelConfig.activeProvider || 'gemini');
-      setSelectedModel(modelConfig.activeModel || 'gemini-3.5-flash');
+      setSelectedModel(modelConfig.activeModel || 'gemini-2.5-flash');
       if (modelConfig.allowApiFallback !== undefined) setAllowApiFallback(modelConfig.allowApiFallback);
       if (modelConfig.enforceNoSelfIntersection !== undefined) setEnforceNoSelfIntersection(modelConfig.enforceNoSelfIntersection);
     }
