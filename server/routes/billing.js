@@ -185,6 +185,10 @@ router.post('/webhook', async (req, res) => {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!webhookSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Billing] CRITICAL error: STRIPE_WEBHOOK_SECRET is not configured in production. Aborting webhook request.');
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
     console.warn('[Billing] STRIPE_WEBHOOK_SECRET not set — webhook verification skipped.');
     return res.status(200).json({ received: true });
   }

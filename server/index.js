@@ -3,6 +3,16 @@
 // Same API routes, same JSON shapes, same behavior.
 
 import 'dotenv/config';
+import * as Sentry from '@sentry/node';
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: 1.0,
+  });
+}
+
 import dotenv from 'dotenv'; // kept for hot-reload: dotenv.config({ override: true })
 import { Agent, setGlobalDispatcher } from 'undici';
 import fs from 'fs';
@@ -219,6 +229,10 @@ if (IS_PROD) {
   } else {
     logger.warn(`⚠ client/dist directory not found at: ${clientDist}. Client serving skipped.`);
   }
+}
+
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
 }
 
 // ── Global error handler ──────────────────────────────────────────────────────
