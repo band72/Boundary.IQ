@@ -132,11 +132,11 @@ function TabSpinner() {
 // status:  'live' | 'testing' — 'testing' shows a chip in the sidebar for admin
 const TABS = [
   { id: 'traverse',  icon: '📐', label: 'Deed Reader',      minRole: 'user',  minPlan: 'free', status: 'live'    },
-  { id: 'plat',      icon: '🛰',  label: 'Plat Extraction',  minRole: 'user',  minPlan: 'free', status: 'testing' },
+  { id: 'plat',      icon: '🛰',  label: 'Plat Extraction',  minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'writer',    icon: '✍️',  label: 'Deed Writer',      minRole: 'user',  minPlan: 'free', status: 'live'    },
-  { id: 'batch',     icon: '📦',  label: 'Batch Deed',       minRole: 'user',  minPlan: 'free', status: 'testing' },
+  { id: 'batch',     icon: '📦',  label: 'Batch Deed',       minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'scripting', icon: '📝',  label: 'Linework Scripting', minRole: 'user', minPlan: 'free', status: 'live'   },
-  { id: 'dashboard', icon: '📊',  label: 'Dashboard',        minRole: 'user',  minPlan: 'free', status: 'testing' },
+  { id: 'dashboard', icon: '📊',  label: 'Dashboard',        minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'settings',  icon: '⚙️',  label: 'Settings',         minRole: 'user',  minPlan: 'free', status: 'live'    },
 ];
 
