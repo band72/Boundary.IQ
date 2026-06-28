@@ -19,8 +19,12 @@ export default function LoginScreen({ onAuthSuccess }) {
   // Live Google Sign-In Client ID State (loaded from localStorage or environment)
   const [googleClientId, setGoogleClientId] = useState(() => {
     const envId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const resolvedEnvId = (envId && envId !== 'PLACEHOLDER' ? envId : '');
+    if (import.meta.env.PROD) {
+      return resolvedEnvId;
+    }
     return localStorage.getItem('boundaryiq_google_client_id') || 
-           (envId && envId !== 'PLACEHOLDER' ? envId : '') || 
+           resolvedEnvId || 
            '';
   });
 
@@ -443,12 +447,15 @@ export default function LoginScreen({ onAuthSuccess }) {
             {/* ── Normal Login / Register Mode ─────────────────────── */}
             {!isForgotPw && (
               <>
-                {googleClientId ? (
+                {googleClientId && (
                   <div className="google-signin-wrapper" style={{ marginTop: '0.4rem', marginBottom: '0.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '0.4rem' }}>
                     <div id="google-live-signin-btn" style={{ minHeight: 40, width: '100%' }}></div>
-                    <button type="button" className="toggle-link-btn" onClick={() => setShowDevGoogleModal(true)} style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⚙️ Configure OAuth ID</button>
+                    {!import.meta.env.PROD && (
+                      <button type="button" className="toggle-link-btn" onClick={() => setShowDevGoogleModal(true)} style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⚙️ Configure OAuth ID</button>
+                    )}
                   </div>
-                ) : (
+                )}
+                {!googleClientId && !import.meta.env.PROD && (
                   <div className="google-signin-wrapper" style={{ marginTop: '0.4rem', marginBottom: '0.2rem', display: 'flex', justifyContent: 'center', width: '100%' }}>
                     <button type="button" className="google-custom-btn" onClick={() => setShowDevGoogleModal(true)} disabled={loading} style={{ width: '100%' }}>
                       <span className="google-icon-svg" style={{ display: 'flex', alignItems: 'center' }}>
@@ -464,11 +471,13 @@ export default function LoginScreen({ onAuthSuccess }) {
                   </div>
                 )}
 
-                <div className="separator" style={{ display: 'flex', alignItems: 'center', margin: '0.6rem 0', width: '100%' }}>
-                  <span className="separator-line" style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }}></span>
-                  <span className="separator-text" style={{ padding: '0 0.75rem', fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>or sign in with password</span>
-                  <span className="separator-line" style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }}></span>
-                </div>
+                {(googleClientId || !import.meta.env.PROD) && (
+                  <div className="separator" style={{ display: 'flex', alignItems: 'center', margin: '0.6rem 0', width: '100%' }}>
+                    <span className="separator-line" style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }}></span>
+                    <span className="separator-text" style={{ padding: '0 0.75rem', fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>or sign in with password</span>
+                    <span className="separator-line" style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }}></span>
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label" htmlFor="username">Username</label>
@@ -521,7 +530,7 @@ export default function LoginScreen({ onAuthSuccess }) {
       </div>
 
       {/* Google Developer SSO Simulator & Settings Dialog overlay */}
-      {showDevGoogleModal && (
+      {!import.meta.env.PROD && showDevGoogleModal && (
         <div className="dev-modal-overlay">
           <div className="dev-modal-card">
             <h3>🔑 Google Sign-In Settings</h3>
