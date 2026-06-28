@@ -65,6 +65,7 @@ import billingRouter from './routes/billing.js';
 import exportRouter from './routes/export.js';
 
 const app = express();
+app.set('trust proxy', 1); // Trust the first proxy (e.g. Cloud Run load balancer)
 
 // ── Global crash guards ───────────────────────────────────────────────────────
 // Prevent unhandled promise rejections from silently crashing the process.
