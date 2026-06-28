@@ -137,7 +137,16 @@ try {
 
 // Helmet: adds ~12 security headers
 app.use(helmet({
-  contentSecurityPolicy: false, // disabled: React SPA needs inline scripts from Vite
+  contentSecurityPolicy: IS_PROD ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://accounts.google.com", "https://js.stripe.com"],
+      frameSrc: ["'self'", "https://accounts.google.com", "https://js.stripe.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
+      connectSrc: ["'self'", "https://*.googleapis.com", "https://api.stripe.com"],
+      imgSrc: ["'self'", "data:", "https://lh3.googleusercontent.com"],
+    }
+  } : false,
   crossOriginEmbedderPolicy: false, // disabled: canvas/DXF exports need cross-origin fetch
 }));
 
