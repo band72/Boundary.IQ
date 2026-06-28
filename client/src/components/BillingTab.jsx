@@ -16,7 +16,7 @@ const PLAN_FEATURES = {
   enterprise: {
     icon: '🏢', name: 'Enterprise', color: '#ffaa00',
     price: '$99/month',
-    features: ['Everything in Pro', 'Unlimited team seats', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support', 'Custom data retention'],
+    features: ['Everything in Pro', '5 team members', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support', 'Custom data retention'],
     missing: [],
   },
 };

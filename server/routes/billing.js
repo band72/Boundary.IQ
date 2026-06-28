@@ -49,7 +49,7 @@ const PLANS = {
     priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || null,
     price: 9900,
     interval: 'month',
-    features: ['Everything in Pro', 'Unlimited team seats', 'Custom AI models', 'API access', 'SLA support'],
+    features: ['Everything in Pro', '5 team members', 'Custom AI models', 'API access', 'SLA support'],
   },
 };
 
