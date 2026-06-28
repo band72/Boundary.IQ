@@ -308,7 +308,7 @@ function AppShell() {
                 >
                   <span className="nav-icon">{t.icon}</span>
                   {t.label}
-                  {isTesting && (
+                  {isTesting && !import.meta.env.PROD && (
                     <span style={{
                       marginLeft: 'auto', fontSize: '0.56rem', fontWeight: 800,
                       letterSpacing: '0.05em', background: 'rgba(255,170,0,0.12)',
