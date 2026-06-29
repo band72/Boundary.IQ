@@ -176,7 +176,7 @@ function AppShell() {
   const checkHealth = async () => {
     setHealthStatus(null);
     try {
-      const token = localStorage.getItem('boundaryiq_token');
+      const token = localStorage.getItem('boundaryiq_auth_token');
       const res = await fetch(`${API.replace(/\/api$/, '')}/api/health`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
