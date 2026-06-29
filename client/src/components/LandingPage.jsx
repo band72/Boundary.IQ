@@ -1,6 +1,9 @@
 import { useState } from 'react';
 
 export default function LandingPage({ onEnterApp }) {
+  const [activeTab, setActiveTab] = useState('reader'); // 'reader' | 'writer' | 'scripting'
+  const [writerMode, setWriterMode] = useState('text'); // 'text' | 'form'
+
   return (
     <div className="login-wrapper landing-wrapper" style={{ display: 'block', overflowY: 'auto', padding: '4rem 1.5rem 3rem 1.5rem' }}>
       {/* Background Glowing Orbs */}
@@ -135,6 +138,205 @@ export default function LandingPage({ onEnterApp }) {
               </p>
             </div>
 
+          </div>
+        </section>
+
+        {/* Interactive Product Tour */}
+        <section style={{ marginBottom: '5rem' }}>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', textAlign: 'center', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.9 }}>
+            Explore the Platform
+          </h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '2.5rem', maxWidth: '500px', margin: '0 auto 2.5rem auto' }}>
+            Click on the tabs below to preview the main modules of the Boundary.IQ workspace.
+          </p>
+
+          {/* Glassmorphic Tab Bar */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '0.75rem',
+            marginBottom: '2rem',
+            flexWrap: 'wrap'
+          }}>
+            <button
+              onClick={() => setActiveTab('reader')}
+              className={`btn ${activeTab === 'reader' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{
+                padding: '0.6rem 1.25rem',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                border: activeTab === 'reader' ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                background: activeTab === 'reader' ? 'var(--accent)' : 'rgba(255,255,255,0.02)',
+                borderRadius: '8px'
+              }}
+            >
+              📐 Deed Reader &amp; Map
+            </button>
+            <button
+              onClick={() => setActiveTab('writer')}
+              className={`btn ${activeTab === 'writer' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{
+                padding: '0.6rem 1.25rem',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                border: activeTab === 'writer' ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                background: activeTab === 'writer' ? 'var(--accent)' : 'rgba(255,255,255,0.02)',
+                borderRadius: '8px'
+              }}
+            >
+              ✍️ Legal Writer
+            </button>
+            <button
+              onClick={() => setActiveTab('scripting')}
+              className={`btn ${activeTab === 'scripting' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{
+                padding: '0.6rem 1.25rem',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                border: activeTab === 'scripting' ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                background: activeTab === 'scripting' ? 'var(--accent)' : 'rgba(255,255,255,0.02)',
+                borderRadius: '8px'
+              }}
+            >
+              📝 Linework Scripting IDE
+            </button>
+          </div>
+
+          {/* Browser Window Mockup Frame */}
+          <div style={{
+            background: 'rgba(20, 26, 40, 0.5)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(12px)'
+          }}>
+            {/* Browser Control Titlebar */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.75rem 1.25rem',
+              background: 'rgba(255, 255, 255, 0.03)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+            }}>
+              {/* Colored Dots */}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ff5f56' }}></span>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ffbd2e' }}></span>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#27c93f' }}></span>
+              </div>
+              {/* Fake URL Bar */}
+              <div style={{
+                background: 'rgba(0, 0, 0, 0.25)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                borderRadius: '6px',
+                padding: '0.25rem 3rem',
+                fontSize: '0.7rem',
+                color: 'var(--text-muted)',
+                fontFamily: 'monospace',
+                letterSpacing: '0.02em',
+                textAlign: 'center',
+                width: '50%',
+                maxWidth: '400px'
+              }}>
+                deed.iq.banks.land/engine
+              </div>
+              {/* Extra spacing */}
+              <div style={{ width: '36px' }}></div>
+            </div>
+
+            {/* Content Body of Mockup */}
+            <div style={{ padding: '1rem', background: '#090e1a' }}>
+              
+              {activeTab === 'reader' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <h4 style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.2rem 0' }}>Deed Reader &amp; Dynamic Traverse Map</h4>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0 }}>Auto-parse deed calls using AI and overlay them on the interactive traverse map instantly.</p>
+                    </div>
+                  </div>
+                  <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                    <img 
+                      src="/deed_reader_preview.png" 
+                      alt="Deed Reader &amp; Traverse Setup" 
+                      style={{ width: '100%', height: 'auto', display: 'block' }} 
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'writer' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <h4 style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.2rem 0' }}>Legal Description Writer</h4>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0 }}>Toggle between raw legal text parsing or structured forms to map closed bounds and calculate area.</p>
+                    </div>
+                    {/* Toggle Mode Button */}
+                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', padding: '2px' }}>
+                      <button 
+                        onClick={() => setWriterMode('text')} 
+                        style={{
+                          background: writerMode === 'text' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                          border: 'none',
+                          borderRadius: '4px',
+                          color: writerMode === 'text' ? '#fff' : 'var(--text-muted)',
+                          padding: '0.3rem 0.75rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Paste Text Mode
+                      </button>
+                      <button 
+                        onClick={() => setWriterMode('form')} 
+                        style={{
+                          background: writerMode === 'form' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                          border: 'none',
+                          borderRadius: '4px',
+                          color: writerMode === 'form' ? '#fff' : 'var(--text-muted)',
+                          padding: '0.3rem 0.75rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Form Input Mode
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                    <img 
+                      src={writerMode === 'text' ? "/deed_writer_preview.png" : "/deed_writer_form_preview.png"} 
+                      alt="Legal Description Writer" 
+                      style={{ width: '100%', height: 'auto', display: 'block' }} 
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'scripting' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <h4 style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.2rem 0' }}>Linework Scripting IDE</h4>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0 }}>Input Civil 3D / Microstation segment codes in the script editor and preview draft previews in real-time.</p>
+                    </div>
+                  </div>
+                  <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                    <img 
+                      src="/linework_scripting_preview.png" 
+                      alt="Linework Scripting IDE" 
+                      style={{ width: '100%', height: 'auto', display: 'block' }} 
+                    />
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
         </section>
 
