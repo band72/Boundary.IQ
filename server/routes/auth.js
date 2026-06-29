@@ -147,6 +147,9 @@ router.get('/me', asyncHandler(async (req, res) => {
 // ── GET /api/auth/invite-only ──────────────────────────────────────────────────
 router.get('/invite-only', (req, res) => res.json({ inviteOnly: INVITE_ONLY }));
 
+// ── GET /api/auth/google-client-id ─────────────────────────────────────────────
+router.get('/google-client-id', (req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID || '' }));
+
 // ── PUT /api/auth/me/password ─────────────────────────────────────────────────
 router.put('/me/password', requireAuth, asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;

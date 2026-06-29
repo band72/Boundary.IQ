@@ -153,6 +153,20 @@ export default function LoginScreen({ onAuthSuccess }) {
     }
   };
 
+  // Fetch configured Google client ID dynamically from backend
+  useEffect(() => {
+    let active = true;
+    fetch(`${API}/auth/google-client-id`)
+      .then(res => res.json())
+      .then(data => {
+        if (active && data.googleClientId) {
+          setGoogleClientId(data.googleClientId);
+        }
+      })
+      .catch(err => console.warn('Failed to fetch google-client-id:', err));
+    return () => { active = false; };
+  }, []);
+
   // Graceful initialization of Google Identity Services GSI script if loaded
   // Module-level guard: only call initialize() once per unique client ID
   useEffect(() => {

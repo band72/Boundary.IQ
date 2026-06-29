@@ -68,4 +68,9 @@ describe('AI Token Tracking & Telemetry tests', () => {
     expect(target).toBeDefined();
     expect(target.totalTokens).toBe(1100);
   });
+
+  it('correctly maps GOOGLE_CLIENT_ID configuration from environment', async () => {
+    const { GOOGLE_CLIENT_ID } = await import('../config.js');
+    expect(GOOGLE_CLIENT_ID).toBe(process.env.GOOGLE_CLIENT_ID || undefined);
+  });
 });
