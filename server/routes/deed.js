@@ -13,6 +13,8 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import logger from '../logger.js';
 import { DEED_SOLVE_RATE_LIMIT, DEFAULT_LOCAL_MODEL, OLLAMA_URL } from '../config.js';
 
+import { userSettingsStore } from '../services/db/context.js';
+
 const router = Router();
 router.use(requireAuth);
 
@@ -38,6 +40,9 @@ router.get('/models', asyncHandler(async (req, res) => {
 // Body: { deedText: string, model?: string, pobNorthing?: number, pobEasting?: number, units?: string }
 router.post('/solve', trackDeedUsage, solveLimiter, asyncHandler(async (req, res) => {
   const { deedText, model, pobNorthing, pobEasting, units, isOpenEnded } = req.body;
+
+  const store = userSettingsStore.getStore();
+  if (store) store.aiRequestType = 'deed-solve';
 
   if (!deedText || typeof deedText !== 'string' || deedText.trim().length < 20) {
     return res.status(400).json({ error: 'deedText is required (minimum 20 characters).' });

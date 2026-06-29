@@ -82,6 +82,31 @@ export async function extractViaGemini(buffer, mimeType, prompt, model) {
   const doc = JSON.parse(body);
   const rawText = doc?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!rawText) throw new Error('Unexpected Gemini response structure.');
+
+  // Log token usage to database
+  try {
+    const inputTokens = doc?.usageMetadata?.promptTokenCount || 0;
+    const outputTokens = doc?.usageMetadata?.candidatesTokenCount || 0;
+    const totalTokens = doc?.usageMetadata?.totalTokenCount || 0;
+
+    import('../db/tokenUsage.js').then(({ logTokenUsage }) => {
+      import('../db/context.js').then(({ getStore }) => {
+        const store = getStore();
+        logTokenUsage({
+          userId: store?.userId,
+          provider: 'gemini',
+          model,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          type: store?.aiRequestType || 'extraction',
+        });
+      }).catch(() => {});
+    }).catch(() => {});
+  } catch (err) {
+    log.warn({ err: err.message }, 'Failed to log token usage to DB');
+  }
+
   return rawText;
 }
 

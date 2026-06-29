@@ -4,6 +4,7 @@ import multer from 'multer';
 import * as gemini from '../services/geminiVision.js';
 import * as traverseSvc from '../services/Scripting/traverse.js';
 import { requireAuth } from '../middleware/auth.js';
+import { userSettingsStore } from '../services/db/context.js';
 const router = Router();
 router.use(requireAuth);
 
@@ -30,6 +31,9 @@ router.post('/extract', upload.single('image'), async (req, res) => {
     const mime = normalizeMime(req.file);
     console.log(`Plat extract — file: ${req.file.originalname}, size: ${(req.file.size / 1024).toFixed(0)} KB, mime: ${mime}`);
 
+    const store = userSettingsStore.getStore();
+    if (store) store.aiRequestType = 'plat-extraction';
+
     const result = await gemini.extractBoundary(req.file.buffer, mime);
     res.json(result);
   } catch (ex) {
@@ -47,6 +51,9 @@ router.post('/extract-and-compute', upload.single('image'), async (req, res) => 
     const pobN = parseFloat(req.query.pobN) || 5000;
     const pobE = parseFloat(req.query.pobE) || 5000;
     const units = req.query.units || 'Feet';
+
+    const store = userSettingsStore.getStore();
+    if (store) store.aiRequestType = 'plat-extraction';
 
     const extracted = await gemini.extractBoundary(req.file.buffer, mime);
 

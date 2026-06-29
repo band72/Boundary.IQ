@@ -84,14 +84,18 @@ export function getAllUsers() {
   return db.prepare(`
     SELECT u.Id as id, u.Username as username, u.Role as role, u.Plan as plan,
            u.Timestamp as createdAt, u.LastLogin as lastLogin, u.DisplayName as displayName,
-           s.Status as subStatus, s.PeriodEnd as subPeriodEnd, s.StripeCustomerId as stripeCustomerId
+           s.Status as subStatus, s.PeriodEnd as subPeriodEnd, s.StripeCustomerId as stripeCustomerId,
+           COALESCE(SUM(t.TotalTokens), 0) as totalTokens
     FROM Users u
     LEFT JOIN Subscriptions s ON s.UserId = u.Id
+    LEFT JOIN TokenUsage t ON t.UserId = u.Id
+    GROUP BY u.Id
     ORDER BY u.Timestamp DESC
   `).all().map(r => ({
     id: r.id, username: r.username, role: r.role, plan: r.plan || 'free',
     createdAt: r.createdAt, lastLogin: r.lastLogin, displayName: r.displayName,
     subStatus: r.subStatus, subPeriodEnd: r.subPeriodEnd, stripeCustomerId: r.stripeCustomerId,
+    totalTokens: r.totalTokens,
   }));
 }
 

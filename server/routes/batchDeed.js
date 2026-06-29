@@ -15,6 +15,7 @@ import crypto from 'crypto';
 import * as lockService from '../services/lockService.js';
 import { requireAuth, trackDeedUsage } from '../middleware/auth.js';
 import { createChildLogger } from '../logger.js';
+import { userSettingsStore } from '../services/db/context.js';
 
 const log = createChildLogger('batchDeed');
 const router = Router();
@@ -87,6 +88,9 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
   let hasLock = false;
   let files = [];
   try {
+    const store = userSettingsStore.getStore();
+    if (store) store.aiRequestType = 'batch-deed';
+
     if (!lockService.acquire('batchdeed-process', 'upload')) {
       const info = lockService.status();
       return res.status(503).json({

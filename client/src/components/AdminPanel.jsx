@@ -218,8 +218,8 @@ function UsersTab({ auth, flash, modal, setModal }) {
 
       {/* Table */}
       <div style={{ background:'rgba(9,14,26,.4)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr 2fr', padding:'0.55rem 1rem', background:'rgba(255,255,255,.04)', borderBottom:'1px solid var(--border)', fontSize:'0.65rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-muted)' }}>
-          <span>User</span><span>Role</span><span>Plan</span><span>Last Login</span><span>Actions</span>
+        <div style={{ display:'grid', gridTemplateColumns:'2.5fr 1fr 1.2fr 1.2fr 1.5fr 2fr', padding:'0.55rem 1rem', background:'rgba(255,255,255,.04)', borderBottom:'1px solid var(--border)', fontSize:'0.65rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-muted)' }}>
+          <span>User</span><span>Role</span><span>Plan</span><span>Tokens</span><span>Last Login</span><span>Actions</span>
         </div>
 
         {loading ? (
@@ -227,7 +227,7 @@ function UsersTab({ auth, flash, modal, setModal }) {
         ) : filtered.length===0 ? (
           <div style={{ textAlign:'center', padding:'2rem', color:'var(--text-muted)', fontSize:'0.83rem' }}>No users found</div>
         ) : filtered.map((u,i) => (
-          <div key={u.id} style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr 2fr', padding:'0.7rem 1rem', alignItems:'center', borderBottom: i<filtered.length-1?'1px solid var(--border)':'none', cursor:'pointer', transition:'background .12s' }}
+          <div key={u.id} style={{ display:'grid', gridTemplateColumns:'2.5fr 1fr 1.2fr 1.2fr 1.5fr 2fr', padding:'0.7rem 1rem', alignItems:'center', borderBottom: i<filtered.length-1?'1px solid var(--border)':'none', cursor:'pointer', transition:'background .12s' }}
             onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.025)'}
             onMouseLeave={e=>e.currentTarget.style.background='transparent'}
           >
@@ -245,6 +245,10 @@ function UsersTab({ auth, flash, modal, setModal }) {
             <div><Badge label={u.role} colors={ROLE_C[u.role]||ROLE_C.user}/></div>
             {/* Plan */}
             <div><Badge label={u.plan} colors={PLAN_C[u.plan]||PLAN_C.free}/></div>
+            {/* Tokens */}
+            <div style={{ fontSize:'0.75rem', fontFamily:'monospace', color:'var(--accent)' }}>
+              {u.totalTokens?.toLocaleString() || 0}
+            </div>
             {/* Last login */}
             <div style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>{fmtDate(u.lastLogin)}</div>
             {/* Actions */}

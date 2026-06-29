@@ -233,6 +233,31 @@ async function generateVisionChat(buffer, model, prompt) {
         throw new Error('Ollama returned empty response string.');
       }
       console.log(`Ollama vision [${model}] /chat → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
+
+      // Log token usage to database
+      try {
+        const inputTokens = data.prompt_eval_count || 0;
+        const outputTokens = data.eval_count || 0;
+        const totalTokens = inputTokens + outputTokens;
+
+        import('./db/tokenUsage.js').then(({ logTokenUsage }) => {
+          import('./db/context.js').then(({ getStore }) => {
+            const store = getStore();
+            logTokenUsage({
+              userId: store?.userId,
+              provider: 'ollama',
+              model,
+              inputTokens,
+              outputTokens,
+              totalTokens,
+              type: store?.aiRequestType || 'extraction',
+            });
+          }).catch(() => {});
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('Failed to log Ollama token usage to DB:', err.message);
+      }
+
       return { rawText };
     } catch (ex) {
       const isConnectionError = ex.code === 'ECONNREFUSED' || ex.code === 'ETIMEDOUT' ||
@@ -309,6 +334,31 @@ async function generateTextOnly(prompt, model) {
         throw new Error('Ollama returned empty response string.');
       }
       console.log(`Ollama text [${model}] /generate → ${rawText.length} chars in ${((data.total_duration || 0) / 1e9).toFixed(1)}s`);
+
+      // Log token usage to database
+      try {
+        const inputTokens = data.prompt_eval_count || 0;
+        const outputTokens = data.eval_count || 0;
+        const totalTokens = inputTokens + outputTokens;
+
+        import('./db/tokenUsage.js').then(({ logTokenUsage }) => {
+          import('./db/context.js').then(({ getStore }) => {
+            const store = getStore();
+            logTokenUsage({
+              userId: store?.userId,
+              provider: 'ollama',
+              model,
+              inputTokens,
+              outputTokens,
+              totalTokens,
+              type: store?.aiRequestType || 'extraction',
+            });
+          }).catch(() => {});
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('Failed to log Ollama token usage to DB:', err.message);
+      }
+
       return { rawText };
     } catch (ex) {
       const isConnectionError = ex.code === 'ECONNREFUSED' || ex.code === 'ETIMEDOUT' ||

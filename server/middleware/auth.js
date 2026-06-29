@@ -53,6 +53,7 @@ export function requireAuth(req, res, next) {
 
     const userSettings = getUserSettings(sessionUser.userId) || {};
     const contextSettings = {
+      userId: sessionUser.userId,
       activeProvider: userSettings.ActiveProvider || undefined,
       activeModel: userSettings.ActiveModel || undefined,
       openaiBaseUrl: userSettings.OpenaiBaseUrl || undefined,

@@ -8,7 +8,7 @@ import {
   getUserSessions, revokeSession, revokeAllUserSessions, revokeAllUserSessionsExcept,
   logAudit, getAuditLog,
   createInviteToken, getInviteToken, redeemInviteToken, listInvites, revokeInviteToken,
-  getUserDailyStats, getSystemStats,
+  getUserDailyStats, getSystemStats, getUserTokenStats,
   getAllSubscriptions, getRevenueStats, adminSetPlan, adminCancelSubscription,
 } from '../services/diagnosticsDb.js';
 import crypto from 'crypto';
@@ -256,7 +256,8 @@ router.get('/users/:id', requireAuth, requireRole(['admin']), asyncHandler(async
   if (!user) return res.status(404).json({ error: 'User not found' });
   const stats    = getUserDailyStats(user.id, 30);
   const sessions = getUserSessions(user.id);
-  return res.json({ ...user, recentStats: stats, activeSessions: sessions.length });
+  const tokens   = getUserTokenStats(user.id);
+  return res.json({ ...user, recentStats: stats, activeSessions: sessions.length, tokens });
 }));
 
 // ── POST /api/auth/users/:id/role ─────────────────────────────────────────────

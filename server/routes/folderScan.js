@@ -26,6 +26,7 @@ import * as traverseSvc from '../services/Scripting/traverse.js';
 import * as ollamaSvc from '../services/ollamaVision.js';
 import { requireAuth } from '../middleware/auth.js';
 import { SCAN_RATE_LIMIT, GEMINI_API_KEY } from '../config.js';
+import { userSettingsStore } from '../services/db/context.js';
 
 // ── Decoupled service modules ─────────────────────────────────────────────────
 import {
@@ -401,6 +402,10 @@ router.post('/process-batch', async (req, res) => {
   let keepAlive = null;
   let hasLock = false;
   const forceOcr = req.query.forceOcr !== undefined ? req.query.forceOcr === 'true' : (process.env.OCR_ENABLED === 'true');
+
+  const store = userSettingsStore.getStore();
+  if (store) store.aiRequestType = 'folder-scan';
+
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
@@ -1056,6 +1061,10 @@ router.post('/process-batch', async (req, res) => {
 router.post('/process-file', async (req, res) => {
   let keepAlive = null;
   const forceOcr = req.query.forceOcr === 'true';
+
+  const store = userSettingsStore.getStore();
+  if (store) store.aiRequestType = 'folder-scan';
+
   try {
     const validPath = validatePath(req.query.path);
     if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
@@ -1923,6 +1932,9 @@ router.post('/retry-failed', async (req, res) => {
   const validPath = validatePath(req.query.path);
   if (!validPath) return res.status(403).json({ error: 'Path not allowed.' });
   if (!fs.existsSync(validPath)) return res.status(404).json({ error: 'Directory not found.' });
+
+  const store = userSettingsStore.getStore();
+  if (store) store.aiRequestType = 'folder-scan';
 
   if (!acquireLock('retry-failed', req.query.path)) {
     const info = lockService.status();

@@ -182,6 +182,19 @@ function _initializeSchema() {
       FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS TokenUsage (
+      Id INTEGER PRIMARY KEY AUTOINCREMENT,
+      UserId INTEGER,
+      Provider TEXT NOT NULL,
+      Model TEXT NOT NULL,
+      InputTokens INTEGER NOT NULL DEFAULT 0,
+      OutputTokens INTEGER NOT NULL DEFAULT 0,
+      TotalTokens INTEGER NOT NULL DEFAULT 0,
+      Type TEXT NOT NULL,
+      Timestamp TEXT NOT NULL,
+      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS AuditLog (
       Id INTEGER PRIMARY KEY AUTOINCREMENT,
       UserId INTEGER,
@@ -254,6 +267,7 @@ function _runMigrations() {
     { name: 'add_Sessions_CreatedAt',      sql: 'ALTER TABLE Sessions ADD COLUMN CreatedAt TEXT' },
     { name: 'add_Users_ForceResetPw',      sql: 'ALTER TABLE Users ADD COLUMN ForceResetPw INTEGER NOT NULL DEFAULT 0' },
     { name: 'add_UserSettings_MapPanSensitivity', sql: 'ALTER TABLE UserSettings ADD COLUMN MapPanSensitivity REAL' },
+    { name: 'create_TokenUsage_table', sql: 'CREATE TABLE IF NOT EXISTS TokenUsage (Id INTEGER PRIMARY KEY AUTOINCREMENT, UserId INTEGER, Provider TEXT NOT NULL, Model TEXT NOT NULL, InputTokens INTEGER NOT NULL DEFAULT 0, OutputTokens INTEGER NOT NULL DEFAULT 0, TotalTokens INTEGER NOT NULL DEFAULT 0, Type TEXT NOT NULL, Timestamp TEXT NOT NULL, FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE)' },
   ];
 
   const applyMigration = db.transaction((m) => {

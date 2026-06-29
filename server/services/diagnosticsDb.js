@@ -61,3 +61,6 @@ export {
 } from './db/invites.js';
 
 export { getUserSettings, saveUserSettings } from './db/userSettings.js';
+
+export { logTokenUsage, getUserTokenStats } from './db/tokenUsage.js';
+

@@ -79,6 +79,31 @@ export async function extractViaOpenAI(buffer, mimeType, prompt, model, baseUrl 
     const rawText = doc?.choices?.[0]?.message?.content;
     if (!rawText) throw new Error('Unexpected OpenAI-compatible response structure.');
     log.info({ model, chars: rawText.length }, 'OpenAI-compat extraction complete');
+
+    // Log token usage to database
+    try {
+      const inputTokens = doc?.usage?.prompt_tokens || 0;
+      const outputTokens = doc?.usage?.completion_tokens || 0;
+      const totalTokens = doc?.usage?.total_tokens || 0;
+
+      import('../db/tokenUsage.js').then(({ logTokenUsage }) => {
+        import('../db/context.js').then(({ getStore }) => {
+          const store = getStore();
+          logTokenUsage({
+            userId: store?.userId,
+            provider: 'openai',
+            model,
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            type: store?.aiRequestType || 'extraction',
+          });
+        }).catch(() => {});
+      }).catch(() => {});
+    } catch (err) {
+      log.warn({ err: err.message }, 'Failed to log token usage to DB');
+    }
+
     return rawText;
   }
   throw new Error('Exceeded maximum retry attempts for OpenAI-compatible endpoint.');
