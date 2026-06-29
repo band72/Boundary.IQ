@@ -12,6 +12,7 @@ const AdminPanel   = lazy(() => import('./components/AdminPanel'));
 const BillingTab   = lazy(() => import('./components/BillingTab'));
 const ScriptingTab = lazy(() => import('./components/ScriptingTab'));
 const LoginScreen  = lazy(() => import('./components/LoginScreen'));
+const LandingPage  = lazy(() => import('./components/LandingPage'));
 import { StatsRefreshProvider } from './hooks/useStatsRefresh.jsx';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { AuthProvider } from './context/AuthProvider';
@@ -161,6 +162,7 @@ export default function App() {
 // ── Inner shell — consumes AuthContext ────────────────────────────────────────
 function AppShell() {
   const { user, authLoading, login, logout } = useAuthContext();
+  const [showLogin, setShowLogin] = useState(false);
 
   const [hideTraverse, setHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
   const [hidePlat, setHidePlat]         = useLocalStorage('boundaryiq_hide_plat', false);
@@ -246,8 +248,15 @@ function AppShell() {
     );
   }
 
-  // ── Login screen ────────────────────────────────────────────────────────────
+  // ── Login / Landing screen ──────────────────────────────────────────────────
   if (!user) {
+    if (!showLogin) {
+      return (
+        <Suspense fallback={<TabSpinner />}>
+          <LandingPage onEnterApp={() => setShowLogin(true)} />
+        </Suspense>
+      );
+    }
     return (
       <Suspense fallback={<TabSpinner />}>
         <LoginScreen onAuthSuccess={login} />
