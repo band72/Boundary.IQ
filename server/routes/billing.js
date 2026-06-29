@@ -37,19 +37,26 @@ const isMockMode = () => !process.env.STRIPE_SECRET_KEY;
 
 // Plan config
 const PLANS = {
+  basic: {
+    name: 'Basic',
+    priceId: process.env.STRIPE_BASIC_PRICE_ID || null,
+    price: 500, // cents
+    interval: 'month',
+    features: ['50 deed solves/day', 'Traverse Compute (full)', 'Legal Writer (pro)', 'Batch Deed processing (basic)'],
+  },
   pro: {
     name: 'Pro',
     priceId: process.env.STRIPE_PRO_PRICE_ID || null,
-    price: 2900, // cents
+    price: 1999, // cents
     interval: 'month',
-    features: ['Unlimited deed solves', 'Batch Deed processing', 'Plat Extraction', 'Full Dashboard', 'Priority support'],
+    features: ['Unlimited deed solves', 'Full Batch Deed processing', 'Plat Extraction with AI', 'Full Analytics Dashboard', 'Priority support'],
   },
   enterprise: {
     name: 'Enterprise',
     priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || null,
     price: 9900,
     interval: 'month',
-    features: ['Everything in Pro', '5 team members', 'Custom AI models', 'API access', 'SLA support'],
+    features: ['Everything in Pro', '5 team members', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support'],
   },
 };
 

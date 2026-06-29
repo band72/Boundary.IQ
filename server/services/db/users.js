@@ -127,7 +127,7 @@ export function updateUserRole(userId, role) {
 
 export function updateUserPlan(userId, plan) {
   const db = getDb();
-  const allowed = ['free', 'pro', 'enterprise'];
+  const allowed = ['free', 'basic', 'pro', 'enterprise'];
   if (!allowed.includes(plan)) throw new Error(`Invalid plan: ${plan}`);
   db.prepare('UPDATE Users SET Plan = ? WHERE Id = ?').run(plan, userId);
   upsertSubscription(userId, {

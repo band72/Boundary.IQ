@@ -7,9 +7,15 @@ const PLAN_FEATURES = {
     features: ['5 deed solves per day', 'Traverse Compute (full)', 'Legal Writer (basic)', 'View Dashboard only'],
     missing: ['Batch Deed processing', 'Plat Extraction AI', 'Unlimited solves', 'Priority support'],
   },
+  basic: {
+    icon: '🌱', name: 'Basic', color: '#3d7fff',
+    price: '$5/month',
+    features: ['50 deed solves per day', 'Traverse Compute (full)', 'Legal Writer (pro)', 'Batch Deed processing (basic)'],
+    missing: ['Plat Extraction AI', 'Unlimited solves', 'Priority support'],
+  },
   pro: {
     icon: '⭐', name: 'Pro', color: '#50c878',
-    price: '$29/month',
+    price: '$19.99/month',
     features: ['Unlimited deed solves', 'Full Batch Deed processing', 'Plat Extraction with AI', 'Full Analytics Dashboard', 'Priority email support'],
     missing: ['Multi-seat team access', 'Custom AI models', 'API access'],
   },
@@ -176,11 +182,11 @@ export default function BillingTab({ user }) {
 
       {/* Plan grid */}
       <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '0.9rem' }}>Available Plans</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.9rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.9rem', marginBottom: '2rem' }}>
         {Object.entries(PLAN_FEATURES).map(([planId, plan]) => {
           const isCurrent = planId === currentPlan;
-          const isUpgrade = planId === 'pro' && currentPlan === 'free';
-          const isEntUpgrade = planId === 'enterprise' && currentPlan !== 'enterprise';
+          const isUpgrade = !isCurrent && planId !== 'free';
+          const isEntUpgrade = false; // Simplified upgrade check for all active upgrades
 
           return (
             <div key={planId} style={{

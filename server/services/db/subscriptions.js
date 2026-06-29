@@ -72,7 +72,7 @@ export function getAllSubscriptions() {
 }
 
 export function getRevenueStats() {
-  const PLAN_PRICE = { free: 0, pro: 29, enterprise: 99 };
+  const PLAN_PRICE = { free: 0, basic: 5, pro: 19.99, enterprise: 99 };
   const rows = getDb().prepare(`
     SELECT COALESCE(s.Plan, u.Plan, 'free') AS plan, COUNT(*) AS cnt
     FROM Users u
