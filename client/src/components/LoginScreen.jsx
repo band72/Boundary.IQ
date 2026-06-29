@@ -178,6 +178,7 @@ export default function LoginScreen({ onAuthSuccess }) {
         client_id: googleClientId,
         callback: handleGoogleCredentialResponse,
         auto_select: false,
+        use_fedcm: false,
       });
 
       const btnEl = document.getElementById('google-live-signin-btn');
