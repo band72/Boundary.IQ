@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 export default function LandingPage({ onEnterApp }) {
   return (
-    <div className="login-wrapper landing-wrapper" style={{ overflowY: 'auto', padding: '2rem 1rem' }}>
+    <div className="login-wrapper landing-wrapper" style={{ display: 'block', overflowY: 'auto', padding: '4rem 1.5rem 3rem 1.5rem' }}>
       {/* Background Glowing Orbs */}
       <div className="orb orb-1" style={{ width: '450px', height: '450px', top: '-10%', left: '-10%', filter: 'blur(150px)' }}></div>
       <div className="orb orb-2" style={{ width: '500px', height: '500px', bottom: '-15%', right: '-10%', filter: 'blur(160px)' }}></div>
