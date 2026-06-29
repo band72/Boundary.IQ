@@ -54,7 +54,7 @@ steps:
       - '--min-instances=0'
       - '--max-instances=10'
       - '--timeout=3600'
-      - '--set-env-vars=NODE_ENV=production,ACTIVE_PROVIDER=gemini,ACTIVE_MODEL=gemini-2.5-flash,ALLOW_API_FALLBACK=true,STRIPE_PRO_PRICE_ID=price_1TnL1N2S1lrWwZ14SfUXOc0I,STRIPE_ENTERPRISE_PRICE_ID=price_1TnL2q2S1lrWwZ14ghVlaB2N'
+      - '--set-env-vars=NODE_ENV=production,ACTIVE_PROVIDER=gemini,ACTIVE_MODEL=gemini-2.5-flash,ALLOW_API_FALLBACK=true,STRIPE_PRO_PRICE_ID=price_1TnL1N2S1lrWwZ14SfUXOc0I,STRIPE_ENTERPRISE_PRICE_ID=price_1TnL2q2S1lrWwZ14ghVlaB2N,GOOGLE_CLIENT_ID=318563891368-6rjfsakjkn9b4s6jb8vfr1f6klivb9o2.apps.googleusercontent.com'
       - '--update-secrets=GEMINI_API_KEY=gemini-api-key:latest,STRIPE_SECRET_KEY=stripe-secret:latest,STRIPE_WEBHOOK_SECRET=stripe-webhook:latest'
     waitFor: [push]
 
