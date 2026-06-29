@@ -131,6 +131,7 @@ export default function LoginScreen({ onAuthSuccess }) {
         },
         body: JSON.stringify({
           credential: response.credential,
+          clientId: googleClientId,
         }),
       });
 

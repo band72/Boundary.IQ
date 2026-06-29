@@ -197,18 +197,31 @@ router.delete('/me/sessions', requireAuth, asyncHandler(async (req, res) => {
 
 // ── POST /api/auth/google-login ───────────────────────────────────────────────
 router.post('/google-login', asyncHandler(async (req, res) => {
-  const { credential } = req.body;
+  const { credential, clientId } = req.body;
   if (!credential) return res.status(400).json({ error: 'Google credential token is required' });
 
-  const googleClient = getGoogleClient();
+  const resolvedClientId = clientId || GOOGLE_CLIENT_ID;
   let payload;
 
-  if (googleClient) {
-    try {
-      const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
-      payload = ticket.getPayload();
-    } catch {
-      return res.status(401).json({ error: 'Invalid or expired Google token.' });
+  if (resolvedClientId) {
+    if (!IS_PROD && credential.includes('mocksignature')) {
+      try {
+        const parts = credential.split('.');
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+        payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+      } catch {
+        return res.status(400).json({ error: 'Malformed simulator credential.' });
+      }
+    } else {
+      try {
+        const client = new OAuth2Client(resolvedClientId);
+        const ticket = await client.verifyIdToken({ idToken: credential, audience: resolvedClientId });
+        payload = ticket.getPayload();
+      } catch (err) {
+        log.error('Google token verification failed:', err.message);
+        return res.status(401).json({ error: 'Invalid or expired Google token.' });
+      }
     }
   } else if (!IS_PROD) {
     try {
