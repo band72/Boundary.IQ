@@ -11,6 +11,9 @@ export default function LoginScreen({ onAuthSuccess }) {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [tempPwSent, setTempPwSent] = useState(false);
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
 
   // Developer Google Authentication Simulator States
   const [showDevGoogleModal, setShowDevGoogleModal] = useState(false);
@@ -219,6 +222,41 @@ export default function LoginScreen({ onAuthSuccess }) {
     return true;
   };
 
+  const handleVerifyCode = async (e) => {
+    e.preventDefault();
+    if (!verificationCode.trim()) {
+      setError('Please enter the verification code.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      const res = await fetch(`${API}/auth/verify-registration`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: verificationEmail,
+          code: verificationCode.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Verification failed.');
+      }
+      setSuccessMsg('Email verified successfully! Logging you in...');
+      setTimeout(() => {
+        onAuthSuccess(data);
+      }, 1500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -247,7 +285,11 @@ export default function LoginScreen({ onAuthSuccess }) {
         throw new Error(data.error || 'Authentication failed.');
       }
 
-      if (isRegister) {
+      if (data.verificationRequired) {
+        setVerificationPending(true);
+        setVerificationEmail(data.email);
+        setSuccessMsg(data.message || 'A verification code has been sent to your email.');
+      } else if (isRegister) {
         setSuccessMsg('Account created successfully! Logging you in...');
         setTimeout(() => {
           onAuthSuccess(data);
@@ -265,6 +307,7 @@ export default function LoginScreen({ onAuthSuccess }) {
   const toggleMode = () => {
     setIsRegister(!isRegister);
     setIsForgotPw(false);
+    setVerificationPending(false);
     setError('');
     setSuccessMsg('');
     setPassword('');
@@ -361,21 +404,21 @@ export default function LoginScreen({ onAuthSuccess }) {
               Pricing Plans
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-              {/* Free Plan */}
+              {/* Basic Plan */}
               <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '0.8rem' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#aaa', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Free</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: '0.2rem 0' }}>$0</div>
+                <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3d7fff', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Basic</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: '0.2rem 0' }}>$5<span style={{ fontSize: '0.65rem', fontWeight: 400, color: 'rgba(255,255,255,0.5)' }}>/mo</span></div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.68rem', color: 'rgba(255,255,255,0.55)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <li>✓ Traverse Compute</li>
-                  <li>✓ Legal Writer</li>
-                  <li>✓ 5 solves/day</li>
+                  <li>✓ 50 solves/day</li>
+                  <li>✓ Legal Writer (pro)</li>
+                  <li>✓ Batch Deed (basic)</li>
                 </ul>
               </div>
               {/* Pro Plan */}
               <div style={{ background: 'rgba(80,200,120,0.08)', border: '1px solid rgba(80,200,120,0.3)', borderRadius: 10, padding: '0.8rem', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', top: 0, right: 0, fontSize: '0.54rem', fontWeight: 800, background: '#50c878', color: '#000', padding: '2px 7px', borderBottomLeftRadius: 6, letterSpacing: '0.05em' }}>POPULAR</div>
                 <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#50c878', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Pro</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: '0.2rem 0' }}>$29<span style={{ fontSize: '0.65rem', fontWeight: 400, color: 'rgba(255,255,255,0.5)' }}>/mo</span></div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: '0.2rem 0' }}>$19.99<span style={{ fontSize: '0.65rem', fontWeight: 400, color: 'rgba(255,255,255,0.5)' }}>/mo</span></div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <li>✓ Unlimited solves</li>
                   <li>✓ Batch Deed + Plat</li>
@@ -393,10 +436,10 @@ export default function LoginScreen({ onAuthSuccess }) {
 
         {/* Card Form Panel */}
         <div className="login-form-panel">
-          <form className="login-form" onSubmit={handleSubmit}>
+          <form className="login-form" onSubmit={verificationPending ? handleVerifyCode : handleSubmit}>
             <div className="form-header">
-              <h2>{isForgotPw ? 'Reset Password' : isRegister ? 'Create Account' : 'Welcome Back'}</h2>
-              <p>{isForgotPw ? 'Enter your username to receive a temporary password' : isRegister ? 'Sign up to secure your personal survey engine' : 'Access your traverse and deed diagnostics'}</p>
+              <h2>{verificationPending ? 'Verify Your Email' : isForgotPw ? 'Reset Password' : isRegister ? 'Create Account' : 'Welcome Back'}</h2>
+              <p>{verificationPending ? `We've sent a 6-digit verification code to ${verificationEmail}. Please enter it below.` : isForgotPw ? 'Enter your username to receive a temporary password' : isRegister ? 'Sign up to secure your personal survey engine' : 'Access your traverse and deed diagnostics'}</p>
             </div>
 
             {error && (
@@ -413,11 +456,40 @@ export default function LoginScreen({ onAuthSuccess }) {
               </div>
             )}
 
+            {/* ── Email Verification Mode ───────────────────────────── */}
+            {verificationPending && (
+              <div style={{ display:'flex', flexDirection:'column', gap:'1rem', marginTop:'0.5rem' }}>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="verification-code">Verification Code</label>
+                  <div className="input-with-icon">
+                    <span className="input-icon">🔢</span>
+                    <input
+                      id="verification-code"
+                      type="text"
+                      maxLength="6"
+                      placeholder="Enter 6-digit code"
+                      value={verificationCode}
+                      onChange={e => setVerificationCode(e.target.value)}
+                      required
+                      autoComplete="one-time-code"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <button type="submit" className="btn btn-primary login-btn" disabled={loading}>
+                  {loading ? <><span className="spinner"/><span>Verifying…</span></> : <span>Verify & Log In</span>}
+                </button>
+                <button type="button" className="toggle-link-btn" onClick={() => { setVerificationPending(false); setError(''); setSuccessMsg(''); }} style={{ textAlign:'center' }}>
+                  ← Cancel
+                </button>
+              </div>
+            )}
+
             {/* ── Forgot Password Mode ──────────────────────────────── */}
-            {isForgotPw && (
+            {isForgotPw && !verificationPending && (
               <div style={{ display:'flex', flexDirection:'column', gap:'1rem', marginTop:'0.5rem' }}>
                 {!tempPwSent ? (
-                  <form onSubmit={handleForgotPassword} style={{ display:'flex', flexDirection:'column', gap:'0.9rem' }}>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.9rem' }}>
                     <div className="form-group">
                       <label className="form-label" htmlFor="forgot-username">Username</label>
                       <div className="input-with-icon">
@@ -434,13 +506,13 @@ export default function LoginScreen({ onAuthSuccess }) {
                         />
                       </div>
                     </div>
-                    <button type="submit" className="btn btn-primary login-btn" disabled={loading}>
+                    <button type="button" className="btn btn-primary login-btn" onClick={handleForgotPassword} disabled={loading}>
                       {loading ? <><span className="spinner"/><span>Sending…</span></> : <span>Send Temporary Password</span>}
                     </button>
                     <button type="button" className="toggle-link-btn" onClick={goToLogin} style={{ textAlign:'center' }}>
                       ← Back to Sign In
                     </button>
-                  </form>
+                  </div>
                 ) : (
                   <div style={{ textAlign:'center', padding:'1rem 0' }}>
                     <div style={{ fontSize:'2.5rem', marginBottom:'0.75rem' }}>📧</div>
@@ -449,7 +521,7 @@ export default function LoginScreen({ onAuthSuccess }) {
                       A temporary password was sent to your registered email address.
                       Log in with it and change your password in Account Settings.
                     </div>
-                    <button className="btn btn-primary" style={{ justifyContent:'center', width:'100%' }} onClick={goToLogin}>
+                    <button type="button" className="btn btn-primary" style={{ justifyContent:'center', width:'100%' }} onClick={goToLogin}>
                       Back to Sign In
                     </button>
                   </div>
@@ -458,7 +530,7 @@ export default function LoginScreen({ onAuthSuccess }) {
             )}
 
             {/* ── Normal Login / Register Mode ─────────────────────── */}
-            {!isForgotPw && (
+            {!isForgotPw && !verificationPending && (
               <>
                 {googleClientId && (
                   <div className="google-signin-wrapper" style={{ marginTop: '0.4rem', marginBottom: '0.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '0.4rem' }}>

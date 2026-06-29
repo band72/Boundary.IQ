@@ -129,12 +129,25 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
 
     // Reuse existing Stripe customer if available
     const existingSub = getSubscriptionByUser(req.user.id);
-    const customerParams = existingSub?.StripeCustomerId
-      ? { customer: existingSub.StripeCustomerId }
-      : {
-          customer_email: req.user.username.includes('@') ? req.user.username : undefined,
-          metadata: { userId: String(req.user.id), username: req.user.username },
-        };
+    let customerParams = {};
+    if (existingSub?.StripeCustomerId) {
+      customerParams = { customer: existingSub.StripeCustomerId };
+      // Make sure the customer email is updated to match username
+      if (req.user.username.includes('@')) {
+        try {
+          await stripe.customers.update(existingSub.StripeCustomerId, {
+            email: req.user.username,
+          });
+        } catch (err) {
+          console.warn(`Failed to update Stripe customer email: ${err.message}`);
+        }
+      }
+    } else {
+      customerParams = {
+        customer_email: req.user.username.includes('@') ? req.user.username : undefined,
+        metadata: { userId: String(req.user.id), username: req.user.username },
+      };
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',

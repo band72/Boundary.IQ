@@ -143,4 +143,17 @@ export async function sendInviteEmail({ to, inviteUrl, inviterUsername, note }) 
   return sendEmail({ to, subject, html, text });
 }
 
+export async function sendVerificationEmail({ to, code }) {
+  if (!to) return;
+  const subject = `Verify your Boundary.IQ account`;
+  const html = baseHtml('Verify Email', `
+    <h1>Verify Your Account</h1>
+    <p>Thank you for signing up for Boundary.IQ. Use the verification code below to complete your registration:</p>
+    <div class="code">${code}</div>
+    <p>This verification code is valid for 15 minutes.</p>
+  `);
+  const text = `Your Boundary.IQ verification code is: ${code}. Enter it to complete registration.`;
+  return sendEmail({ to, subject, html, text });
+}
+
 export const isMockMode = () => MOCK_MODE;
