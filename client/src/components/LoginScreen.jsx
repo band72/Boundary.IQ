@@ -16,19 +16,16 @@ export default function LoginScreen({ onAuthSuccess }) {
   const [showDevGoogleModal, setShowDevGoogleModal] = useState(false);
   const [devGoogleEmail, setDevGoogleEmail] = useState('surveyor@google.com');
 
-  // Live Google Sign-In Client ID State (loaded from localStorage or environment)
+  // Live Google Sign-In Client ID State (loaded from localStorage, environment, or backend)
   const [googleClientId, setGoogleClientId] = useState(() => {
     const envId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     const resolvedEnvId = (envId && envId !== 'PLACEHOLDER' ? envId : '');
-    if (import.meta.env.PROD) {
-      return resolvedEnvId;
-    }
     return localStorage.getItem('boundaryiq_google_client_id') || 
            resolvedEnvId || 
            '';
   });
 
-  const [devTab, setDevTab] = useState('sim'); // 'sim' | 'live'
+  const [devTab, setDevTab] = useState(import.meta.env.PROD ? 'live' : 'sim'); // 'sim' | 'live'
   const [inputClientId, setInputClientId] = useState(googleClientId);
 
   const saveLiveClientId = () => {
@@ -464,12 +461,12 @@ export default function LoginScreen({ onAuthSuccess }) {
                 {googleClientId && (
                   <div className="google-signin-wrapper" style={{ marginTop: '0.4rem', marginBottom: '0.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '0.4rem' }}>
                     <div id="google-live-signin-btn" style={{ minHeight: 40, width: '100%' }}></div>
-                    {!import.meta.env.PROD && (
+                    {true && (
                       <button type="button" className="toggle-link-btn" onClick={() => setShowDevGoogleModal(true)} style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⚙️ Configure OAuth ID</button>
                     )}
                   </div>
                 )}
-                {!googleClientId && !import.meta.env.PROD && (
+                {!googleClientId && (
                   <div className="google-signin-wrapper" style={{ marginTop: '0.4rem', marginBottom: '0.2rem', display: 'flex', justifyContent: 'center', width: '100%' }}>
                     <button type="button" className="google-custom-btn" onClick={() => setShowDevGoogleModal(true)} disabled={loading} style={{ width: '100%' }}>
                       <span className="google-icon-svg" style={{ display: 'flex', alignItems: 'center' }}>
@@ -485,7 +482,7 @@ export default function LoginScreen({ onAuthSuccess }) {
                   </div>
                 )}
 
-                {(googleClientId || !import.meta.env.PROD) && (
+                {true && (
                   <div className="separator" style={{ display: 'flex', alignItems: 'center', margin: '0.6rem 0', width: '100%' }}>
                     <span className="separator-line" style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }}></span>
                     <span className="separator-text" style={{ padding: '0 0.75rem', fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>or sign in with password</span>
@@ -544,39 +541,41 @@ export default function LoginScreen({ onAuthSuccess }) {
       </div>
 
       {/* Google Developer SSO Simulator & Settings Dialog overlay */}
-      {!import.meta.env.PROD && showDevGoogleModal && (
+      {showDevGoogleModal && (
         <div className="dev-modal-overlay">
           <div className="dev-modal-card">
             <h3>🔑 Google Sign-In Settings</h3>
             
             {/* Glassmorphic Tab Switcher */}
-            <div style={{
-              display: 'flex',
-              background: 'rgba(255, 255, 255, 0.05)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '2px',
-              border: '1px solid rgba(255, 255, 255, 0.05)',
-              marginBottom: '0.5rem'
-            }}>
-              <button
-                type="button"
-                className={`btn btn-sm`}
-                onClick={() => setDevTab('sim')}
-                style={{ flex: 1, borderRadius: 'var(--radius-sm)', border: 'none', background: devTab === 'sim' ? 'var(--accent)' : 'none', color: '#fff', padding: '0.45rem', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.75rem' }}
-              >
-                Simulator Mode
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm`}
-                onClick={() => setDevTab('live')}
-                style={{ flex: 1, borderRadius: 'var(--radius-sm)', border: 'none', background: devTab === 'live' ? 'var(--accent)' : 'none', color: '#fff', padding: '0.45rem', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.75rem' }}
-              >
-                Configure Live SSO
-              </button>
-            </div>
+            {!import.meta.env.PROD && (
+              <div style={{
+                display: 'flex',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '2px',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                marginBottom: '0.5rem'
+              }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm`}
+                  onClick={() => setDevTab('sim')}
+                  style={{ flex: 1, borderRadius: 'var(--radius-sm)', border: 'none', background: devTab === 'sim' ? 'var(--accent)' : 'none', color: '#fff', padding: '0.45rem', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.75rem' }}
+                >
+                  Simulator Mode
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm`}
+                  onClick={() => setDevTab('live')}
+                  style={{ flex: 1, borderRadius: 'var(--radius-sm)', border: 'none', background: devTab === 'live' ? 'var(--accent)' : 'none', color: '#fff', padding: '0.45rem', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.75rem' }}
+                >
+                  Configure Live SSO
+                </button>
+              </div>
+            )}
 
-            {devTab === 'sim' ? (
+            {devTab === 'sim' && !import.meta.env.PROD ? (
               <>
                 <p>
                   Simulate Google single sign-on locally using a test email address. Perfect for testing SQLite storage and session logic without registering GSI Client credentials.
