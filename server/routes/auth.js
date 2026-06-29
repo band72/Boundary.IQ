@@ -195,35 +195,54 @@ router.delete('/me/sessions', requireAuth, asyncHandler(async (req, res) => {
   return res.json({ success: true, revoked });
 }));
 
+const oauthClients = new Map();
+
 // ── POST /api/auth/google-login ───────────────────────────────────────────────
 router.post('/google-login', asyncHandler(async (req, res) => {
+  log.info('Incoming google-login request...');
   const { credential, clientId } = req.body;
-  if (!credential) return res.status(400).json({ error: 'Google credential token is required' });
+  if (!credential) {
+    log.warn('Google credential token is missing in request.');
+    return res.status(400).json({ error: 'Google credential token is required' });
+  }
 
   const resolvedClientId = clientId || GOOGLE_CLIENT_ID;
+  log.info(`Resolved clientId: ${resolvedClientId}`);
   let payload;
 
   if (resolvedClientId) {
     if (!IS_PROD && credential.includes('mocksignature')) {
+      log.info('Processing mock signature credential in development...');
       try {
         const parts = credential.split('.');
         const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
         const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
         payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
-      } catch {
+      } catch (err) {
+        log.error('Malformed simulator credential:', err.message);
         return res.status(400).json({ error: 'Malformed simulator credential.' });
       }
     } else {
+      log.info('Verifying Google token against OAuth2Client...');
       try {
-        const client = new OAuth2Client(resolvedClientId);
+        if (!oauthClients.has(resolvedClientId)) {
+          log.info(`Instantiating new OAuth2Client for client ID: ${resolvedClientId}`);
+          oauthClients.set(resolvedClientId, new OAuth2Client({
+            clientId: resolvedClientId,
+            httpTimeout: 10000 // 10s timeout
+          }));
+        }
+        const client = oauthClients.get(resolvedClientId);
         const ticket = await client.verifyIdToken({ idToken: credential, audience: resolvedClientId });
         payload = ticket.getPayload();
+        log.info('Google token verified successfully. Email:', payload?.email);
       } catch (err) {
         log.error('Google token verification failed:', err.message);
         return res.status(401).json({ error: 'Invalid or expired Google token.' });
       }
     }
   } else if (!IS_PROD) {
+    log.info('No client ID, decoding mock simulator credential...');
     try {
       const parts = credential.split('.');
       const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -233,23 +252,38 @@ router.post('/google-login', asyncHandler(async (req, res) => {
       return res.status(400).json({ error: 'Malformed simulator credential.' });
     }
   } else {
+    log.warn('Google Sign-In is not configured (resolvedClientId is null in production).');
     return res.status(503).json({ error: 'Google Sign-In is not configured.' });
   }
 
   const email = payload?.email;
-  if (!email) return res.status(400).json({ error: 'Email not found in Google token' });
-  if (!payload.email_verified) return res.status(403).json({ error: 'Google account email is not verified' });
-
-  let user = findUserByUsername(email);
-  if (!user) {
-    user = createUser(email, crypto.randomBytes(32).toString('hex'));
-    sendWelcomeEmail({ to: user.username, username: user.username, plan: user.plan }).catch(() => {});
+  if (!email) {
+    log.warn('Email not found in Google token payload.');
+    return res.status(400).json({ error: 'Email not found in Google token' });
+  }
+  if (!payload.email_verified) {
+    log.warn(`Google account email is not verified: ${email}`);
+    return res.status(403).json({ error: 'Google account email is not verified' });
   }
 
+  log.info(`Finding or creating user: ${email}...`);
+  let user = findUserByUsername(email);
+  if (!user) {
+    log.info(`User does not exist, creating new user for: ${email}`);
+    user = createUser(email, crypto.randomBytes(32).toString('hex'));
+    sendWelcomeEmail({ to: user.username, username: user.username, plan: user.plan }).catch((err) => {
+      log.error('Failed to send welcome email in background:', err.message);
+    });
+  } else {
+    log.info(`Found existing user with ID ${user.id} for: ${email}`);
+  }
+
+  log.info(`Syncing session for user ID: ${user.id}`);
   touchLastLogin(user.id);
   const token = createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
   logAudit({ userId: user.id, actorId: user.id, action: 'google_login', ipAddress: getIp(req) });
 
+  log.info(`Setting auth cookie for user ID: ${user.id}`);
   res.cookie('boundaryiq_auth_token', token, {
     httpOnly: true,
     secure: IS_PROD,
@@ -257,6 +291,7 @@ router.post('/google-login', asyncHandler(async (req, res) => {
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   });
 
+  log.info(`Login successful for user: ${email}. Returning token.`);
   return res.json({ id: user.id, token, username: user.username, role: user.role, plan: user.plan || 'free' });
 }));
 
