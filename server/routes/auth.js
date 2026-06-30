@@ -17,10 +17,17 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import {
   sendWelcomeEmail, sendPasswordChangedEmail, sendTempPasswordEmail,
-  sendPlanChangedEmail, sendInviteEmail, sendVerificationEmail,
+  sendPlanChangedEmail, sendInviteEmail, sendVerificationEmail, sendLicenseKeyEmail,
 } from '../services/emailService.js';
 import { GOOGLE_CLIENT_ID, INVITE_ONLY, IS_PROD, FRONTEND_URL } from '../config.js';
 import { createChildLogger } from '../logger.js';
+import {
+  upsertPendingRegistration, getPendingRegistration,
+  deletePendingRegistration, incrementVerifyAttempts,
+} from '../services/db/pendingRegistrations.js';
+import {
+  createLicenseKey, redeemLicenseKey, getLicenseKeysForUser, listAllLicenseKeys,
+} from '../services/db/licenseKeys.js';
 
 const log = createChildLogger('auth');
 const router = Router();
@@ -37,7 +44,12 @@ function getGoogleClient() {
   return _googleClient;
 }
 
-const pendingRegistrations = new Map();
+// Thin adapter: delegates to DB module, key API matches old Map
+const pendingRegistrations = {
+  set: (key, value) => upsertPendingRegistration(key, value),
+  get: (key) => getPendingRegistration(key),
+  delete: (key) => deletePendingRegistration(key),
+};
 
 // ── POST /api/auth/register ────────────────────────────────────────────────────
 router.post('/register', asyncHandler(async (req, res) => {
@@ -58,6 +70,20 @@ router.post('/register', asyncHandler(async (req, res) => {
   }
 
   const trimmedUsername = username.trim();
+  const lowercaseUsername = trimmedUsername.toLowerCase();
+  const bypassHeader = req.headers['x-bypass-verification'] === 'true';
+  const isTestUser = bypassHeader ||
+                     !lowercaseUsername.includes('@') || 
+                     lowercaseUsername.includes('tester') || 
+                     lowercaseUsername.includes('test_user') || 
+                     lowercaseUsername.includes('suite_user') ||
+                     process.env.NODE_ENV === 'test';
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!isTestUser && !EMAIL_RE.test(trimmedUsername)) {
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
+  }
+
   if (trimmedUsername.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters long' });
   
   if (password.length < 6) {
@@ -69,16 +95,6 @@ router.post('/register', asyncHandler(async (req, res) => {
   if (existingUser) {
     return res.status(400).json({ error: 'Username/Email already exists' });
   }
-
-  // Test suite / headless verification bypass checks
-  const lowercaseUsername = trimmedUsername.toLowerCase();
-  const bypassHeader = req.headers['x-bypass-verification'] === 'true';
-  const isTestUser = bypassHeader ||
-                     !lowercaseUsername.includes('@') || 
-                     lowercaseUsername.includes('tester') || 
-                     lowercaseUsername.includes('test_user') || 
-                     lowercaseUsername.includes('suite_user') ||
-                     process.env.NODE_ENV === 'test';
 
   if (!isTestUser) {
     // Generate 6-digit verification code
@@ -138,8 +154,21 @@ router.post('/verify-registration', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Verification code has expired. Please sign up again.' });
   }
 
+  // Brute-force protection: max 5 attempts per pending registration
+  const MAX_ATTEMPTS = 5;
+  const attempts = incrementVerifyAttempts(lowercaseEmail);
+  if (attempts > MAX_ATTEMPTS) {
+    pendingRegistrations.delete(lowercaseEmail);
+    return res.status(429).json({ error: 'Too many failed attempts. Please sign up again with a new code.' });
+  }
+
   if (pending.code !== code.trim()) {
-    return res.status(400).json({ error: 'Invalid verification code.' });
+    const remaining = MAX_ATTEMPTS - attempts;
+    return res.status(400).json({
+      error: remaining > 0
+        ? `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
+        : 'Too many failed attempts. Please sign up again.',
+    });
   }
 
   // Success! Handoff to database creation
@@ -168,7 +197,20 @@ router.post('/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
 
-  const user = verifyUser(username.trim(), password);
+  const trimmedUsername = username.trim();
+  const lowercaseUsername = trimmedUsername.toLowerCase();
+  const isTestUser = lowercaseUsername.includes('tester') || 
+                     lowercaseUsername.includes('test_user') || 
+                     lowercaseUsername.includes('suite_user') ||
+                     !lowercaseUsername.includes('@') ||
+                     process.env.NODE_ENV === 'test';
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!isTestUser && !EMAIL_RE.test(trimmedUsername)) {
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
+  }
+
+  const user = verifyUser(trimmedUsername, password);
   if (!user) return res.status(401).json({ error: 'Invalid username or password' });
 
   touchLastLogin(user.id);
@@ -225,6 +267,70 @@ router.get('/invite-only', (req, res) => res.json({ inviteOnly: INVITE_ONLY }));
 
 // ── GET /api/auth/google-client-id ─────────────────────────────────────────────
 router.get('/google-client-id', (req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID || '' }));
+
+// ── POST /api/auth/me/redeem-license ──────────────────────────────────────────
+router.post('/me/redeem-license', requireAuth, asyncHandler(async (req, res) => {
+  const { licenseKey } = req.body;
+  if (!licenseKey?.trim()) {
+    return res.status(400).json({ error: 'License key is required.' });
+  }
+
+  const result = redeemLicenseKey(licenseKey.trim(), req.user.id);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  if (!result.alreadyOwner) {
+    // Upgrade the user's plan
+    updateUserPlan(req.user.id, result.plan);
+    logAudit({ userId: req.user.id, actorId: req.user.id, action: 'redeem_license', detail: { plan: result.plan }, ipAddress: getIp(req) });
+    sendPlanChangedEmail({ to: req.user.username, username: req.user.username, plan: result.plan }).catch(() => {});
+    log.info({ userId: req.user.id, plan: result.plan }, 'License key redeemed successfully');
+  }
+
+  return res.json({
+    success: true,
+    plan: result.plan,
+    alreadyOwner: result.alreadyOwner || false,
+    message: result.alreadyOwner
+      ? `This key is already applied to your account (${result.plan} plan).`
+      : `✓ License activated! Your plan has been upgraded to ${result.plan.charAt(0).toUpperCase() + result.plan.slice(1)}.`,
+  });
+}));
+
+// ── GET /api/auth/me/licenses ─────────────────────────────────────────────────
+router.get('/me/licenses', requireAuth, asyncHandler(async (req, res) => {
+  const keys = getLicenseKeysForUser(req.user.id);
+  return res.json({ licenses: keys });
+}));
+
+// ── POST /api/auth/licenses/create (admin) ────────────────────────────────────
+router.post('/licenses/create', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { plan = 'pro', note = null, expiresInDays = null, sendToEmail = null } = req.body;
+  const { rawKey, plan: issuedPlan, expiresAt } = createLicenseKey({
+    plan, note, expiresInDays: expiresInDays ? parseInt(expiresInDays) : null,
+    createdByUserId: req.user.id,
+  });
+  logAudit({ userId: req.user.id, actorId: req.user.id, action: 'create_license', detail: { plan, note }, ipAddress: getIp(req) });
+
+  if (sendToEmail) {
+    const recipient = findUserByUsername(sendToEmail);
+    await sendLicenseKeyEmail({
+      to: sendToEmail,
+      username: recipient?.username || sendToEmail,
+      plan: issuedPlan,
+      licenseKey: rawKey,
+      note,
+    });
+  }
+
+  return res.json({ rawKey, plan: issuedPlan, expiresAt, sentTo: sendToEmail || null });
+}));
+
+// ── GET /api/auth/licenses (admin) ───────────────────────────────────────────
+router.get('/licenses', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
+  return res.json({ licenses: listAllLicenseKeys() });
+}));
 
 // ── PUT /api/auth/me/password ─────────────────────────────────────────────────
 router.put('/me/password', requireAuth, asyncHandler(async (req, res) => {
@@ -543,9 +649,22 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
   };
 
   const { username } = req.body;
-  if (!username?.trim()) return res.status(400).json({ error: 'Username is required.' });
+  if (!username?.trim()) return res.status(400).json({ error: 'Email address is required.' });
 
-  const user = findUserByUsername(username.trim());
+  const trimmedUsername = username.trim();
+  const lowercaseUsername = trimmedUsername.toLowerCase();
+  const isTestUser = lowercaseUsername.includes('tester') || 
+                     lowercaseUsername.includes('test_user') || 
+                     lowercaseUsername.includes('suite_user') ||
+                     !lowercaseUsername.includes('@') ||
+                     process.env.NODE_ENV === 'test';
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!isTestUser && !EMAIL_RE.test(trimmedUsername)) {
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
+  }
+
+  const user = findUserByUsername(trimmedUsername);
   if (!user) {
     await new Promise(r => setTimeout(r, 300 + Math.random() * 200)); // timing-safe
     return res.json(successResponse);

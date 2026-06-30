@@ -4,8 +4,8 @@ import { createChildLogger } from '../logger.js';
 
 const log = createChildLogger('auth');
 
-// Plan hierarchy: free < pro < enterprise < admin
-const PLAN_RANK = { free: 0, pro: 1, enterprise: 2, admin: 99 };
+// Plan hierarchy: free < basic < pro < enterprise < admin
+const PLAN_RANK = { free: 0, basic: 0.5, pro: 1, enterprise: 2, admin: 99 };
 const ROLE_RANK = { user: 0, pro: 1, admin: 99 };
 
 function parseCookies(cookieHeader) {

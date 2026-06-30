@@ -156,4 +156,21 @@ export async function sendVerificationEmail({ to, code }) {
   return sendEmail({ to, subject, html, text });
 }
 
+export async function sendLicenseKeyEmail({ to, username, plan, licenseKey, note }) {
+  if (!to) return;
+  const planLabels = { basic: 'Basic', pro: 'Pro ⭐', enterprise: 'Enterprise 🏢' };
+  const subject = `Your Boundary.IQ ${planLabels[plan] || plan} License Key`;
+  const html = baseHtml('License Key', `
+    <h1>Your License Key</h1>
+    <p>Hi ${username}, here is your <strong style="color:#50c878">${planLabels[plan] || plan}</strong> license key for Boundary.IQ:</p>
+    <div class="code">${licenseKey}</div>
+    <p>To activate, go to <strong>Settings → License Key</strong> in the app and paste this key.</p>
+    ${note ? `<p style="background:#131b33;border-radius:8px;padding:12px 16px;font-style:italic;font-size:13px;">${note}</p>` : ''}
+    <a class="btn" href="${APP_URL}">Open Workspace →</a>
+    <p style="margin-top:16px;font-size:12px;color:#445;">Keep this key safe — it can only be redeemed once.</p>
+  `);
+  const text = `Your Boundary.IQ license key: ${licenseKey}\nActivate in Settings → License Key at ${APP_URL}`;
+  return sendEmail({ to, subject, html, text });
+}
+
 export const isMockMode = () => MOCK_MODE;

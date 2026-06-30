@@ -430,6 +430,7 @@ function AppShell() {
                     />
                   ) : (
                     <UserSettingsTab
+                      user={user}
                       hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
                       hidePlat={hidePlat}         setHidePlat={setHidePlat}
                       hideWriter={hideWriter}     setHideWriter={setHideWriter}

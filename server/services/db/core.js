@@ -104,6 +104,7 @@ export function switchDbPath(newPath) {
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   _initializeSchema();
+  _runMigrations();
   console.log(`✓ SQLite Database path successfully switched to: ${dbPath}`);
 }
 
@@ -237,6 +238,30 @@ function _initializeSchema() {
     CREATE TABLE IF NOT EXISTS _Migrations (
       Name TEXT PRIMARY KEY,
       AppliedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS PendingRegistrations (
+      Email TEXT PRIMARY KEY COLLATE NOCASE,
+      Username TEXT NOT NULL,
+      PasswordHash TEXT NOT NULL,
+      Code TEXT NOT NULL,
+      Attempts INTEGER NOT NULL DEFAULT 0,
+      ExpiresAt TEXT NOT NULL,
+      InviteToken TEXT,
+      CreatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS LicenseKeys (
+      KeyHash TEXT PRIMARY KEY,
+      Plan TEXT NOT NULL DEFAULT 'pro',
+      CreatedByUserId INTEGER,
+      RedeemedByUserId INTEGER,
+      RedeemedAt TEXT,
+      ExpiresAt TEXT,
+      Note TEXT,
+      CreatedAt TEXT NOT NULL,
+      FOREIGN KEY (CreatedByUserId) REFERENCES Users(Id) ON DELETE SET NULL,
+      FOREIGN KEY (RedeemedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
     );
   `);
 }

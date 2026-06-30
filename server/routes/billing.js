@@ -203,22 +203,29 @@ router.post('/webhook', async (req, res) => {
   const stripe = getStripe();
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
   if (!webhookSecret) {
     if (process.env.NODE_ENV === 'production') {
       console.error('[Billing] CRITICAL error: STRIPE_WEBHOOK_SECRET is not configured in production. Aborting webhook request.');
       return res.status(500).json({ error: 'Webhook secret not configured' });
     }
-    console.warn('[Billing] STRIPE_WEBHOOK_SECRET not set — webhook verification skipped.');
-    return res.status(200).json({ received: true });
+    console.warn('[Billing] STRIPE_WEBHOOK_SECRET not set — using raw body JSON for local webhook testing.');
   }
 
   let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-  } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
-    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+  if (!webhookSecret && process.env.NODE_ENV !== 'production') {
+    try {
+      event = JSON.parse(req.body.toString());
+    } catch (err) {
+      console.error('Failed to parse raw body as JSON event:', err.message);
+      return res.status(400).json({ error: `JSON Parse Error: ${err.message}` });
+    }
+  } else {
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    } catch (err) {
+      console.error('Webhook signature verification failed:', err.message);
+      return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+    }
   }
 
   try {
@@ -235,7 +242,6 @@ router.post('/webhook', async (req, res) => {
             status: 'active',
             periodEnd: null, // will be updated by subscription.updated
           });
-          updateUserPlan(userId, plan);
           console.log(`✓ [Billing] Subscription activated: userId=${userId} plan=${plan}`);
         }
         break;
@@ -253,9 +259,6 @@ router.post('/webhook', async (req, res) => {
             status: sub.status,
             periodEnd,
           });
-          if (sub.status === 'active') {
-            updateUserPlan(existing.userId, plan);
-          }
         }
         break;
       }
@@ -270,7 +273,6 @@ router.post('/webhook', async (req, res) => {
             status: 'cancelled',
             periodEnd: null,
           });
-          updateUserPlan(existing.userId, 'free');
           console.log(`⚠ [Billing] Subscription cancelled: userId=${existing.userId}`);
         }
         break;

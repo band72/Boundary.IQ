@@ -168,6 +168,20 @@ export default function LoginScreen({ onAuthSuccess }) {
     return () => { active = false; };
   }, []);
 
+  // Detect Google Identity Services SDK availability
+  const [gsiLoaded, setGsiLoaded] = useState(typeof google !== 'undefined');
+
+  useEffect(() => {
+    if (gsiLoaded) return;
+    const interval = setInterval(() => {
+      if (typeof google !== 'undefined') {
+        setGsiLoaded(true);
+        clearInterval(interval);
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [gsiLoaded]);
+
   // Graceful initialization of Google Identity Services GSI script if loaded
   // Module-level guard: only call initialize() once per unique client ID
   useEffect(() => {
@@ -181,7 +195,7 @@ export default function LoginScreen({ onAuthSuccess }) {
         client_id: googleClientId,
         callback: handleGoogleCredentialResponse,
         auto_select: false,
-        use_fedcm: false,
+        use_fedcm: true,
       });
 
       const btnEl = document.getElementById('google-live-signin-btn');
@@ -200,15 +214,17 @@ export default function LoginScreen({ onAuthSuccess }) {
     } catch (err) {
       console.warn('Google Identity SDK initialization error:', err.message);
     }
-  }, [googleClientId]); // only re-run if client ID changes — NOT on isRegister toggle
+  }, [googleClientId, gsiLoaded]); // only re-run if client ID or SDK loads — NOT on isRegister toggle
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const validateForm = () => {
     if (!username.trim() || !password) {
       setError('Please fill in all fields.');
       return false;
     }
-    if (username.trim().length < 3) {
-      setError('Username must be at least 3 characters long.');
+    if (!EMAIL_RE.test(username.trim())) {
+      setError('Please enter a valid email address.');
       return false;
     }
     if (password.length < 6) {
@@ -318,7 +334,12 @@ export default function LoginScreen({ onAuthSuccess }) {
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     if (!username.trim()) {
-      setError('Please enter your username.');
+      setError('Please enter your email address.');
+      return;
+    }
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!EMAIL_RE.test(username.trim())) {
+      setError('Please enter a valid email address.');
       return;
     }
     setLoading(true);
@@ -491,17 +512,17 @@ export default function LoginScreen({ onAuthSuccess }) {
                 {!tempPwSent ? (
                   <div style={{ display:'flex', flexDirection:'column', gap:'0.9rem' }}>
                     <div className="form-group">
-                      <label className="form-label" htmlFor="forgot-username">Username</label>
+                      <label className="form-label" htmlFor="forgot-username">Email Address</label>
                       <div className="input-with-icon">
-                        <span className="input-icon">👤</span>
+                        <span className="input-icon">✉️</span>
                         <input
                           id="forgot-username"
-                          type="text"
-                          placeholder="Enter your username"
+                          type="email"
+                          placeholder="your@email.com"
                           value={username}
                           onChange={e => setUsername(e.target.value)}
                           required
-                          autoComplete="username"
+                          autoComplete="email"
                           disabled={loading}
                         />
                       </div>
@@ -565,10 +586,10 @@ export default function LoginScreen({ onAuthSuccess }) {
                 )}
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="username">Username</label>
+                  <label className="form-label" htmlFor="username">Email Address</label>
                   <div className="input-with-icon">
-                    <span className="input-icon">👤</span>
-                    <input id="username" type="text" placeholder="Enter username" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="username" disabled={loading} />
+                    <span className="input-icon">✉️</span>
+                    <input id="username" type="email" placeholder="your@email.com" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="email" disabled={loading} />
                   </div>
                 </div>
 

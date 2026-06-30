@@ -35,6 +35,218 @@ function Toggle({ checked, onChange, disabled }) {
   );
 }
 
+// ── License Key section ───────────────────────────────────────────────────────
+const PLAN_META = {
+  free:       { label: 'Free',       color: '#8899bb', glow: 'rgba(136,153,187,0.3)', icon: '🔓' },
+  basic:      { label: 'Basic',      color: '#00d4a8', glow: 'rgba(0,212,168,0.35)',  icon: '⭐' },
+  pro:        { label: 'Pro',        color: '#3d7fff', glow: 'rgba(61,127,255,0.4)',  icon: '🚀' },
+  enterprise: { label: 'Enterprise', color: '#a855f7', glow: 'rgba(168,85,247,0.4)', icon: '🏢' },
+};
+
+function LicenseKeySection({ currentPlan, onPlanChanged }) {
+  const [keyInput, setKeyInput]   = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [msg, setMsg]             = useState(null); // { text, ok }
+  const [licenses, setLicenses]   = useState([]);
+  const [loadingKeys, setLoadingKeys] = useState(true);
+
+  const plan = currentPlan || 'free';
+  const meta = PLAN_META[plan] || PLAN_META.free;
+
+  useEffect(() => {
+    authFetch('/auth/me/licenses')
+      .then(d => setLicenses(d.licenses || []))
+      .catch(() => {})
+      .finally(() => setLoadingKeys(false));
+  }, []);
+
+  const handleActivate = async () => {
+    const trimmed = keyInput.trim();
+    if (!trimmed) { setMsg({ text: 'Please enter a license key.', ok: false }); return; }
+    setLoading(true); setMsg(null);
+    try {
+      const data = await authFetch('/auth/me/redeem-license', {
+        method: 'POST',
+        body: JSON.stringify({ licenseKey: trimmed }),
+      });
+      setMsg({ text: data.message, ok: true });
+      setKeyInput('');
+      if (!data.alreadyOwner && onPlanChanged) onPlanChanged(data.plan);
+      // Refresh applied keys list
+      authFetch('/auth/me/licenses').then(d => setLicenses(d.licenses || [])).catch(() => {});
+    } catch (e) {
+      setMsg({ text: e.message, ok: false });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fmtDate = (s) => s ? new Date(s).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : null;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, rgba(20,30,58,0.7) 0%, rgba(9,14,26,0.8) 100%)',
+      border: `1px solid ${meta.color}40`,
+      borderRadius: 'var(--radius-lg)',
+      backdropFilter: 'blur(16px)',
+      boxShadow: `0 0 32px ${meta.glow}, 0 8px 24px rgba(0,0,0,0.3)`,
+      overflow: 'hidden',
+    }}>
+      {/* Header bar */}
+      <div style={{
+        background: `linear-gradient(135deg, ${meta.color}18 0%, transparent 100%)`,
+        borderBottom: `1px solid ${meta.color}25`,
+        padding: '1.25rem 1.5rem',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 'var(--radius-md)',
+            background: `linear-gradient(135deg, ${meta.color}30, ${meta.color}10)`,
+            border: `1px solid ${meta.color}40`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1.2rem',
+            boxShadow: `0 0 12px ${meta.glow}`,
+          }}>🪪</div>
+          <div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
+              License & Subscription
+            </div>
+            <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 1 }}>
+              Enter your license key to activate or upgrade your plan
+            </div>
+          </div>
+        </div>
+        {/* Plan badge */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.4rem',
+          background: `${meta.color}18`,
+          border: `1px solid ${meta.color}45`,
+          borderRadius: '2rem',
+          padding: '0.3rem 0.85rem',
+          boxShadow: `0 0 10px ${meta.glow}`,
+        }}>
+          <span style={{ fontSize: '0.85rem' }}>{meta.icon}</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: meta.color, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            {meta.label}
+          </span>
+        </div>
+      </div>
+
+      {/* Key input area */}
+      <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'stretch' }}>
+          <div style={{ flex: 1, position: 'relative' }}>
+            <input
+              id="license-key-input"
+              type="text"
+              placeholder="BIQ-XXXX-XXXX-XXXX-XXXX"
+              value={keyInput}
+              onChange={e => { setKeyInput(e.target.value.toUpperCase()); setMsg(null); }}
+              onKeyDown={e => e.key === 'Enter' && handleActivate()}
+              spellCheck={false}
+              autoComplete="off"
+              style={{
+                width: '100%',
+                background: 'rgba(9,14,26,0.6)',
+                border: `1px solid ${keyInput ? meta.color + '60' : 'var(--border)'}`,
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.65rem 0.9rem',
+                color: '#fff',
+                fontFamily: 'monospace',
+                fontSize: '0.9rem',
+                letterSpacing: '0.08em',
+                transition: 'border-color 0.2s, box-shadow 0.2s',
+                boxShadow: keyInput ? `0 0 0 2px ${meta.color}20` : 'none',
+                outline: 'none',
+              }}
+            />
+          </div>
+          <button
+            id="license-activate-btn"
+            className="btn btn-primary"
+            onClick={handleActivate}
+            disabled={loading || !keyInput.trim()}
+            style={{
+              padding: '0.65rem 1.4rem',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              borderRadius: 'var(--radius-sm)',
+              background: loading ? 'rgba(61,127,255,0.4)' : `linear-gradient(135deg, ${meta.color}, ${meta.color}cc)`,
+              border: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              transition: 'opacity 0.2s',
+              opacity: (!keyInput.trim() || loading) ? 0.55 : 1,
+            }}
+          >
+            {loading ? '⏳ Activating…' : '🔐 Activate'}
+          </button>
+        </div>
+
+        {/* Feedback message */}
+        {msg && (
+          <div style={{
+            padding: '0.5rem 0.85rem',
+            borderRadius: 6,
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            background: msg.ok ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)',
+            border: `1px solid ${msg.ok ? 'rgba(0,212,168,0.3)' : 'rgba(220,50,50,0.3)'}`,
+            color: msg.ok ? '#00d4a8' : '#e05555',
+            display: 'flex', alignItems: 'center', gap: '0.4rem',
+          }}>
+            <span>{msg.ok ? '✓' : '✗'}</span>
+            <span>{msg.text}</span>
+          </div>
+        )}
+
+        {/* Applied keys history */}
+        {!loadingKeys && licenses.length > 0 && (
+          <div style={{ marginTop: '0.25rem' }}>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.5rem' }}>
+              Applied Keys
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              {licenses.map((lic, i) => {
+                const lMeta = PLAN_META[lic.Plan] || PLAN_META.free;
+                return (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem',
+                    background: 'rgba(9,14,26,0.4)',
+                    border: `1px solid ${lMeta.color}25`,
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.45rem 0.75rem',
+                  }}>
+                    <span style={{ fontSize: '0.85rem' }}>{lMeta.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: lMeta.color }}>
+                        {lMeta.label} Plan
+                      </span>
+                      {lic.Note && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{lic.Note}</span>}
+                    </div>
+                    {fmtDate(lic.RedeemedAt) && (
+                      <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>Activated {fmtDate(lic.RedeemedAt)}</span>
+                    )}
+                    {lic.ExpiresAt && (
+                      <span style={{ fontSize: '0.67rem', color: '#ffaa00' }}>Expires {fmtDate(lic.ExpiresAt)}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+          <span>💡</span>
+          <span>License keys are single-use and tied to your account. Contact support if you need a new key.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── My Account section ────────────────────────────────────────────────────────
 function MyAccountSection() {
   const [displayName, setDisplayName] = useState('');
@@ -197,6 +409,7 @@ const SectionDivider = ({ label }) => (
 );
 
 export default function UserSettingsTab({
+  user,
   hideTraverse: propHideTraverse, setHideTraverse: propSetHideTraverse,
   hidePlat: propHidePlat,         setHidePlat: propSetHidePlat,
   hideWriter: propHideWriter,     setHideWriter: propSetHideWriter,
@@ -392,6 +605,12 @@ export default function UserSettingsTab({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* ── License Key ─────────────────────────────────────────────── */}
+      <LicenseKeySection
+        currentPlan={user?.plan || 'free'}
+        onPlanChanged={() => setTimeout(() => window.location.reload(), 1200)}
+      />
 
       {/* ── My Account ──────────────────────────────────────────────── */}
       <MyAccountSection />
