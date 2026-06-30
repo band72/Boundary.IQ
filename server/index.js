@@ -159,6 +159,7 @@ app.use(helmet({
     }
   } : false,
   crossOriginEmbedderPolicy: false, // disabled: canvas/DXF exports need cross-origin fetch
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
 
 // Auth rate limiter: 100 attempts per IP per 15 min (skipped outside production)
