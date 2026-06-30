@@ -19,14 +19,11 @@ export default function LoginScreen({ onAuthSuccess }) {
   const [showDevGoogleModal, setShowDevGoogleModal] = useState(false);
   const [devGoogleEmail, setDevGoogleEmail] = useState('surveyor@google.com');
 
-  // Live Google Sign-In Client ID State (loaded from localStorage, environment, or backend)
+  // Live Google Sign-In Client ID State (loaded from localStorage or backend config)
   const [googleClientId, setGoogleClientId] = useState(() => {
-    const envId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const resolvedEnvId = (envId && envId !== 'PLACEHOLDER' ? envId : '');
-    return localStorage.getItem('boundaryiq_google_client_id') || 
-           resolvedEnvId || 
-           '';
+    return localStorage.getItem('boundaryiq_google_client_id') || '';
   });
+  const [clientIdLoaded, setClientIdLoaded] = useState(!!localStorage.getItem('boundaryiq_google_client_id'));
 
   const [devTab, setDevTab] = useState(import.meta.env.PROD ? 'live' : 'sim'); // 'sim' | 'live'
   const [inputClientId, setInputClientId] = useState(googleClientId);
@@ -154,19 +151,35 @@ export default function LoginScreen({ onAuthSuccess }) {
     }
   };
 
-  // Fetch configured Google client ID dynamically from backend
+  // Fetch configured Google client ID dynamically from backend if not overridden locally
   useEffect(() => {
+    if (clientIdLoaded) return;
     let active = true;
     fetch(`${API}/auth/google-client-id`)
       .then(res => res.json())
       .then(data => {
-        if (active && data.googleClientId) {
-          setGoogleClientId(data.googleClientId);
+        if (active) {
+          if (data.googleClientId) {
+            setGoogleClientId(data.googleClientId);
+          } else {
+            const envId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+            const resolvedEnvId = (envId && envId !== 'PLACEHOLDER' ? envId : '');
+            setGoogleClientId(resolvedEnvId);
+          }
+          setClientIdLoaded(true);
         }
       })
-      .catch(err => console.warn('Failed to fetch google-client-id:', err));
+      .catch(err => {
+        console.warn('Failed to fetch google-client-id:', err);
+        if (active) {
+          const envId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+          const resolvedEnvId = (envId && envId !== 'PLACEHOLDER' ? envId : '');
+          setGoogleClientId(resolvedEnvId);
+          setClientIdLoaded(true);
+        }
+      });
     return () => { active = false; };
-  }, []);
+  }, [clientIdLoaded]);
 
   // Detect Google Identity Services SDK availability
   const [gsiLoaded, setGsiLoaded] = useState(typeof google !== 'undefined');
@@ -183,10 +196,9 @@ export default function LoginScreen({ onAuthSuccess }) {
   }, [gsiLoaded]);
 
   // Graceful initialization of Google Identity Services GSI script if loaded
-  // Module-level guard: only call initialize() once per unique client ID
   useEffect(() => {
     /* global google */
-    if (typeof google === 'undefined' || !googleClientId) return;
+    if (typeof google === 'undefined' || !googleClientId || !clientIdLoaded) return;
     // Avoid double-init (triggers warning & breaks button render)
     if (window.__gsiInitializedClientId === googleClientId) return;
     window.__gsiInitializedClientId = googleClientId;
@@ -195,26 +207,30 @@ export default function LoginScreen({ onAuthSuccess }) {
         client_id: googleClientId,
         callback: handleGoogleCredentialResponse,
         auto_select: false,
-        use_fedcm: true,
       });
-
-      const btnEl = document.getElementById('google-live-signin-btn');
-      if (btnEl) {
-        google.accounts.id.renderButton(btnEl, {
-          theme: 'filled_black',
-          size: 'large',
-          width: 380,
-          logo_alignment: 'left',
-          shape: 'rectangular',
-        });
-      }
 
       // One Tap prompt
       google.accounts.id.prompt();
     } catch (err) {
       console.warn('Google Identity SDK initialization error:', err.message);
     }
-  }, [googleClientId, gsiLoaded]); // only re-run if client ID or SDK loads — NOT on isRegister toggle
+  }, [googleClientId, gsiLoaded, clientIdLoaded]);
+
+  // Callback ref to render Google button whenever the container element mounts in DOM
+  const renderGoogleButton = (el) => {
+    if (!el || typeof google === 'undefined' || !googleClientId || !clientIdLoaded) return;
+    try {
+      google.accounts.id.renderButton(el, {
+        theme: 'filled_black',
+        size: 'large',
+        width: 380,
+        logo_alignment: 'left',
+        shape: 'rectangular',
+      });
+    } catch (err) {
+      console.warn('Google renderButton error:', err.message);
+    }
+  };
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -555,7 +571,7 @@ export default function LoginScreen({ onAuthSuccess }) {
               <>
                 {googleClientId && (
                   <div className="google-signin-wrapper" style={{ marginTop: '0.4rem', marginBottom: '0.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '0.4rem' }}>
-                    <div id="google-live-signin-btn" style={{ minHeight: 40, width: '100%' }}></div>
+                    <div ref={renderGoogleButton} style={{ minHeight: 40, width: '100%' }}></div>
                     {true && (
                       <button type="button" className="toggle-link-btn" onClick={() => setShowDevGoogleModal(true)} style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⚙️ Configure OAuth ID</button>
                     )}
