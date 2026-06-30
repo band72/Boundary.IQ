@@ -14,20 +14,30 @@ router.use(requireAuth);
 router.get('/recent-batches', (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 30, 100);
-    res.json(db.getRecentBatchesWithStats(limit));
+    const userId = req.user.role === 'admin' ? null : req.user.id;
+    res.json(db.getRecentBatchesWithStats(limit, userId));
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
 // GET /api/diagnostics/batch-stats/:batchId  — full stats for one run
 router.get('/batch-stats/:batchId', (req, res) => {
-  try { res.json(db.getBatchStats(req.params.batchId)); }
+  try {
+    if (req.user.role !== 'admin') {
+      const row = db.getDb().prepare('SELECT UserId FROM BatchRuns WHERE BatchId = ?').get(req.params.batchId);
+      if (row && row.UserId !== req.user.id) {
+        return res.status(403).json({ error: 'Access forbidden to this batch run.' });
+      }
+    }
+    res.json(db.getBatchStats(req.params.batchId));
+  }
   catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
 router.get('/search', (req, res) => {
   try {
     const { query, status, maxError } = req.query;
-    res.json(db.searchDeedLogs(query || null, status || null, maxError ? parseFloat(maxError) : null));
+    const userId = req.user.role === 'admin' ? null : req.user.id;
+    res.json(db.searchDeedLogs(query || null, status || null, maxError ? parseFloat(maxError) : null, userId));
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
@@ -37,8 +47,10 @@ router.get('/heuristics', (req, res) => {
 });
 
 router.get('/stats', (req, res) => {
-  try { res.json(db.getDatabaseStats()); }
-  catch (ex) { res.status(400).json({ error: ex.message }); }
+  try {
+    const userId = req.user.role === 'admin' ? null : req.user.id;
+    res.json(db.getDatabaseStats(userId));
+  } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
 // GET /api/diagnostics/failed-deeds?bucket=nearClosed&limit=200
