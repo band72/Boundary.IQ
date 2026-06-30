@@ -73,4 +73,17 @@ describe('AI Token Tracking & Telemetry tests', () => {
     const { GOOGLE_CLIENT_ID } = await import('../config.js');
     expect(GOOGLE_CLIENT_ID).toBe(process.env.GOOGLE_CLIENT_ID || undefined);
   });
+
+  it('can associate BatchRuns with a UserId and query stats', async () => {
+    const { saveBatchRun, getDb } = await import('../services/diagnosticsDb.js');
+    const batchId = `test_batch_${Date.now()}`;
+    
+    // Save batch run for the test user
+    saveBatchRun(batchId, 3, 0.9, testUserId);
+
+    const db = getDb();
+    const row = db.prepare('SELECT UserId FROM BatchRuns WHERE BatchId = ?').get(batchId);
+    expect(row).toBeDefined();
+    expect(row.UserId).toBe(testUserId);
+  });
 });

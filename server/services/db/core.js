@@ -116,7 +116,9 @@ function _initializeSchema() {
       BatchId TEXT PRIMARY KEY,
       Timestamp TEXT NOT NULL,
       TotalFiles INTEGER NOT NULL,
-      PassRate REAL NOT NULL
+      PassRate REAL NOT NULL,
+      UserId INTEGER,
+      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS DeedLogs (
@@ -293,6 +295,7 @@ function _runMigrations() {
     { name: 'add_Users_ForceResetPw',      sql: 'ALTER TABLE Users ADD COLUMN ForceResetPw INTEGER NOT NULL DEFAULT 0' },
     { name: 'add_UserSettings_MapPanSensitivity', sql: 'ALTER TABLE UserSettings ADD COLUMN MapPanSensitivity REAL' },
     { name: 'create_TokenUsage_table', sql: 'CREATE TABLE IF NOT EXISTS TokenUsage (Id INTEGER PRIMARY KEY AUTOINCREMENT, UserId INTEGER, Provider TEXT NOT NULL, Model TEXT NOT NULL, InputTokens INTEGER NOT NULL DEFAULT 0, OutputTokens INTEGER NOT NULL DEFAULT 0, TotalTokens INTEGER NOT NULL DEFAULT 0, Type TEXT NOT NULL, Timestamp TEXT NOT NULL, FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE)' },
+    { name: 'add_BatchRuns_UserId', sql: 'ALTER TABLE BatchRuns ADD COLUMN UserId INTEGER REFERENCES Users(Id) ON DELETE SET NULL' },
   ];
 
   const applyMigration = db.transaction((m) => {

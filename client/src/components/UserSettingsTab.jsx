@@ -452,6 +452,8 @@ export default function UserSettingsTab({
   const [enforceNoSelfIntersection, setEnforceNoSelfIntersection] = useState(false);
   const [mapPanSensitivity, setMapPanSensitivity] = useState(0.55);
   const [switchingTo,      setSwitchingTo]        = useState(null);
+  const [aiStats,          setAiStats]            = useState(null);
+  const [aiStatsLoading,   setAiStatsLoading]     = useState(true);
 
   const providerMeta = {
     gemini: { color: '#4285F4', icon: '☁️', gradient: 'linear-gradient(135deg, #4285F4 0%, #8AB4F8 100%)', label: 'Cloud' },
@@ -471,6 +473,18 @@ export default function UserSettingsTab({
     }
   }, []);
 
+  const fetchAiStats = useCallback(async () => {
+    setAiStatsLoading(true);
+    try {
+      const data = await authFetch('/settings/ai-usage');
+      setAiStats(data);
+    } catch (e) {
+      console.error('Failed to fetch AI usage stats:', e);
+    } finally {
+      setAiStatsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (modelConfig) {
       setSelectedVendor(modelConfig.activeProvider || 'gemini');
@@ -482,6 +496,7 @@ export default function UserSettingsTab({
   }, [modelConfig]);
 
   useEffect(() => { fetchModelConfig(); }, [fetchModelConfig]);
+  useEffect(() => { fetchAiStats(); }, [fetchAiStats]);
 
   const saveKeysToBackend = async (gKey, oKey, silent = false) => {
     if (!silent) setSaveKeysLoading(true);
@@ -611,6 +626,50 @@ export default function UserSettingsTab({
         currentPlan={user?.plan || 'free'}
         onPlanChanged={() => setTimeout(() => window.location.reload(), 1200)}
       />
+
+      {/* ── AI Usage & Statistics ──────────────────────────────────── */}
+      <div className="card" style={{ 
+        background: 'linear-gradient(135deg, rgba(20,30,58,0.4) 0%, rgba(9,14,26,0.6) 100%)',
+        border: '1px solid rgba(0, 212, 168, 0.25)', 
+        boxShadow: '0 8px 32px rgba(0, 212, 168, 0.05)',
+        backdropFilter: 'blur(12px)',
+        borderRadius: 'var(--radius-lg)'
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            📊 AI Usage & Statistics
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={fetchAiStats} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
+        </div>
+        <div style={{ padding: '1.25rem' }}>
+          {aiStatsLoading ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>Loading statistics…</div>
+          ) : !aiStats ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>No usage stats available.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+              <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.9rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#00d4a8', marginBottom: '0.25rem' }}>{aiStats.totalAiRequests}</div>
+                <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', fontWeight: 750 }}>AI Requests</div>
+              </div>
+              <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.9rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#3d7fff', marginBottom: '0.25rem' }}>{aiStats.totalBatchRuns}</div>
+                <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', fontWeight: 750 }}>Batch Runs</div>
+              </div>
+              <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.9rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#a855f7', marginBottom: '0.25rem' }}>{aiStats.totalBatchFiles}</div>
+                <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', fontWeight: 750 }}>Files in DB</div>
+              </div>
+              <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.9rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffb703', marginBottom: '0.45rem' }}>
+                  {aiStats.totalTokens ? aiStats.totalTokens.toLocaleString() : 0}
+                </div>
+                <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', fontWeight: 750 }}>Total Tokens</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── My Account ──────────────────────────────────────────────── */}
       <MyAccountSection />

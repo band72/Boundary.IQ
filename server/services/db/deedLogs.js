@@ -4,12 +4,14 @@
 
 import fs from 'fs';
 import { getDb, now, getDbPath, mapDeedLog } from './core.js';
+import { getStore } from './context.js';
 
 // ── Batch Runs ────────────────────────────────────────────────────────────────
 
-export function saveBatchRun(batchId, totalFiles, passRate) {
-  getDb().prepare('INSERT OR REPLACE INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate) VALUES (?, ?, ?, ?)')
-    .run(batchId, now(), totalFiles, passRate);
+export function saveBatchRun(batchId, totalFiles, passRate, userId) {
+  const finalUserId = userId !== undefined ? userId : (getStore()?.userId || null);
+  getDb().prepare('INSERT OR REPLACE INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate, UserId) VALUES (?, ?, ?, ?, ?)')
+    .run(batchId, now(), totalFiles, passRate, finalUserId);
 }
 
 export function getRecentBatchRuns() {

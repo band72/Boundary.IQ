@@ -479,4 +479,36 @@ router.get('/batch-library/file', asyncHandler(async (req, res) => {
   res.send(content);
 }));
 
+// ── GET /api/settings/ai-usage ────────────────────────────────────────────────
+router.get('/ai-usage', asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const db = dbSvc.getDb();
+  
+  // Count user-specific batch runs and files stored in the database
+  const batchStats = db.prepare(`
+    SELECT 
+      COALESCE(COUNT(DISTINCT b.BatchId), 0) as totalBatchRuns,
+      COALESCE(COUNT(d.Id), 0) as totalBatchFiles
+    FROM BatchRuns b
+    LEFT JOIN DeedLogs d ON b.BatchId = d.BatchId
+    WHERE b.UserId = ?
+  `).get(userId) || { totalBatchRuns: 0, totalBatchFiles: 0 };
+
+  // Count user-specific AI calls from TokenUsage
+  const tokenStats = db.prepare(`
+    SELECT
+      COALESCE(COUNT(*), 0) as totalAiRequests,
+      COALESCE(SUM(TotalTokens), 0) as totalTokens
+    FROM TokenUsage
+    WHERE UserId = ?
+  `).get(userId) || { totalAiRequests: 0, totalTokens: 0 };
+
+  res.json({
+    totalBatchRuns: batchStats.totalBatchRuns,
+    totalBatchFiles: batchStats.totalBatchFiles,
+    totalAiRequests: tokenStats.totalAiRequests,
+    totalTokens: tokenStats.totalTokens
+  });
+}));
+
 export default router;
