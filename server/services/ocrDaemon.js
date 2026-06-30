@@ -17,13 +17,31 @@
  *     (up to 3 attempts).
  */
 
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { createChildLogger } from '../logger.js';
 
 const log = createChildLogger('ocrDaemon');
+const execAsync = promisify(exec);
+
+let _ocrSupported = null; // null = untested, true = available, false = unavailable
+
+export async function checkOcrSupport() {
+  if (_ocrSupported !== null) return _ocrSupported;
+  try {
+    // Fast import check to see if easyocr package is available
+    await execAsync('python3 -c "import easyocr"', { timeout: 10000 });
+    _ocrSupported = true;
+    log.info('EasyOCR is available in the Python environment.');
+  } catch (err) {
+    _ocrSupported = false;
+    log.info('EasyOCR is not available in the Python environment. Local OCR fallback is bypassed.');
+  }
+  return _ocrSupported;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = path.resolve(__dirname, '../scripts/ocr_pdf.py');
@@ -141,6 +159,12 @@ async function _ensureReady() {
  * @returns {Promise<string>}  Extracted text
  */
 export async function ocrFile(filePath, opts = {}) {
+  const isSupported = await checkOcrSupport();
+  if (!isSupported) {
+    log.debug('Bypassing local OCR daemon because EasyOCR is not available');
+    return '';
+  }
+
   const maxPages = opts.maxPages ?? MAX_PAGES;
   const id = crypto.randomUUID();
 

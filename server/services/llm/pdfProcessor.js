@@ -14,6 +14,7 @@ import pdfParse from 'pdf-parse';
 import { OCR_CACHE_DIR, OCR_CACHE_MAX_ENTRIES, OCR_CACHE_TTL_DAYS } from '../../config.js';
 import { createChildLogger } from '../../logger.js';
 import { postProcessOcrText, hasBoundaryKeywords } from './ocrPostProcess.js';
+import { checkOcrSupport } from '../ocrDaemon.js';
 
 const log = createChildLogger('pdfProcessor');
 const execFileAsync = promisify(execFile);
@@ -155,6 +156,11 @@ export async function convertPdfPagesToPngs(buffer, maxPages = 5) {
 
 // ── Local EasyOCR ─────────────────────────────────────────────────────────────
 export async function performLocalOcr(pngBuffer) {
+  const isSupported = await checkOcrSupport();
+  if (!isSupported) {
+    log.debug('Bypassing local OCR because EasyOCR is not available');
+    return '';
+  }
   const tempImgPath = path.join(os.tmpdir(), `biq_ocr_${uuidv4().replace(/-/g, '')}.png`);
   try {
     await fs.writeFile(tempImgPath, pngBuffer);
