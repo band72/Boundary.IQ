@@ -204,466 +204,502 @@ export default function DashboardTab() {
         {dbMessage && <div className="alert alert-success" style={{ marginTop: '1rem', borderColor: 'var(--accent2)' }}>✓ {dbMessage}</div>}
       </div>
 
-      {/* ── Key Performance Indicators Grid ─────────────────────────────────── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        gap: '1rem'
-      }}>
-        {[
-          { label: 'Total Scanned', value: stats?.deedLogCount ?? 0, color: 'var(--text-primary)', icon: '📄', bucket: null, clickable: false },
-          { label: 'Overall Pass Rate', value: `${passRate}%`, color: 'var(--success)', sub: `${stats?.passCount ?? 0} Closed Deeds`, icon: '🏆', bucket: null, clickable: false },
-          { label: 'Needs Review', value: stats?.failCount ?? 0, color: '#ff4d6d', sub: `${failRate}% · click to expand`, icon: '⚠', bucket: null, clickable: true },
-          { label: 'Waterway Meanders', value: stats?.meanderCount ?? 0, color: 'var(--warning)', sub: `${meanderRate}% of total`, icon: '🌊', bucket: null, clickable: false },
-          { label: 'Processing Errors', value: stats?.errorCount ?? 0, color: 'var(--text-muted)', sub: `${errorRate}% of total`, icon: '🛑', bucket: 'errors', clickable: false }
-        ].map((card, i) => (
-          <div key={i}
-            onClick={() => card.clickable ? openDrawer(null) : undefined}
-            style={{
-            background: 'linear-gradient(135deg, rgba(20, 30, 53, 0.6) 0%, rgba(15, 23, 41, 0.8) 100%)',
-            border: card.clickable && drawerOpen && activeBucket === null
-              ? '1px solid rgba(255,77,109,0.6)'
-              : '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '1.25rem',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            position: 'relative',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-            minHeight: '115px',
-            cursor: card.clickable ? 'pointer' : 'default',
-            transition: 'border-color 0.2s, transform 0.15s',
-            ...(card.clickable ? { ':hover': { transform: 'translateY(-1px)' } } : {})
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {card.label}
-              </span>
-              <span style={{ fontSize: '1.1rem' }}>{card.icon}</span>
-            </div>
-            <div style={{ marginTop: '0.5rem' }}>
-              <div style={{ fontSize: '1.8rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: card.color, lineHeight: 1.1 }}>
-                {card.value}
+      {stats?.deedLogCount > 0 ? (
+        <>
+        {/* ── Key Performance Indicators Grid ─────────────────────────────────── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '1rem'
+        }}>
+          {[
+            { label: 'Total Scanned', value: stats?.deedLogCount ?? 0, color: 'var(--text-primary)', icon: '📄', bucket: null, clickable: false },
+            { label: 'Overall Pass Rate', value: `${passRate}%`, color: 'var(--success)', sub: `${stats?.passCount ?? 0} Closed Deeds`, icon: '🏆', bucket: null, clickable: false },
+            { label: 'Needs Review', value: stats?.failCount ?? 0, color: '#ff4d6d', sub: `${failRate}% · click to expand`, icon: '⚠', bucket: null, clickable: true },
+            { label: 'Waterway Meanders', value: stats?.meanderCount ?? 0, color: 'var(--warning)', sub: `${meanderRate}% of total`, icon: '🌊', bucket: null, clickable: false },
+            { label: 'Processing Errors', value: stats?.errorCount ?? 0, color: 'var(--text-muted)', sub: `${errorRate}% of total`, icon: '🛑', bucket: 'errors', clickable: false }
+          ].map((card, i) => (
+            <div key={i}
+              onClick={() => card.clickable ? openDrawer(null) : undefined}
+              style={{
+              background: 'linear-gradient(135deg, rgba(20, 30, 53, 0.6) 0%, rgba(15, 23, 41, 0.8) 100%)',
+              border: card.clickable && drawerOpen && activeBucket === null
+                ? '1px solid rgba(255,77,109,0.6)'
+                : '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              position: 'relative',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+              minHeight: '115px',
+              cursor: card.clickable ? 'pointer' : 'default',
+              transition: 'border-color 0.2s, transform 0.15s',
+              ...(card.clickable ? { ':hover': { transform: 'translateY(-1px)' } } : {})
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {card.label}
+                </span>
+                <span style={{ fontSize: '1.1rem' }}>{card.icon}</span>
               </div>
-              {card.sub && (
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                  {card.sub}
+              <div style={{ marginTop: '0.5rem' }}>
+                <div style={{ fontSize: '1.8rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: card.color, lineHeight: 1.1 }}>
+                  {card.value}
+                </div>
+                {card.sub && (
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                    {card.sub}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Two-Column Main Analytics Grid ───────────────────────────────────── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+          gap: '1.5rem'
+        }}>
+          
+          {/* Left Column: Classification pass / fail / open-ended split */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)' }}>
+              <div className="card-title">🗂️ Deed Classification & Accuracy Breakdown</div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Success metrics grouped by geometric legal description style
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '0.25rem 0' }}>
+              {stats?.classifications && stats.classifications.length > 0 ? (
+                stats.classifications.map((c, idx) => {
+                  const totalClass = c.count || 1;
+                  const cPassRate = ((c.passed / totalClass) * 100);
+                  const cFailRate = ((c.failed / totalClass) * 100);
+                  const cMeanderRate = ((c.meanders / totalClass) * 100);
+                  const cErrorRate = ((c.errors / totalClass) * 100);
+
+                  // Helper to format class labels prettily
+                  const displayLabel = {
+                    METES_BOUNDS: 'Metes & Bounds (Standard)',
+                    HYBRID: 'Hybrid (PLSS + Metes)',
+                    LOT_BLOCK: 'Lot & Block (Subdivision)',
+                    UNKNOWN: 'Unclassified / Other'
+                  }[c.class] || c.class;
+
+                  const statusColor = {
+                    METES_BOUNDS: 'var(--accent)',
+                    HYBRID: 'var(--success)',
+                    LOT_BLOCK: '#c97a00',
+                    UNKNOWN: 'var(--text-muted)'
+                  }[c.class] || 'var(--text-muted)';
+
+                  return (
+                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: statusColor }} />
+                          {displayLabel}
+                        </span>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>{c.count}</strong> deeds ({cPassRate.toFixed(0)}% pass)
+                        </span>
+                      </div>
+
+                      {/* Stacked Percentage bar */}
+                      <div style={{
+                        height: '14px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        borderRadius: '99px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        border: '1px solid var(--border)'
+                      }}>
+                        {c.passed > 0 && (
+                          <div 
+                            title={`Passed: ${c.passed} (${cPassRate.toFixed(1)}%)`}
+                            style={{ width: `${cPassRate}%`, background: 'var(--success)', height: '100%', transition: 'width 0.5s ease' }} 
+                          />
+                        )}
+                        {c.failed > 0 && (
+                          <div 
+                            title={`Failed: ${c.failed} (${cFailRate.toFixed(1)}%)`}
+                            style={{ width: `${cFailRate}%`, background: '#ff4d6d', height: '100%', transition: 'width 0.5s ease' }} 
+                          />
+                        )}
+                        {c.meanders > 0 && (
+                          <div 
+                            title={`Waterways: ${c.meanders} (${cMeanderRate.toFixed(1)}%)`}
+                            style={{ width: `${cMeanderRate}%`, background: 'var(--warning)', height: '100%', transition: 'width 0.5s ease' }} 
+                          />
+                        )}
+                        {c.errors > 0 && (
+                          <div 
+                            title={`Errors: ${c.errors} (${cErrorRate.toFixed(1)}%)`}
+                            style={{ width: `${cErrorRate}%`, background: '#4a5a7a', height: '100%', transition: 'width 0.5s ease' }} 
+                          />
+                        )}
+                      </div>
+
+                      {/* Miniature stats legend */}
+                      <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.68rem', color: 'var(--text-muted)', flexWrap: 'wrap', paddingLeft: '0.75rem' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--success)' }} /> PASS: {c.passed}
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#ff4d6d' }} /> FAIL: {c.failed}
+                        </span>
+                        {c.meanders > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--warning)' }} /> MEANDER: {c.meanders}
+                          </span>
+                        )}
+                        {c.errors > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#4a5a7a' }} /> ERROR: {c.errors}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                  No classification breakdown available. Run folder scans to register deed types.
                 </div>
               )}
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* ── Two-Column Main Analytics Grid ───────────────────────────────────── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-        gap: '1.5rem'
-      }}>
-        
-        {/* Left Column: Classification pass / fail / open-ended split */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)' }}>
-            <div className="card-title">🗂️ Deed Classification & Accuracy Breakdown</div>
+          {/* Right Column: Heuristic corrections applied & Closure distribution */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            
+            {/* Repair Heuristics Counter */}
+            <div className="card">
+              <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
+                <div className="card-title">🔧 Active Heuristic Fixes & Successes</div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Geometric fixes dynamically applied during compilation
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {stats?.repairStages && stats.repairStages.length > 0 ? (
+                  stats.repairStages.map((s, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.6rem 0.8rem',
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {s.stage}
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                          Automated algorithm correction
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--accent2)', fontFamily: 'JetBrains Mono' }}>
+                          {s.count}
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--success)' }}>
+                          Passed: {s.passed}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                    No automated repairs applied yet. Algorithms trigger dynamically based on geometric error conditions.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Closure Error Distribution Card */}
+            <div className="card">
+              <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
+                <div className="card-title">📐 Unclosed Deeds - Distance Distribution</div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Closure vector errors for failed/needs-review traverses
+                </span>
+              </div>
+
+              {stats?.errorDistribution ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {[
+                    { label: '≤ 1.0 ft (Near Closed / High Fixability)', value: stats.errorDistribution.nearClosed, color: 'var(--accent2)', bucket: 'nearClosed', pct: stats.failCount > 0 ? (stats.errorDistribution.nearClosed / stats.failCount) * 100 : 0 },
+                    { label: '1.0 to 10.0 ft (Minor Surveyor Error)', value: stats.errorDistribution.minorError, color: 'var(--warning)', bucket: 'minorError', pct: stats.failCount > 0 ? (stats.errorDistribution.minorError / stats.failCount) * 100 : 0 },
+                    { label: '10.0 to 100.0 ft (Moderate Traverse Gap)', value: stats.errorDistribution.moderateError, color: '#f5a623', bucket: 'moderateError', pct: stats.failCount > 0 ? (stats.errorDistribution.moderateError / stats.failCount) * 100 : 0 },
+                    { label: '> 100.0 ft (Major Boundary Misread)', value: stats.errorDistribution.majorError, color: '#ff4d6d', bucket: 'majorError', pct: stats.failCount > 0 ? (stats.errorDistribution.majorError / stats.failCount) * 100 : 0 },
+                  ].map((item, idx) => (
+                    <div key={idx}
+                      onClick={() => item.value > 0 ? openDrawer(item.bucket) : undefined}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', cursor: item.value > 0 ? 'pointer' : 'default' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                        <span style={{ color: drawerOpen && activeBucket === item.bucket ? item.color : 'var(--text-secondary)', transition: 'color 0.15s' }}>
+                          {item.label} {item.value > 0 && <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>→ click to expand</span>}
+                        </span>
+                        <span style={{ fontWeight: 600, fontFamily: 'JetBrains Mono', color: item.color }}>
+                          {item.value} deeds ({item.pct.toFixed(0)}%)
+                        </span>
+                      </div>
+                      <div style={{ height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', overflow: 'hidden', border: drawerOpen && activeBucket === item.bucket ? `1px solid ${item.color}66` : '1px solid transparent', transition: 'border-color 0.2s' }}>
+                        <div style={{
+                          height: '100%', borderRadius: '3px', background: item.color,
+                          width: `${item.pct}%`, transition: 'width 0.4s ease'
+                        }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                  No error distribution available.
+                </div>
+              )}
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* ── Failed Deed Drill-Down Drawer ─────────────────────────────────── */}
+        {drawerOpen && (() => {
+          const bucketLabels = {
+            null:          'All Unclosed Deeds',
+            nearClosed:    '≤ 1.0 ft — Near Closed',
+            minorError:    '1–10 ft — Minor Error',
+            moderateError: '10–100 ft — Moderate Error',
+            majorError:    '> 100 ft — Major Misread',
+          };
+          const label = bucketLabels[activeBucket] ?? 'All Unclosed Deeds';
+
+          // Sort
+          const sorted = [...failedDeeds].sort((a, b) => {
+            const av = a[sortField] ?? '';
+            const bv = b[sortField] ?? '';
+            if (typeof av === 'number') return sortDir === 'desc' ? bv - av : av - bv;
+            return sortDir === 'desc' ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
+          });
+
+          const toggleSort = (field) => {
+            if (sortField === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+            else { setSortField(field); setSortDir('desc'); }
+          };
+
+          const SortIcon = ({ field }) => sortField === field
+            ? <span style={{ marginLeft: 3, fontSize: '0.6rem' }}>{sortDir === 'desc' ? '▾' : '▴'}</span>
+            : <span style={{ marginLeft: 3, fontSize: '0.6rem', opacity: 0.3 }}>▾</span>;
+
+          return (
+            <div className="card" style={{ borderColor: 'rgba(255,77,109,0.35)', animation: 'slideDown 0.18s ease' }}>
+              <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span style={{ fontSize: '1rem' }}>⚠</span>
+                  <div className="card-title">{label}</div>
+                  {failedLoading
+                    ? <span style={{ fontSize: '0.72rem', color: 'var(--accent)' }}>Loading…</span>
+                    : <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sorted.length} deed{sorted.length !== 1 ? 's' : ''}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => fetchFailedDeeds(activeBucket)} style={{ fontSize: '0.72rem' }}>↻</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setDrawerOpen(false); setActiveBucket(null); }} style={{ fontSize: '0.72rem' }}>✕ Close</button>
+                </div>
+              </div>
+
+              {sorted.length === 0 && !failedLoading ? (
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  No unclosed deeds in this range. 🎉
+                </div>
+              ) : (
+                <div className="data-table-wrap" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th onClick={() => toggleSort('fileName')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          File <SortIcon field="fileName" />
+                        </th>
+                        <th onClick={() => toggleSort('status')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Status <SortIcon field="status" />
+                        </th>
+                        <th onClick={() => toggleSort('linearError')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Linear Error (ft) <SortIcon field="linearError" />
+                        </th>
+                        <th onClick={() => toggleSort('geoCallCount')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Segments <SortIcon field="geoCallCount" />
+                        </th>
+                        <th onClick={() => toggleSort('repairStageUsed')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Last Stage <SortIcon field="repairStageUsed" />
+                        </th>
+                        <th onClick={() => toggleSort('timestamp')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Last Attempt <SortIcon field="timestamp" />
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map((d, i) => {
+                        const errColor = d.linearError <= 1 ? 'var(--success)'
+                          : d.linearError <= 10 ? 'var(--warning)'
+                          : d.linearError <= 100 ? '#f5a623'
+                          : 'var(--danger)';
+                        const isActive = selectedDeed?.fileName === d.fileName;
+                        return (
+                          <tr key={i}
+                            onClick={() => fetchDeedDetail(d.fileName)}
+                            style={{ cursor: 'pointer', background: isActive ? 'rgba(61,127,255,0.12)' : undefined, outline: isActive ? '1px solid rgba(61,127,255,0.4)' : undefined }}
+                          >
+                            <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.78rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.fileName}>
+                              {d.fileName}
+                            </td>
+                            <td>
+                              <span style={{
+                                fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: '99px',
+                                background: d.status === 'FAIL' ? 'rgba(255,77,109,0.12)' : 'rgba(220,50,50,0.1)',
+                                border: d.status === 'FAIL' ? '1px solid rgba(255,77,109,0.4)' : '1px solid rgba(220,50,50,0.3)',
+                                color: d.status === 'FAIL' ? '#ff4d6d' : '#c95050',
+                              }}>{d.status}</span>
+                            </td>
+                            <td style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: errColor }}>
+                              {d.linearError != null ? d.linearError.toFixed(3) : '—'}
+                            </td>
+                            <td style={{ color: 'var(--text-muted)', textAlign: 'center' }}>
+                              {d.geoCallCount ?? '—'}
+                            </td>
+                            <td style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.repairStageUsed ?? ''}>
+                              {d.repairStageUsed || '—'}
+                            </td>
+                            <td style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace' }}>
+                              {d.timestamp?.replace('T', ' ').slice(0, 16) || '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ── System Details & Quick Database Actions ─────────────────────────── */}
+        <div className="card" style={{ marginTop: '0.5rem' }}>
+          <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1.25rem' }}>
+            <div className="card-title">💾 Database Storage & Administrative Control</div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Success metrics grouped by geometric legal description style
+              Manage the SQLite backing engine and cached diagnostics logs
             </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '0.25rem 0' }}>
-            {stats?.classifications && stats.classifications.length > 0 ? (
-              stats.classifications.map((c, idx) => {
-                const totalClass = c.count || 1;
-                const cPassRate = ((c.passed / totalClass) * 100);
-                const cFailRate = ((c.failed / totalClass) * 100);
-                const cMeanderRate = ((c.meanders / totalClass) * 100);
-                const cErrorRate = ((c.errors / totalClass) * 100);
-
-                // Helper to format class labels prettily
-                const displayLabel = {
-                  METES_BOUNDS: 'Metes & Bounds (Standard)',
-                  HYBRID: 'Hybrid (PLSS + Metes)',
-                  LOT_BLOCK: 'Lot & Block (Subdivision)',
-                  UNKNOWN: 'Unclassified / Other'
-                }[c.class] || c.class;
-
-                const statusColor = {
-                  METES_BOUNDS: 'var(--accent)',
-                  HYBRID: 'var(--success)',
-                  LOT_BLOCK: '#c97a00',
-                  UNKNOWN: 'var(--text-muted)'
-                }[c.class] || 'var(--text-muted)';
-
-                return (
-                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: statusColor }} />
-                        {displayLabel}
-                      </span>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono' }}>
-                        <strong style={{ color: 'var(--text-primary)' }}>{c.count}</strong> deeds ({cPassRate.toFixed(0)}% pass)
-                      </span>
-                    </div>
-
-                    {/* Stacked Percentage bar */}
-                    <div style={{
-                      height: '14px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '99px',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      border: '1px solid var(--border)'
-                    }}>
-                      {c.passed > 0 && (
-                        <div 
-                          title={`Passed: ${c.passed} (${cPassRate.toFixed(1)}%)`}
-                          style={{ width: `${cPassRate}%`, background: 'var(--success)', height: '100%', transition: 'width 0.5s ease' }} 
-                        />
-                      )}
-                      {c.failed > 0 && (
-                        <div 
-                          title={`Failed: ${c.failed} (${cFailRate.toFixed(1)}%)`}
-                          style={{ width: `${cFailRate}%`, background: '#ff4d6d', height: '100%', transition: 'width 0.5s ease' }} 
-                        />
-                      )}
-                      {c.meanders > 0 && (
-                        <div 
-                          title={`Waterways: ${c.meanders} (${cMeanderRate.toFixed(1)}%)`}
-                          style={{ width: `${cMeanderRate}%`, background: 'var(--warning)', height: '100%', transition: 'width 0.5s ease' }} 
-                        />
-                      )}
-                      {c.errors > 0 && (
-                        <div 
-                          title={`Errors: ${c.errors} (${cErrorRate.toFixed(1)}%)`}
-                          style={{ width: `${cErrorRate}%`, background: '#4a5a7a', height: '100%', transition: 'width 0.5s ease' }} 
-                        />
-                      )}
-                    </div>
-
-                    {/* Miniature stats legend */}
-                    <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.68rem', color: 'var(--text-muted)', flexWrap: 'wrap', paddingLeft: '0.75rem' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                        <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--success)' }} /> PASS: {c.passed}
-                      </span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                        <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#ff4d6d' }} /> FAIL: {c.failed}
-                      </span>
-                      {c.meanders > 0 && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--warning)' }} /> MEANDER: {c.meanders}
-                        </span>
-                      )}
-                      {c.errors > 0 && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#4a5a7a' }} /> ERROR: {c.errors}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.82rem' }}>
-                No classification breakdown available. Run folder scans to register deed types.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* Metadata Row */}
+            {stats && (
+              <div style={{ 
+                display: 'flex', gap: '2rem', flexWrap: 'wrap', 
+                fontSize: '0.78rem', color: 'var(--text-muted)',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)', 
+                borderRadius: 'var(--radius-md)', padding: '1rem' 
+              }}>
+                <span>💾 DB Size: <strong style={{ color: 'var(--text-primary)' }}>{stats.fileSizeMb} MB</strong></span>
+                <span>📅 Oldest Log: <strong style={{ color: 'var(--text-primary)' }}>{stats.oldestTimestamp || '—'}</strong></span>
+                <span>📅 Newest Log: <strong style={{ color: 'var(--text-primary)' }}>{stats.newestTimestamp || '—'}</strong></span>
+                <span style={{ flex: 1, minWidth: '250px' }}>📂 Absolute Path: <code style={{ fontSize: '0.7rem', color: 'var(--accent)' }}>{stats.dbPath}</code></span>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Right Column: Heuristic corrections applied & Closure distribution */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          
-          {/* Repair Heuristics Counter */}
-          <div className="card">
-            <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
-              <div className="card-title">🔧 Active Heuristic Fixes & Successes</div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Geometric fixes dynamically applied during compilation
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {stats?.repairStages && stats.repairStages.length > 0 ? (
-                stats.repairStages.map((s, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.6rem 0.8rem',
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)'
-                  }}>
-                    <div>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {s.stage}
-                      </div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                        Automated algorithm correction
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--accent2)', fontFamily: 'JetBrains Mono' }}>
-                        {s.count}
-                      </div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--success)' }}>
-                        Passed: {s.passed}
-                      </div>
-                    </div>
-                  </div>
-                ))
+            {/* Warning buttons */}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Cache Operations:</span>
+              
+              {confirmAction === null ? (
+                <>
+                  <button 
+                    className="btn btn-sm btn-ghost" 
+                    disabled={dbLoading}
+                    onClick={() => setConfirmAction('clear-failed')}
+                    style={{ border: '1px solid rgba(245, 166, 35, 0.3)', color: 'var(--warning)', background: 'rgba(245, 166, 35, 0.05)' }}
+                  >
+                    ♻️ Clear Failures & Retry
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-ghost" 
+                    disabled={dbLoading}
+                    onClick={() => setConfirmAction('clear-all')}
+                    style={{ border: '1px solid rgba(255, 77, 109, 0.3)', color: 'var(--danger)', background: 'rgba(255, 77, 109, 0.05)' }}
+                  >
+                    🗑️ Purge Diagnostics Database
+                  </button>
+                </>
               ) : (
-                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.82rem' }}>
-                  No automated repairs applied yet. Algorithms trigger dynamically based on geometric error conditions.
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(255, 77, 109, 0.1)', border: '1px solid rgba(255, 77, 109, 0.3)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.8rem' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                    ⚠️ Are you absolutely sure? {confirmAction === 'clear-all' ? 'This deletes ALL logs and batches!' : 'This clears failed cache.'}
+                  </span>
+                  <button 
+                    className="btn btn-primary btn-sm" 
+                    onClick={() => runDbAction(confirmAction === 'clear-all' ? 'clear-all' : 'clear-failed', confirmAction === 'clear-all' ? 'Clear All' : 'Clear Failed')}
+                    style={{ background: 'var(--danger)', padding: '0.2rem 0.6rem', fontSize: '0.72rem' }}
+                  >
+                    Yes, Proceed
+                  </button>
+                  <button 
+                    className="btn btn-ghost btn-sm" 
+                    onClick={() => setConfirmAction(null)}
+                    style={{ padding: '0.2rem 0.6rem', fontSize: '0.72rem' }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               )}
             </div>
           </div>
-
-          {/* Closure Error Distribution Card */}
-          <div className="card">
-            <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
-              <div className="card-title">📐 Unclosed Deeds - Distance Distribution</div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Closure vector errors for failed/needs-review traverses
-              </span>
-            </div>
-
-            {stats?.errorDistribution ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {[
-                  { label: '≤ 1.0 ft (Near Closed / High Fixability)', value: stats.errorDistribution.nearClosed, color: 'var(--accent2)', bucket: 'nearClosed', pct: stats.failCount > 0 ? (stats.errorDistribution.nearClosed / stats.failCount) * 100 : 0 },
-                  { label: '1.0 to 10.0 ft (Minor Surveyor Error)', value: stats.errorDistribution.minorError, color: 'var(--warning)', bucket: 'minorError', pct: stats.failCount > 0 ? (stats.errorDistribution.minorError / stats.failCount) * 100 : 0 },
-                  { label: '10.0 to 100.0 ft (Moderate Traverse Gap)', value: stats.errorDistribution.moderateError, color: '#f5a623', bucket: 'moderateError', pct: stats.failCount > 0 ? (stats.errorDistribution.moderateError / stats.failCount) * 100 : 0 },
-                  { label: '> 100.0 ft (Major Boundary Misread)', value: stats.errorDistribution.majorError, color: '#ff4d6d', bucket: 'majorError', pct: stats.failCount > 0 ? (stats.errorDistribution.majorError / stats.failCount) * 100 : 0 },
-                ].map((item, idx) => (
-                  <div key={idx}
-                    onClick={() => item.value > 0 ? openDrawer(item.bucket) : undefined}
-                    style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', cursor: item.value > 0 ? 'pointer' : 'default' }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                      <span style={{ color: drawerOpen && activeBucket === item.bucket ? item.color : 'var(--text-secondary)', transition: 'color 0.15s' }}>
-                        {item.label} {item.value > 0 && <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>→ click to expand</span>}
-                      </span>
-                      <span style={{ fontWeight: 600, fontFamily: 'JetBrains Mono', color: item.color }}>
-                        {item.value} deeds ({item.pct.toFixed(0)}%)
-                      </span>
-                    </div>
-                    <div style={{ height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', overflow: 'hidden', border: drawerOpen && activeBucket === item.bucket ? `1px solid ${item.color}66` : '1px solid transparent', transition: 'border-color 0.2s' }}>
-                      <div style={{
-                        height: '100%', borderRadius: '3px', background: item.color,
-                        width: `${item.pct}%`, transition: 'width 0.4s ease'
-                      }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.82rem' }}>
-                No error distribution available.
-              </div>
-            )}
-          </div>
-
         </div>
-
-      </div>
-
-      {/* ── Failed Deed Drill-Down Drawer ─────────────────────────────────── */}
-      {drawerOpen && (() => {
-        const bucketLabels = {
-          null:          'All Unclosed Deeds',
-          nearClosed:    '≤ 1.0 ft — Near Closed',
-          minorError:    '1–10 ft — Minor Error',
-          moderateError: '10–100 ft — Moderate Error',
-          majorError:    '> 100 ft — Major Misread',
-        };
-        const label = bucketLabels[activeBucket] ?? 'All Unclosed Deeds';
-
-        // Sort
-        const sorted = [...failedDeeds].sort((a, b) => {
-          const av = a[sortField] ?? '';
-          const bv = b[sortField] ?? '';
-          if (typeof av === 'number') return sortDir === 'desc' ? bv - av : av - bv;
-          return sortDir === 'desc' ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
-        });
-
-        const toggleSort = (field) => {
-          if (sortField === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
-          else { setSortField(field); setSortDir('desc'); }
-        };
-
-        const SortIcon = ({ field }) => sortField === field
-          ? <span style={{ marginLeft: 3, fontSize: '0.6rem' }}>{sortDir === 'desc' ? '▾' : '▴'}</span>
-          : <span style={{ marginLeft: 3, fontSize: '0.6rem', opacity: 0.3 }}>▾</span>;
-
-        return (
-          <div className="card" style={{ borderColor: 'rgba(255,77,109,0.35)', animation: 'slideDown 0.18s ease' }}>
-            <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <span style={{ fontSize: '1rem' }}>⚠</span>
-                <div className="card-title">{label}</div>
-                {failedLoading
-                  ? <span style={{ fontSize: '0.72rem', color: 'var(--accent)' }}>Loading…</span>
-                  : <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sorted.length} deed{sorted.length !== 1 ? 's' : ''}</span>}
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => fetchFailedDeeds(activeBucket)} style={{ fontSize: '0.72rem' }}>↻</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setDrawerOpen(false); setActiveBucket(null); }} style={{ fontSize: '0.72rem' }}>✕ Close</button>
-              </div>
-            </div>
-
-            {sorted.length === 0 && !failedLoading ? (
-              <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                No unclosed deeds in this range. 🎉
-              </div>
-            ) : (
-              <div className="data-table-wrap" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th onClick={() => toggleSort('fileName')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                        File <SortIcon field="fileName" />
-                      </th>
-                      <th onClick={() => toggleSort('status')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                        Status <SortIcon field="status" />
-                      </th>
-                      <th onClick={() => toggleSort('linearError')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                        Linear Error (ft) <SortIcon field="linearError" />
-                      </th>
-                      <th onClick={() => toggleSort('geoCallCount')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                        Segments <SortIcon field="geoCallCount" />
-                      </th>
-                      <th onClick={() => toggleSort('repairStageUsed')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                        Last Stage <SortIcon field="repairStageUsed" />
-                      </th>
-                      <th onClick={() => toggleSort('timestamp')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                        Last Attempt <SortIcon field="timestamp" />
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sorted.map((d, i) => {
-                      const errColor = d.linearError <= 1 ? 'var(--success)'
-                        : d.linearError <= 10 ? 'var(--warning)'
-                        : d.linearError <= 100 ? '#f5a623'
-                        : 'var(--danger)';
-                      const isActive = selectedDeed?.fileName === d.fileName;
-                      return (
-                        <tr key={i}
-                          onClick={() => fetchDeedDetail(d.fileName)}
-                          style={{ cursor: 'pointer', background: isActive ? 'rgba(61,127,255,0.12)' : undefined, outline: isActive ? '1px solid rgba(61,127,255,0.4)' : undefined }}
-                        >
-                          <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.78rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.fileName}>
-                            {d.fileName}
-                          </td>
-                          <td>
-                            <span style={{
-                              fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: '99px',
-                              background: d.status === 'FAIL' ? 'rgba(255,77,109,0.12)' : 'rgba(220,50,50,0.1)',
-                              border: d.status === 'FAIL' ? '1px solid rgba(255,77,109,0.4)' : '1px solid rgba(220,50,50,0.3)',
-                              color: d.status === 'FAIL' ? '#ff4d6d' : '#c95050',
-                            }}>{d.status}</span>
-                          </td>
-                          <td style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: errColor }}>
-                            {d.linearError != null ? d.linearError.toFixed(3) : '—'}
-                          </td>
-                          <td style={{ color: 'var(--text-muted)', textAlign: 'center' }}>
-                            {d.geoCallCount ?? '—'}
-                          </td>
-                          <td style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.repairStageUsed ?? ''}>
-                            {d.repairStageUsed || '—'}
-                          </td>
-                          <td style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace' }}>
-                            {d.timestamp?.replace('T', ' ').slice(0, 16) || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+        </>
+      ) : (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(20, 30, 53, 0.4) 0%, rgba(9, 14, 26, 0.6) 100%)',
+          border: '1px solid rgba(0, 212, 168, 0.2)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '4rem 2rem',
+          textAlign: 'center',
+          backdropFilter: 'blur(12px)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '1.25rem',
+          marginTop: '1rem'
+        }}>
+          <div style={{ fontSize: '3rem' }}>📦</div>
+          <div>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: '#fff' }}>No Batch Runs Recorded Yet</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0, maxWidth: '480px' }}>
+              Your dashboard telemetry is compiled from processed batch deeds and folder scans. Run your first batch extraction to see real-time statistics here.
+            </p>
           </div>
-        );
-      })()}
-
-      {/* ── System Details & Quick Database Actions ─────────────────────────── */}
-      <div className="card" style={{ marginTop: '0.5rem' }}>
-        <div className="card-header" style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1.25rem' }}>
-          <div className="card-title">💾 Database Storage & Administrative Control</div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Manage the SQLite backing engine and cached diagnostics logs
-          </span>
+          <button 
+            className="btn btn-primary" 
+            onClick={() => {
+              const batchTabBtn = document.querySelector('button[id="tab-batch"]');
+              if (batchTabBtn) batchTabBtn.click();
+            }}
+            style={{ padding: '0.65rem 1.5rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            🚀 Launch First Batch Scan
+          </button>
         </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Metadata Row */}
-          {stats && (
-            <div style={{ 
-              display: 'flex', gap: '2rem', flexWrap: 'wrap', 
-              fontSize: '0.78rem', color: 'var(--text-muted)',
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)', 
-              borderRadius: 'var(--radius-md)', padding: '1rem' 
-            }}>
-              <span>💾 DB Size: <strong style={{ color: 'var(--text-primary)' }}>{stats.fileSizeMb} MB</strong></span>
-              <span>📅 Oldest Log: <strong style={{ color: 'var(--text-primary)' }}>{stats.oldestTimestamp || '—'}</strong></span>
-              <span>📅 Newest Log: <strong style={{ color: 'var(--text-primary)' }}>{stats.newestTimestamp || '—'}</strong></span>
-              <span style={{ flex: 1, minWidth: '250px' }}>📂 Absolute Path: <code style={{ fontSize: '0.7rem', color: 'var(--accent)' }}>{stats.dbPath}</code></span>
-            </div>
-          )}
-
-          {/* Warning buttons */}
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Cache Operations:</span>
-            
-            {confirmAction === null ? (
-              <>
-                <button 
-                  className="btn btn-sm btn-ghost" 
-                  disabled={dbLoading}
-                  onClick={() => setConfirmAction('clear-failed')}
-                  style={{ border: '1px solid rgba(245, 166, 35, 0.3)', color: 'var(--warning)', background: 'rgba(245, 166, 35, 0.05)' }}
-                >
-                  ♻️ Clear Failures & Retry
-                </button>
-                <button 
-                  className="btn btn-sm btn-ghost" 
-                  disabled={dbLoading}
-                  onClick={() => setConfirmAction('clear-all')}
-                  style={{ border: '1px solid rgba(255, 77, 109, 0.3)', color: 'var(--danger)', background: 'rgba(255, 77, 109, 0.05)' }}
-                >
-                  🗑️ Purge Diagnostics Database
-                </button>
-              </>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(255, 77, 109, 0.1)', border: '1px solid rgba(255, 77, 109, 0.3)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.8rem' }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                  ⚠️ Are you absolutely sure? {confirmAction === 'clear-all' ? 'This deletes ALL logs and batches!' : 'This clears failed cache.'}
-                </span>
-                <button 
-                  className="btn btn-primary btn-sm" 
-                  onClick={() => runDbAction(confirmAction === 'clear-all' ? 'clear-all' : 'clear-failed', confirmAction === 'clear-all' ? 'Clear All' : 'Clear Failed')}
-                  style={{ background: 'var(--danger)', padding: '0.2rem 0.6rem', fontSize: '0.72rem' }}
-                >
-                  Yes, Proceed
-                </button>
-                <button 
-                  className="btn btn-ghost btn-sm" 
-                  onClick={() => setConfirmAction(null)}
-                  style={{ padding: '0.2rem 0.6rem', fontSize: '0.72rem' }}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
+      )}
     </div>
 
       {/* ── Deed Preview Slide-In Panel ─────────────────────────────────────── */}
