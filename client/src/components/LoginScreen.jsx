@@ -24,6 +24,7 @@ export default function LoginScreen({ onAuthSuccess }) {
     return localStorage.getItem('boundaryiq_google_client_id') || '';
   });
   const [clientIdLoaded, setClientIdLoaded] = useState(!!localStorage.getItem('boundaryiq_google_client_id'));
+  const [gsiInitialized, setGsiInitialized] = useState(false);
 
   const [devTab, setDevTab] = useState(import.meta.env.PROD ? 'live' : 'sim'); // 'sim' | 'live'
   const [inputClientId, setInputClientId] = useState(googleClientId);
@@ -200,7 +201,10 @@ export default function LoginScreen({ onAuthSuccess }) {
     /* global google */
     if (typeof google === 'undefined' || !googleClientId || !clientIdLoaded) return;
     // Avoid double-init (triggers warning & breaks button render)
-    if (window.__gsiInitializedClientId === googleClientId) return;
+    if (window.__gsiInitializedClientId === googleClientId) {
+      setGsiInitialized(true);
+      return;
+    }
     window.__gsiInitializedClientId = googleClientId;
     try {
       google.accounts.id.initialize({
@@ -208,6 +212,7 @@ export default function LoginScreen({ onAuthSuccess }) {
         callback: handleGoogleCredentialResponse,
         auto_select: false,
       });
+      setGsiInitialized(true);
 
       // One Tap prompt
       google.accounts.id.prompt();
@@ -218,7 +223,7 @@ export default function LoginScreen({ onAuthSuccess }) {
 
   // Callback ref to render Google button whenever the container element mounts in DOM
   const renderGoogleButton = (el) => {
-    if (!el || typeof google === 'undefined' || !googleClientId || !clientIdLoaded) return;
+    if (!el || typeof google === 'undefined' || !googleClientId || !clientIdLoaded || !gsiInitialized) return;
     try {
       google.accounts.id.renderButton(el, {
         theme: 'filled_black',
