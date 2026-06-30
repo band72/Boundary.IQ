@@ -8,12 +8,13 @@
  *   EMAIL_FROM=noreply@yourdomain.com
  *   EMAIL_FROM_NAME=Boundary.IQ
  */
+import { RESEND_API_KEY, EMAIL_FROM, EMAIL_FROM_NAME, FRONTEND_URL } from '../config.js';
 
-const RESEND_KEY  = process.env.RESEND_API_KEY;
-const FROM_ADDR   = process.env.EMAIL_FROM || 'noreply@boundary.iq';
-const FROM_NAME   = process.env.EMAIL_FROM_NAME || 'Boundary.IQ';
+const RESEND_KEY  = RESEND_API_KEY;
+const FROM_ADDR   = EMAIL_FROM || 'noreply@boundary.iq';
+const FROM_NAME   = EMAIL_FROM_NAME || 'Boundary.IQ';
 const FROM        = `${FROM_NAME} <${FROM_ADDR}>`;
-const APP_URL     = process.env.FRONTEND_URL || 'http://localhost:5174';
+const APP_URL     = FRONTEND_URL || 'http://localhost:5174';
 const MOCK_MODE   = !RESEND_KEY;
 
 if (MOCK_MODE) {

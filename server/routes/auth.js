@@ -107,13 +107,21 @@ router.post('/register', asyncHandler(async (req, res) => {
       expiresAt: Date.now() + 15 * 60 * 1000 // 15 minutes
     });
 
-    log.info({ email: trimmedUsername }, `Generated verification code for pending registration`);
-    await sendVerificationEmail({ to: trimmedUsername, code });
+    log.info({ email: trimmedUsername, code }, `Generated verification code for pending registration`);
+    let emailSent = true;
+    try {
+      await sendVerificationEmail({ to: trimmedUsername, code });
+    } catch (err) {
+      log.error({ err, email: trimmedUsername }, 'Failed to send verification email');
+      emailSent = false;
+    }
 
     return res.json({
       verificationRequired: true,
       email: trimmedUsername,
-      message: 'A 6-digit verification code has been sent to your email.'
+      message: emailSent
+        ? 'A 6-digit verification code has been sent to your email.'
+        : 'Registration pending. Note: Email service encountered an issue sending the code (code logged to server logs).'
     });
   }
 
