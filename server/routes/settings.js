@@ -260,12 +260,13 @@ router.get('/system', asyncHandler(async (req, res) => {
     downloadsDir:       process.env.BOUNDARY_DOWNLOADS_DIR    || '',
     wordDocTrainingDir: process.env.WORD_DOC_TRAINING_DIR     || '',
     ocrEnabled:        process.env.OCR_ENABLED === 'true',
+    licensePrivateKey:  process.env.LICENSE_PRIVATE_KEY       || '',
   });
 }));
 
 // ── POST /api/settings/system — update all path settings (admin only) ─────────
 router.post('/system', requireRole(['admin']), asyncHandler(async (req, res) => {
-  const { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled } = req.body;
+  const { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled, licensePrivateKey } = req.body;
 
   // 1. Validate dbPath stays within safe boundaries (prevent path traversal via settings)
   if (dbPath) {
@@ -296,14 +297,15 @@ router.post('/system', requireRole(['admin']), asyncHandler(async (req, res) => 
   if (downloadsDir !== undefined)       process.env.BOUNDARY_DOWNLOADS_DIR    = downloadsDir;
   if (wordDocTrainingDir !== undefined) process.env.WORD_DOC_TRAINING_DIR     = wordDocTrainingDir;
   if (ocrEnabled !== undefined)         process.env.OCR_ENABLED               = ocrEnabled ? 'true' : 'false';
+  if (licensePrivateKey !== undefined)  process.env.LICENSE_PRIVATE_KEY       = licensePrivateKey;
 
   // 5. Persist to .env file for server restarts
-  saveSystemSettingsToEnv(dbPath, scanRoots, undefined, undefined, undefined, undefined, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled);
+  saveSystemSettingsToEnv(dbPath, scanRoots, undefined, undefined, undefined, undefined, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled, undefined, undefined, licensePrivateKey);
 
   dbSvc.logAudit({
     actorId: req.user.id,
     action: 'admin_change_system_settings',
-    detail: { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled },
+    detail: { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled, licensePrivateKey: licensePrivateKey ? '***' : '' },
     ipAddress: getIp(req)
   });
 
@@ -316,13 +318,14 @@ router.post('/system', requireRole(['admin']), asyncHandler(async (req, res) => 
     downloadsDir:       process.env.BOUNDARY_DOWNLOADS_DIR || '',
     wordDocTrainingDir: process.env.WORD_DOC_TRAINING_DIR  || '',
     ocrEnabled:        process.env.OCR_ENABLED === 'true',
+    licensePrivateKey:  process.env.LICENSE_PRIVATE_KEY   || '',
   });
 }));
 
 // ── Helper: persist system settings to .env file (atomic write) ───────────────
 // Reads existing .env, merges only the supplied keys, and atomically renames.
 // Comments and unrelated keys are preserved.
-function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir, newOcrEnabled, newGeminiApiKey, newMapPanSensitivity) {
+function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel, newAllowFallback, newEnforceIntersection, newOcrCacheDir, newDownloadsDir, newWordDocTrainingDir, newOcrEnabled, newGeminiApiKey, newMapPanSensitivity, newLicensePrivateKey) {
   const envPath    = path.resolve(process.cwd(), '.env');
   const envTmpPath = envPath + '.tmp';
 
@@ -355,6 +358,7 @@ function saveSystemSettingsToEnv(newDbPath, newScanRoots, newProvider, newModel,
   if (newOcrEnabled       !== undefined) vars['OCR_ENABLED']              = newOcrEnabled ? 'true' : 'false';
   if (newGeminiApiKey     !== undefined) vars['GEMINI_API_KEY']           = newGeminiApiKey;
   if (newMapPanSensitivity !== undefined) vars['MAP_PAN_SENSITIVITY']      = newMapPanSensitivity.toString();
+  if (newLicensePrivateKey !== undefined) vars['LICENSE_PRIVATE_KEY']     = newLicensePrivateKey;
 
   const newLines = ['# Boundary.IQ — Environment Variables'];
   for (const [key, val] of Object.entries(vars)) {

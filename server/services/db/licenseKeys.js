@@ -9,6 +9,8 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { getDb, now } from './core.js';
 
 const VALID_PLANS = ['basic', 'pro', 'enterprise'];
@@ -125,3 +127,114 @@ export function listAllLicenseKeys() {
     ORDER BY CreatedAt DESC
   `).all();
 }
+
+// ── Private Key Env Persistence ───────────────────────────────────────────────
+
+function saveEnvVar(key, val) {
+  const paths = [
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), 'server', '.env'),
+  ];
+  for (const envPath of paths) {
+    if (!fs.existsSync(envPath)) continue;
+    let envContent = '';
+    try {
+      envContent = fs.readFileSync(envPath, 'utf8');
+    } catch (e) {
+      continue;
+    }
+    const lines = envContent.split(/\r?\n/);
+    const vars = {};
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx < 1) continue;
+      const k = trimmed.slice(0, eqIdx).trim();
+      const v = trimmed.slice(eqIdx + 1).trim();
+      vars[k] = v;
+    }
+    vars[key] = val;
+    const newLines = ['# Boundary.IQ — Environment Variables'];
+    for (const [k, v] of Object.entries(vars)) {
+      newLines.push(`${k}=${v}`);
+    }
+    const envTmpPath = envPath + '.tmp';
+    try {
+      fs.writeFileSync(envTmpPath, newLines.join('\n') + '\n', 'utf8');
+      fs.renameSync(envTmpPath, envPath);
+    } catch (e) {
+      // Ignored
+    }
+  }
+}
+
+export function getOrCreateLicensePrivateKey() {
+  let keyBase64 = process.env.LICENSE_PRIVATE_KEY;
+  if (!keyBase64) {
+    // Generate recommended key pair (RSA 2048)
+    const { privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+    });
+    keyBase64 = Buffer.from(privateKey).toString('base64');
+    process.env.LICENSE_PRIVATE_KEY = keyBase64;
+    saveEnvVar('LICENSE_PRIVATE_KEY', keyBase64);
+  }
+  return Buffer.from(keyBase64, 'base64').toString('utf8');
+}
+
+// ── User Specific Key Generation & Retrieval ──────────────────────────────────
+
+/**
+ * Create a signed license key for a specific user and plan.
+ */
+export function createSignedLicenseKeyForUser({ plan, userId, createdByUserId = null } = {}) {
+  if (!VALID_PLANS.includes(plan)) throw new Error(`Invalid plan: ${plan}`);
+
+  const privateKeyPem = getOrCreateLicensePrivateKey();
+  const payload = JSON.stringify({
+    plan,
+    userId,
+    createdAt: Date.now(),
+    nonce: crypto.randomBytes(8).toString('hex')
+  });
+
+  const signer = crypto.createSign('sha256');
+  signer.update(payload);
+  signer.end();
+  const signature = signer.sign(privateKeyPem, 'base64url');
+
+  const payloadB64 = Buffer.from(payload).toString('base64url');
+  const rawKey = `BIQ-${plan.toUpperCase()}-${payloadB64}.${signature}`;
+  const keyHash = hashKey(rawKey);
+
+  getDb().prepare(`
+    INSERT INTO LicenseKeys (KeyHash, Plan, CreatedByUserId, RedeemedByUserId, RedeemedAt, Note, CreatedAt, RawKey)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    keyHash,
+    plan,
+    createdByUserId,
+    userId,
+    now(),
+    `Generated for user ID ${userId} (${plan})`,
+    now(),
+    rawKey
+  );
+
+  return { rawKey, plan };
+}
+
+/**
+ * Retrieve the active license key for a specific user.
+ */
+export function getActiveLicenseKeyForUser(userId) {
+  return getDb().prepare(`
+    SELECT RawKey, Plan, RedeemedAt, ExpiresAt
+    FROM LicenseKeys
+    WHERE RedeemedByUserId = ?
+    ORDER BY rowid DESC LIMIT 1
+  `).get(userId);
+}
+

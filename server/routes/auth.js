@@ -28,6 +28,7 @@ import {
 } from '../services/db/pendingRegistrations.js';
 import {
   createLicenseKey, redeemLicenseKey, getLicenseKeysForUser, listAllLicenseKeys,
+  createSignedLicenseKeyForUser, getActiveLicenseKeyForUser,
 } from '../services/db/licenseKeys.js';
 
 const log = createChildLogger('auth');
@@ -339,6 +340,41 @@ router.post('/licenses/create', requireAuth, requireRole(['admin']), asyncHandle
 // ── GET /api/auth/licenses (admin) ───────────────────────────────────────────
 router.get('/licenses', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   return res.json({ licenses: listAllLicenseKeys() });
+}));
+
+// ── GET /api/auth/users/:id/license (admin) ──────────────────────────────────
+router.get('/users/:id/license', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
+  const userId = parseInt(req.params.id);
+  const license = getActiveLicenseKeyForUser(userId);
+  return res.json({ license: license || null });
+}));
+
+// ── POST /api/auth/users/:id/license/generate (admin) ─────────────────────────
+router.post('/users/:id/license/generate', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
+  const userId = parseInt(req.params.id);
+  const targetUser = getUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+  const plan = targetUser.plan;
+  if (plan === 'free') {
+    return res.status(400).json({ error: 'Cannot generate a license key for users on the Free plan. Please assign basic/pro/enterprise first.' });
+  }
+
+  const { rawKey } = createSignedLicenseKeyForUser({
+    plan,
+    userId,
+    createdByUserId: req.user.id
+  });
+
+  logAudit({
+    userId: req.user.id,
+    actorId: req.user.id,
+    action: 'admin_generate_user_license',
+    detail: { targetUserId: userId, plan },
+    ipAddress: getIp(req)
+  });
+
+  return res.json({ success: true, licenseKey: rawKey });
 }));
 
 // ── PUT /api/auth/me/password ─────────────────────────────────────────────────

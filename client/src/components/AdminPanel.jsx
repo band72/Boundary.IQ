@@ -17,6 +17,42 @@ function Flash({ msg, type }) {
   return <div style={{ padding:'0.6rem 1rem', borderRadius:'var(--radius-md)', marginBottom:'1rem', background: type==='error'?'rgba(255,70,70,.12)':'rgba(80,200,120,.12)', border:`1px solid ${type==='error'?'rgba(255,70,70,.3)':'rgba(80,200,120,.3)'}`, color: type==='error'?'#ff7070':'#50c878', fontSize:'0.81rem' }}>{msg}</div>;
 }
 
+function LicenseKeyDisplay({ licenseKey, flash }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(licenseKey);
+    setCopied(true);
+    flash('✓ Copied to clipboard!');
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+      <textarea
+        readOnly
+        value={licenseKey}
+        style={{
+          width: '100%',
+          padding: '0.55rem',
+          background: 'rgba(0,0,0,0.35)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-sm)',
+          color: '#fff',
+          fontFamily: 'monospace',
+          fontSize: '0.76rem',
+          height: '80px',
+          resize: 'none',
+          boxSizing: 'border-box',
+        }}
+        onClick={(e) => e.target.select()}
+      />
+      <button className="btn btn-ghost" onClick={handleCopy} style={{ alignSelf: 'flex-end', fontSize: '0.72rem', padding: '0.25rem 0.6rem' }}>
+        {copied ? '✓ Copied!' : '📋 Copy to Clipboard'}
+      </button>
+    </div>
+  );
+}
+
 function Modal({ open, title, body, onConfirm, onCancel, danger }) {
   if (!open) return null;
   return <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.65)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:3000 }}>
@@ -159,6 +195,63 @@ function UsersTab({ auth, flash, modal, setModal }) {
     finally { setModal(null); }
   };
 
+  const doShowLicense = async (userId, username) => {
+    try {
+      const res = await fetch(`${API}/auth/users/${userId}/license`, auth);
+      const data = await res.json();
+      if (res.ok) {
+        if (!data.license || !data.license.RawKey) {
+          flash(`No active license key found for user ${username}.`, 'warning');
+        } else {
+          setModal({
+            title: `License Key — ${username}`,
+            body: <LicenseKeyDisplay licenseKey={data.license.RawKey} flash={flash} />,
+            onConfirm: () => setModal(null),
+            onCancel: () => setModal(null),
+          });
+        }
+      } else {
+        flash(data.error || 'Failed to fetch license key', 'error');
+      }
+    } catch (e) {
+      flash(e.message, 'error');
+    }
+  };
+
+  const doGenerateLicense = async (userId, username, userPlan) => {
+    if (userPlan === 'free') {
+      flash('Cannot generate a license key for users on the Free plan. Please assign basic/pro/enterprise first.', 'error');
+      return;
+    }
+    setModal({
+      title: `Generate License Key`,
+      body: `Are you sure you want to generate and sign a new license key for ${username} (${userPlan})? This will associate it as their active license.`,
+      onConfirm: async () => {
+        setModal(null);
+        try {
+          const res = await fetch(`${API}/auth/users/${userId}/license/generate`, {
+            method: 'POST',
+            ...auth,
+          });
+          const data = await res.json();
+          if (res.ok && data.licenseKey) {
+            flash(`✓ License key generated successfully!`);
+            setModal({
+              title: `License Key Generated — ${username}`,
+              body: <LicenseKeyDisplay licenseKey={data.licenseKey} flash={flash} />,
+              onConfirm: () => setModal(null),
+              onCancel: () => setModal(null),
+            });
+          } else {
+            flash(data.error || 'Failed to generate license key', 'error');
+          }
+        } catch (e) {
+          flash(e.message, 'error');
+        }
+      }
+    });
+  };
+
   const exportCSV = () => {
     const rows = [['ID','Username','Role','Plan','LastLogin','DisplayName']];
     users.forEach(u => rows.push([u.id, u.username, u.role, u.plan, u.lastLogin||'', u.displayName||'']));
@@ -285,6 +378,16 @@ function UsersTab({ auth, flash, modal, setModal }) {
               <button title="Delete user" className="btn btn-ghost" style={{ fontSize:'0.65rem', padding:'2px 7px', color:'#ff7070' }}
                 onClick={()=>setModal({ title:'⚠️ Delete User', body:`Permanently delete "${u.username}"? This cannot be undone. All their data and sessions will be removed.`, danger:true, onConfirm:()=>doDelete(u.id) })}>
                 🗑️
+              </button>
+              {/* Show license key */}
+              <button title="Show active license key" className="btn btn-ghost" style={{ fontSize:'0.65rem', padding:'2px 7px' }}
+                onClick={()=>doShowLicense(u.id, u.username)}>
+                👁️
+              </button>
+              {/* Generate license key */}
+              <button title="Generate signed license key" className="btn btn-ghost" style={{ fontSize:'0.65rem', padding:'2px 7px', color:'var(--accent)' }}
+                onClick={()=>doGenerateLicense(u.id, u.username, u.plan)}>
+                🗝️
               </button>
             </div>
           </div>

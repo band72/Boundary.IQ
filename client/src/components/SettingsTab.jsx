@@ -57,6 +57,7 @@ export default function SettingsTab({
   const [systemOcrCacheDir, setSystemOcrCacheDir]             = useState('');
   const [systemDownloadsDir, setSystemDownloadsDir]           = useState('');
   const [systemWordDocTrainingDir, setSystemWordDocTrainingDir] = useState('');
+  const [systemLicensePrivateKey, setSystemLicensePrivateKey] = useState('');
   const [systemLoading, setSystemLoading] = useState(false);
   const [systemMsg, setSystemMsg] = useState('');
 
@@ -312,6 +313,7 @@ export default function SettingsTab({
         setSystemDownloadsDir(data.downloadsDir || '');
         setSystemWordDocTrainingDir(data.wordDocTrainingDir || '');
         setOcrEnabled(data.ocrEnabled ?? false);
+        setSystemLicensePrivateKey(data.licensePrivateKey || '');
       }
     } catch (e) {
       console.error('Failed to fetch system settings:', e);
@@ -334,6 +336,7 @@ export default function SettingsTab({
           downloadsDir: systemDownloadsDir,
           wordDocTrainingDir: systemWordDocTrainingDir,
           ocrEnabled: ocrEnabled,
+          licensePrivateKey: systemLicensePrivateKey,
         }),
       });
       const data = await res.json();
@@ -1843,6 +1846,32 @@ export default function SettingsTab({
               />
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                 If LibreOffice fails to convert a <code style={{ fontSize: '0.65rem' }}>.docx</code> file, the server looks for a pre-extracted <code style={{ fontSize: '0.65rem' }}>_extracted/&lt;filename&gt;.txt</code> here. Leave blank to make LibreOffice failure a hard error.
+              </span>
+            </div>
+
+            {/* License Private Key Input */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🔑 Cryptographic License Private Key (PEM format, Base64-encoded)
+              </label>
+              <textarea
+                value={systemLicensePrivateKey}
+                onChange={e => setSystemLicensePrivateKey(e.target.value)}
+                placeholder="Leave blank to auto-generate a recommended secure key pair on next license generation"
+                rows={3}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.55rem 0.85rem',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.78rem',
+                  resize: 'vertical',
+                }}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                The private key used to sign license keys. It is stored base64-encoded in the environment. If empty, the system automatically generates and saves a recommended secure RSA-2048 key pair.
               </span>
             </div>
           </div>

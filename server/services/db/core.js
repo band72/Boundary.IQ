@@ -300,6 +300,7 @@ function _runMigrations() {
     { name: 'create_TokenUsage_table', sql: 'CREATE TABLE IF NOT EXISTS TokenUsage (Id INTEGER PRIMARY KEY AUTOINCREMENT, UserId INTEGER, Provider TEXT NOT NULL, Model TEXT NOT NULL, InputTokens INTEGER NOT NULL DEFAULT 0, OutputTokens INTEGER NOT NULL DEFAULT 0, TotalTokens INTEGER NOT NULL DEFAULT 0, Type TEXT NOT NULL, Timestamp TEXT NOT NULL, FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE)' },
     { name: 'add_BatchRuns_UserId', sql: 'ALTER TABLE BatchRuns ADD COLUMN UserId INTEGER REFERENCES Users(Id) ON DELETE SET NULL' },
     { name: 'create_PlanSettings_table', sql: 'CREATE TABLE IF NOT EXISTS PlanSettings (Plan TEXT PRIMARY KEY, Name TEXT NOT NULL, DailyDeedLimit INTEGER NOT NULL DEFAULT -1, Price INTEGER NOT NULL DEFAULT 0, Features TEXT, Description TEXT)' },
+    { name: 'add_LicenseKeys_RawKey', sql: 'ALTER TABLE LicenseKeys ADD COLUMN RawKey TEXT' },
   ];
 
   const applyMigration = db.transaction((m) => {
