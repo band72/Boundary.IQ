@@ -30,7 +30,9 @@ router.get('/model', asyncHandler(async (req, res) => {
   const openAiStatus = await ollamaSvc.getStatusOpenAI(openAiBaseUrl);
 
   const geminiModels = [
-    { id: 'gemini-2.5-flash',       name: 'Gemini 2.5 Flash',       provider: 'gemini', description: 'Fast, cost-effective multimodal model (Default)' },
+    { id: 'gemini-3.5-flash',       name: 'Gemini 3.5 Flash',       provider: 'gemini', description: 'Next-generation high-speed multimodal model (Default)' },
+    { id: 'gemini-3.5-pro',         name: 'Gemini 3.5 Pro',         provider: 'gemini', description: 'Flagship reasoning model (Enterprise Preview)' },
+    { id: 'gemini-2.5-flash',       name: 'Gemini 2.5 Flash',       provider: 'gemini', description: 'Fast, cost-effective multimodal model' },
     { id: 'gemini-2.5-pro',         name: 'Gemini 2.5 Pro',         provider: 'gemini', description: 'Flagship high-capability reasoning model' },
     { id: 'gemini-1.5-pro',         name: 'Gemini 1.5 Pro',         provider: 'gemini', description: 'Production-grade high-capability reasoning model' },
     { id: 'gemini-1.5-flash',       name: 'Gemini 1.5 Flash',       provider: 'gemini', description: 'Fast, light previous-generation multimodal model' },

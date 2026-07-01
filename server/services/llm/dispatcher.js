@@ -21,7 +21,7 @@ const log = createChildLogger('dispatcher');
 
 // ── Mutable provider state (settable at runtime via /api/settings/model) ──────
 let activeProvider   = ACTIVE_PROVIDER;
-let activeModel      = ACTIVE_MODEL || (ACTIVE_PROVIDER === 'gemini' ? 'gemini-2.5-flash' : 'gemma4:26b');
+let activeModel      = ACTIVE_MODEL || (ACTIVE_PROVIDER === 'gemini' ? 'gemini-3.5-flash' : 'gemma4:26b');
 let activeOpenAiBaseUrl = OPENAI_BASE_URL;
 
 // ── Public config API ─────────────────────────────────────────────────────────
@@ -32,11 +32,11 @@ export function init(key) {
     // Only automatically switch default provider if user has not explicitly requested a provider in .env
     if (!process.env.ACTIVE_PROVIDER) {
       activeProvider = 'gemini';
-      activeModel = (ACTIVE_MODEL && ACTIVE_MODEL.startsWith('gemini')) ? ACTIVE_MODEL : 'gemini-2.5-flash';
+      activeModel = (ACTIVE_MODEL && ACTIVE_MODEL.startsWith('gemini')) ? ACTIVE_MODEL : 'gemini-3.5-flash';
       log.info({ provider: activeProvider, model: activeModel }, 'Gemini API key loaded — switched to gemini provider');
     } else if (activeProvider === 'gemini' && (!activeModel || !activeModel.startsWith('gemini'))) {
       // Prevent model/provider mismatch if user did set ACTIVE_PROVIDER=gemini but left ACTIVE_MODEL as a local model
-      activeModel = 'gemini-2.5-flash';
+      activeModel = 'gemini-3.5-flash';
     }
   }
 }
@@ -60,7 +60,7 @@ export function setProvider(provider, model, baseUrl) {
   }
   activeProvider = provider;
   if (provider === 'gemini') {
-    activeModel = model || 'gemini-2.5-flash';
+    activeModel = model || 'gemini-3.5-flash';
   } else if (provider === 'ollama') {
     activeModel = model || 'gemma4:26b';
   } else {

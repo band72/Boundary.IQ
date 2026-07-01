@@ -19,7 +19,7 @@ export function getActiveProvider(defaultVal = ACTIVE_PROVIDER) {
 export function getActiveModel(defaultVal = ACTIVE_MODEL) {
   const store = userSettingsStore.getStore();
   if (store?.activeModel) return store.activeModel;
-  return defaultVal || (ACTIVE_PROVIDER === 'gemini' ? 'gemini-2.5-flash' : 'gemma4:26b');
+  return defaultVal || (ACTIVE_PROVIDER === 'gemini' ? 'gemini-3.5-flash' : 'gemma4:26b');
 }
 
 export function getOpenAiBaseUrl(defaultVal = OPENAI_BASE_URL) {

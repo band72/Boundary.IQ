@@ -47,7 +47,7 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
       getGeminiApiKey() &&
       getAllowApiFallback()) {
 
-    const fallbackModel = 'gemini-2.5-flash';
+    const fallbackModel = 'gemini-3.5-flash';
     log.info(` Escalating failed deed "${fileName}" (status=${result.status}) from local model [${gemini.getActiveModel()}] to cloud model [${fallbackModel}] for another look.`);
 
     const originalModel = gemini.getActiveModel();

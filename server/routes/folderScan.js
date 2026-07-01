@@ -2000,6 +2000,8 @@ router.post('/retry-failed', async (req, res) => {
   }
 
   if (hasGemini) {
+    LOCAL_MODELS.push('gemini:gemini-3.5-flash');
+    LOCAL_MODELS.push('gemini:gemini-3.5-pro');
     LOCAL_MODELS.push('gemini:gemini-2.5-flash');
     LOCAL_MODELS.push('gemini:gemini-2.5-pro');
   }
@@ -2041,7 +2043,7 @@ router.post('/retry-failed', async (req, res) => {
   const provider = req.query.provider || originalProvider;
   let modelsToTry = [];
   if (provider === 'gemini') {
-    modelsToTry = [req.query.model || originalModel || 'gemini-2.5-flash'];
+    modelsToTry = [req.query.model || originalModel || 'gemini-3.5-flash'];
   } else if (provider === 'openai') {
     modelsToTry = [req.query.model || originalModel || 'llama3'];
   } else {

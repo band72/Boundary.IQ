@@ -16,7 +16,7 @@ primary_region = "ord"  # Chicago — change to nearest: lax, iad, lhr, fra, syd
 [env]
   NODE_ENV        = "production"
   ACTIVE_PROVIDER = "gemini"
-  ACTIVE_MODEL    = "gemini-2.5-flash"
+  ACTIVE_MODEL    = "gemini-3.5-flash"
   ALLOW_API_FALLBACK = "true"
   PORT            = "5050"
 
