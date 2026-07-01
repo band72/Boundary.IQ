@@ -1,7 +1,67 @@
 import { useState, useEffect } from 'react';
 import { API } from '../config';
 
+const pricingPlans = [
+  {
+    name: 'Free',
+    price: '$0',
+    color: '#a0aec0',
+    badge: 'START',
+    features: [
+      '5 deed solves/day',
+      'Traverse Compute',
+      'Legal Writer',
+      'Basic Dashboard'
+    ],
+    themeColor: 'rgba(255,255,255,0.4)',
+    glowColor: 'rgba(255,255,255,0.02)'
+  },
+  {
+    name: 'Basic',
+    price: '$5',
+    color: '#3d7fff',
+    badge: 'STANDARD',
+    features: [
+      '50 solves/day',
+      'Traverse Compute (full)',
+      'Legal Writer (pro)',
+      'Batch Deed (basic)'
+    ],
+    themeColor: '#3d7fff',
+    glowColor: 'rgba(61,127,255,0.06)'
+  },
+  {
+    name: 'Pro',
+    price: '$19.99',
+    color: '#50c878',
+    badge: 'POPULAR',
+    features: [
+      'Unlimited solves',
+      'Batch Deed + Plat',
+      'Full Dashboard',
+      'Priority support'
+    ],
+    themeColor: '#50c878',
+    glowColor: 'rgba(80,200,120,0.08)'
+  },
+  {
+    name: 'Enterprise',
+    price: '$99',
+    color: '#ffaa00',
+    badge: 'BUSINESS',
+    features: [
+      'Everything in Pro',
+      '5 team members',
+      'Custom AI config',
+      'Full REST API access'
+    ],
+    themeColor: '#ffaa00',
+    glowColor: 'rgba(255,170,0,0.08)'
+  }
+];
+
 export default function LoginScreen({ onAuthSuccess }) {
+
   const [isRegister, setIsRegister] = useState(false);
   const [isForgotPw, setIsForgotPw] = useState(false);
   const [username, setUsername] = useState('');
@@ -15,7 +75,19 @@ export default function LoginScreen({ onAuthSuccess }) {
   const [verificationEmail, setVerificationEmail] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
 
+  const [activePlanIndex, setActivePlanIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    if (isHovered) return;
+    const timer = setInterval(() => {
+      setActivePlanIndex((prev) => (prev + 1) % pricingPlans.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [isHovered]);
+
   // Developer Google Authentication Simulator States
+
   const [showDevGoogleModal, setShowDevGoogleModal] = useState(false);
   const [devGoogleEmail, setDevGoogleEmail] = useState('surveyor@google.com');
 
@@ -440,35 +512,131 @@ export default function LoginScreen({ onAuthSuccess }) {
             </div>
           </div>
 
-          {/* Pricing section */}
-          <div style={{ marginTop: '1.5rem' }}>
-            <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.4)', marginBottom: '0.75rem' }}>
-              Pricing Plans
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-              {/* Basic Plan */}
-              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '0.8rem' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3d7fff', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Basic</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: '0.2rem 0' }}>$5<span style={{ fontSize: '0.65rem', fontWeight: 400, color: 'rgba(255,255,255,0.5)' }}>/mo</span></div>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.68rem', color: 'rgba(255,255,255,0.55)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <li>✓ 50 solves/day</li>
-                  <li>✓ Legal Writer (pro)</li>
-                  <li>✓ Batch Deed (basic)</li>
-                </ul>
+          {/* Pricing section (Slideshow) */}
+          <div 
+            style={{ marginTop: '1.5rem', width: '100%' }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.4)' }}>
+                Pricing Plans
               </div>
-              {/* Pro Plan */}
-              <div style={{ background: 'rgba(80,200,120,0.08)', border: '1px solid rgba(80,200,120,0.3)', borderRadius: 10, padding: '0.8rem', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, right: 0, fontSize: '0.54rem', fontWeight: 800, background: '#50c878', color: '#000', padding: '2px 7px', borderBottomLeftRadius: 6, letterSpacing: '0.05em' }}>POPULAR</div>
-                <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#50c878', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Pro</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: '0.2rem 0' }}>$19.99<span style={{ fontSize: '0.65rem', fontWeight: 400, color: 'rgba(255,255,255,0.5)' }}>/mo</span></div>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <li>✓ Unlimited solves</li>
-                  <li>✓ Batch Deed + Plat</li>
-                  <li>✓ Full Dashboard</li>
+              {/* Pagination Dots */}
+              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                {pricingPlans.map((plan, index) => (
+                  <button
+                    key={plan.name}
+                    type="button"
+                    onClick={() => setActivePlanIndex(index)}
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      padding: 0,
+                      border: 'none',
+                      background: activePlanIndex === index ? plan.color : 'rgba(255,255,255,0.2)',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      transform: activePlanIndex === index ? 'scale(1.2)' : 'scale(1)'
+                    }}
+                    title={`Go to ${plan.name} plan`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Slideshow Card */}
+            <div 
+              style={{ 
+                background: pricingPlans[activePlanIndex].glowColor, 
+                border: `1px solid ${pricingPlans[activePlanIndex].color === '#a0aec0' ? 'rgba(255,255,255,0.1)' : pricingPlans[activePlanIndex].color === '#3d7fff' ? 'rgba(61,127,255,0.2)' : pricingPlans[activePlanIndex].color === '#50c878' ? 'rgba(80,200,120,0.3)' : 'rgba(255,170,0,0.25)'}`, 
+                borderRadius: 10, 
+                padding: '0.8rem 1rem', 
+                height: '135px', 
+                boxSizing: 'border-box',
+                position: 'relative', 
+                overflow: 'hidden',
+                display: 'flex',
+                gap: '0.8rem',
+                transition: 'all 0.4s ease',
+                boxShadow: `0 4px 24px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.05)`
+              }}
+            >
+              {/* Slide Accent Badge */}
+              <div style={{ 
+                position: 'absolute', 
+                top: 0, 
+                right: 0, 
+                fontSize: '0.52rem', 
+                fontWeight: 800, 
+                background: pricingPlans[activePlanIndex].color, 
+                color: '#000', 
+                padding: '2px 8px', 
+                borderBottomLeftRadius: 8, 
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase'
+              }}>
+                {pricingPlans[activePlanIndex].badge}
+              </div>
+
+              {/* Left Side: Plan Info */}
+              <div style={{ flex: '1 1 40%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ 
+                  fontSize: '0.82rem', 
+                  fontWeight: 800, 
+                  color: pricingPlans[activePlanIndex].color, 
+                  letterSpacing: '0.06em', 
+                  textTransform: 'uppercase',
+                  marginBottom: '0.2rem'
+                }}>
+                  {pricingPlans[activePlanIndex].name}
+                </div>
+                <div style={{ 
+                  fontSize: '1.35rem', 
+                  fontWeight: 900, 
+                  color: '#fff', 
+                  display: 'flex',
+                  alignItems: 'baseline'
+                }}>
+                  {pricingPlans[activePlanIndex].price}
+                  <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'rgba(255,255,255,0.4)', marginLeft: '0.1rem' }}>
+                    {pricingPlans[activePlanIndex].period}
+                  </span>
+                </div>
+              </div>
+
+              {/* Right Side: Features */}
+              <div style={{ 
+                flex: '1 1 60%', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                justifyContent: 'center', 
+                borderLeft: '1px solid rgba(255, 255, 255, 0.06)',
+                paddingLeft: '0.8rem'
+              }}>
+                <ul style={{ 
+                  listStyle: 'none', 
+                  padding: 0, 
+                  margin: 0, 
+                  fontSize: '0.68rem', 
+                  color: 'rgba(255,255,255,0.7)', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '0.25rem',
+                  overflow: 'hidden'
+                }}>
+                  {pricingPlans[activePlanIndex].features.map((feature, fIdx) => (
+                    <li key={fIdx} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ color: pricingPlans[activePlanIndex].color, fontSize: '0.72rem', lineHeight: 1 }}>✓</span>
+                      <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{feature}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
           </div>
+
 
           <div className="brand-footer">
             BETA · v1.0.0 · Powered by GeometryEngine

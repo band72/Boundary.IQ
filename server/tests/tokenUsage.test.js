@@ -1,20 +1,37 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { getDb } from '../services/db/core.js';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { getDb, switchDbPath } from '../services/db/core.js';
 import { createUser, getAllUsers } from '../services/db/users.js';
 import { logTokenUsage, getUserTokenStats } from '../services/db/tokenUsage.js';
-
-import { init } from '../services/diagnosticsDb.js';
+import path from 'path';
+import fs from 'fs';
 
 describe('AI Token Tracking & Telemetry tests', () => {
   let testUserId;
+  const TEST_DB_PATH = path.resolve('tests/token_usage_test.db');
   const username = `test_token_user_${Date.now()}`;
 
   beforeAll(async () => {
-    await init();
+    if (fs.existsSync(TEST_DB_PATH)) {
+      try { fs.unlinkSync(TEST_DB_PATH); } catch (e) {}
+    }
+    switchDbPath(TEST_DB_PATH);
     // Create a temporary test user
     const user = createUser(username, 'TestPassword123!', 'user');
     testUserId = user.id;
   });
+
+  afterAll(async () => {
+    const db = getDb();
+    if (db) {
+      db.close();
+    }
+    try {
+      if (fs.existsSync(TEST_DB_PATH)) fs.unlinkSync(TEST_DB_PATH);
+      if (fs.existsSync(TEST_DB_PATH + '-wal')) fs.unlinkSync(TEST_DB_PATH + '-wal');
+      if (fs.existsSync(TEST_DB_PATH + '-shm')) fs.unlinkSync(TEST_DB_PATH + '-shm');
+    } catch (err) {}
+  });
+
 
   it('successfully creates the TokenUsage table and verifies columns', () => {
     const db = getDb();
