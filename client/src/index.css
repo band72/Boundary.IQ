@@ -1110,7 +1110,7 @@ select option { background: var(--bg-elevated); }
 /* ── Canvas ───────────────────────────────────────────────────────────────── */
 .blueprint-canvas-element {
   width: 100% !important;
-  height: auto !important;
+  height: 100% !important;
   display: block;
   flex: 1;
   min-height: 0;
@@ -1275,13 +1275,11 @@ select option { background: var(--bg-elevated); }
   .blueprint-sheet {
     box-shadow: none !important;
     border-radius: 0 !important;
-    width: 1056px !important;
-    max-width: 1056px !important;
-    height: 816px !important;
+    width: 1008px !important;
+    max-width: 1008px !important;
+    height: 768px !important;
     min-height: unset !important;
     aspect-ratio: unset !important;
-    transform: scale(0.954) !important;
-    transform-origin: top left !important;
     overflow: hidden !important;
     page-break-after: always;
     break-after: page;
