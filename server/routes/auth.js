@@ -202,6 +202,48 @@ router.post('/verify-registration', asyncHandler(async (req, res) => {
   return res.status(201).json({ id: user.id, token, username: user.username, role: user.role, plan: user.plan || 'free' });
 }));
 
+// ── POST /api/auth/resend-verification ──────────────────────────────────────────
+router.post('/resend-verification', asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  const lowercaseEmail = email.trim().toLowerCase();
+  const pending = pendingRegistrations.get(lowercaseEmail);
+  if (!pending) {
+    return res.status(400).json({ error: 'No pending registration found for this email, or code has expired. Please sign up again.' });
+  }
+
+  // Generate new 6-digit verification code
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  // Extend expiration by another 15 minutes and reset attempts
+  pendingRegistrations.set(lowercaseEmail, {
+    username: pending.username,
+    password: pending.password,
+    inviteToken: pending.inviteToken,
+    code,
+    expiresAt: Date.now() + 15 * 60 * 1000
+  });
+
+  log.info({ email: pending.username, code }, `Resent verification code for pending registration`);
+  let emailSent = true;
+  try {
+    await sendVerificationEmail({ to: pending.username, code });
+  } catch (err) {
+    log.error({ err, email: pending.username }, 'Failed to send verification email');
+    emailSent = false;
+  }
+
+  return res.json({
+    success: true,
+    message: emailSent
+      ? 'A new 6-digit verification code has been sent to your email.'
+      : 'A new code has been generated (code logged to server logs).'
+  });
+}));
+
 // ── POST /api/auth/login ───────────────────────────────────────────────────────
 router.post('/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;

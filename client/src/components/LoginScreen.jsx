@@ -366,6 +366,32 @@ export default function LoginScreen({ onAuthSuccess }) {
     }
   };
 
+  const handleResendCode = async () => {
+    setLoading(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      const res = await fetch(`${API}/auth/resend-verification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: verificationEmail,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to resend verification code.');
+      }
+      setSuccessMsg(data.message || '✓ A new verification code has been sent!');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -689,9 +715,14 @@ export default function LoginScreen({ onAuthSuccess }) {
                 <button type="submit" className="btn btn-primary login-btn" disabled={loading}>
                   {loading ? <><span className="spinner"/><span>Verifying…</span></> : <span>Verify & Log In</span>}
                 </button>
-                <button type="button" className="toggle-link-btn" onClick={() => { setVerificationPending(false); setError(''); setSuccessMsg(''); }} style={{ textAlign:'center' }}>
-                  ← Cancel
-                </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+                  <button type="button" className="toggle-link-btn" onClick={() => { setVerificationPending(false); setError(''); setSuccessMsg(''); }}>
+                    ← Cancel
+                  </button>
+                  <button type="button" className="toggle-link-btn" onClick={handleResendCode} disabled={loading} style={{ color: 'var(--accent)' }}>
+                    ✉️ Resend Code
+                  </button>
+                </div>
               </div>
             )}
 
