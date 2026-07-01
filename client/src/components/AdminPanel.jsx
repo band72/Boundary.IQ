@@ -48,6 +48,7 @@ export default function AdminPanel() {
     { id:'orders',  icon:'💳', label:'Orders'        },
     { id:'audit',   icon:'📋', label:'Audit Log'     },
     { id:'invites', icon:'✉️', label:'Invites'       },
+    { id:'plans',   icon:'⚙️', label:'Plan Templates'},
     { id:'stats',   icon:'📊', label:'System Stats'  },
   ];
 
@@ -73,6 +74,7 @@ export default function AdminPanel() {
       {tab==='orders'  && <OrdersTab auth={auth} flash={flash} modal={modal} setModal={setModal} />}
       {tab==='audit'   && <AuditTab auth={auth} />}
       {tab==='invites' && <InvitesTab auth={auth} flash={flash} />}
+      {tab==='plans'   && <PlansTab auth={auth} flash={flash} />}
       {tab==='stats'   && <StatsTab auth={auth} />}
     </div>
   );
@@ -686,6 +688,246 @@ function OrdersTab({ auth, flash, modal, setModal }) {
         <a href="https://dashboard.stripe.com" target="_blank" rel="noreferrer" style={{ color:'var(--accent)' }}>Stripe Dashboard</a>.
         Without <code style={{ color:'var(--accent)' }}>STRIPE_SECRET_KEY</code>, all plan changes are manual-only (mock mode).
       </div>
+    </div>
+  );
+}
+
+// ── Plan Settings/Templates Tab ────────────────────────────────────────────────
+function PlansTab({ auth, flash }) {
+  const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTier, setActiveTier] = useState('free');
+  
+  // Form states for active plan
+  const [name, setName] = useState('');
+  const [priceStr, setPriceStr] = useState('0.00');
+  const [isUnlimited, setIsUnlimited] = useState(false);
+  const [dailyLimit, setDailyLimit] = useState(5);
+  const [featuresStr, setFeaturesStr] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const fetchSettings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/admin/plan-settings`, auth);
+      const data = await res.json();
+      if (res.ok) {
+        setPlans(data.settings || []);
+      } else {
+        flash(data.error || 'Failed to fetch plan settings', 'error');
+      }
+    } catch (e) {
+      flash(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  // Sync form inputs when active plan tier changes or plan list is loaded
+  useEffect(() => {
+    const current = plans.find(p => p.plan === activeTier);
+    if (current) {
+      setName(current.name);
+      setPriceStr((current.price / 100).toFixed(2));
+      setIsUnlimited(current.dailyDeedLimit < 0);
+      setDailyLimit(current.dailyDeedLimit < 0 ? 0 : current.dailyDeedLimit);
+      setFeaturesStr(current.features.join('\n'));
+      setDescription(current.description || '');
+    }
+  }, [activeTier, plans]);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const priceCents = Math.round(parseFloat(priceStr) * 100);
+      if (isNaN(priceCents) || priceCents < 0) {
+        throw new Error('Please enter a valid price.');
+      }
+      
+      const limitVal = isUnlimited ? -1 : parseInt(dailyLimit);
+      if (!isUnlimited && (isNaN(limitVal) || limitVal < 0)) {
+        throw new Error('Please enter a valid daily solve limit.');
+      }
+
+      const featuresList = featuresStr
+        .split('\n')
+        .map(f => f.trim())
+        .filter(f => f.length > 0);
+
+      const res = await fetch(`${API}/auth/admin/plan-settings/${activeTier}`, {
+        method: 'PUT',
+        headers: auth.headers,
+        body: JSON.stringify({
+          name,
+          dailyDeedLimit: limitVal,
+          price: priceCents,
+          features: featuresList,
+          description,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        flash(`✓ Settings for plan "${name}" updated successfully!`);
+        // Refresh local state list
+        setPlans(prev => prev.map(p => p.plan === activeTier ? data.settings : p));
+      } else {
+        throw new Error(data.error || 'Failed to update plan settings.');
+      }
+    } catch (err) {
+      flash(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div style={{ color:'var(--text-muted)', padding:'2rem', textAlign:'center' }}><span className="spinner" style={{ width:24, height:24, borderWidth:2 }}/></div>;
+  }
+
+  const activePlan = plans.find(p => p.plan === activeTier);
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '1.5rem', alignItems: 'start' }}>
+      {/* Sidebar Selector */}
+      <div style={{ background: 'rgba(9,14,26,.4)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', padding: '0.25rem 0.5rem 0.5rem' }}>Plan Tiers</div>
+        {['free', 'basic', 'pro', 'enterprise'].map(tier => {
+          const p = plans.find(x => x.plan === tier);
+          const isSelected = activeTier === tier;
+          return (
+            <button
+              key={tier}
+              onClick={() => setActiveTier(tier)}
+              style={{
+                width: '100%',
+                padding: '0.6rem 0.85rem',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: isSelected ? 'rgba(61,127,255,.15)' : 'transparent',
+                color: isSelected ? 'var(--accent)' : 'var(--text-secondary)',
+                fontWeight: isSelected ? 700 : 400,
+                fontSize: '0.8rem',
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'all .12s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span>{p ? p.name : tier}</span>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                {p ? (p.price === 0 ? 'Free' : `$${(p.price / 100).toFixed(0)}`) : ''}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main Settings Form */}
+      {activePlan && (
+        <form onSubmit={handleSave} style={{ background: 'rgba(9,14,26,.4)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.5rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '0.2rem' }}>
+            ⚙️ Configure Settings: {activePlan.name} ({activeTier})
+          </h3>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+            Define name, monthly subscription fee, processing constraints, and advertised features.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            {/* Display Name */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>Display Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                required
+              />
+            </div>
+
+            {/* Price */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>Monthly Price ($ USD)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={priceStr}
+                onChange={e => setPriceStr(e.target.value)}
+                disabled={activeTier === 'free'}
+                style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', background: activeTier === 'free' ? 'transparent' : 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: '0.82rem', boxSizing: 'border-box', opacity: activeTier === 'free' ? 0.5 : 1 }}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Daily solves limits */}
+          <div style={{ background: 'rgba(255,255,255,.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '1rem', marginBottom: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.6rem' }}>
+              <input
+                type="checkbox"
+                checked={isUnlimited}
+                onChange={e => setIsUnlimited(e.target.checked)}
+              />
+              <span style={{ fontSize: '0.81rem', fontWeight: 600, color: '#fff' }}>Unlimited Deed Solves</span>
+            </label>
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0 0 0.75rem 1.4rem' }}>
+              When enabled, users on this tier bypass all daily deed solving limits.
+            </p>
+            {!isUnlimited && (
+              <div style={{ marginLeft: '1.4rem' }}>
+                <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Daily Deed Solve Limit</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={dailyLimit}
+                  onChange={e => setDailyLimit(e.target.value)}
+                  style={{ width: '140px', padding: '0.45rem 0.65rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                  required
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Description */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>Description</label>
+            <input
+              type="text"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: '0.82rem', boxSizing: 'border-box' }}
+              placeholder="Sleek slogan or summary for this tier"
+            />
+          </div>
+
+          {/* Features list */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>Advertised Features (one feature per line)</label>
+            <textarea
+              rows={5}
+              value={featuresStr}
+              onChange={e => setFeaturesStr(e.target.value)}
+              style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: '0.82rem', fontFamily: 'sans-serif', boxSizing: 'border-box', resize: 'vertical' }}
+              placeholder="e.g.&#10;50 deed solves/day&#10;Full Batch processing&#10;Priority support"
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

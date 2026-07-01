@@ -59,6 +59,7 @@ export async function init() {
   _initializeSchema();
   _runMigrations();
   _seedHeuristics();
+  _seedPlanSettings();
 
   // Setup periodic database backup to GCS every 30 seconds
   setInterval(async () => {
@@ -105,6 +106,8 @@ export function switchDbPath(newPath) {
   db.pragma('journal_mode = WAL');
   _initializeSchema();
   _runMigrations();
+  _seedHeuristics();
+  _seedPlanSettings();
   console.log(`✓ SQLite Database path successfully switched to: ${dbPath}`);
 }
 
@@ -296,6 +299,7 @@ function _runMigrations() {
     { name: 'add_UserSettings_MapPanSensitivity', sql: 'ALTER TABLE UserSettings ADD COLUMN MapPanSensitivity REAL' },
     { name: 'create_TokenUsage_table', sql: 'CREATE TABLE IF NOT EXISTS TokenUsage (Id INTEGER PRIMARY KEY AUTOINCREMENT, UserId INTEGER, Provider TEXT NOT NULL, Model TEXT NOT NULL, InputTokens INTEGER NOT NULL DEFAULT 0, OutputTokens INTEGER NOT NULL DEFAULT 0, TotalTokens INTEGER NOT NULL DEFAULT 0, Type TEXT NOT NULL, Timestamp TEXT NOT NULL, FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE)' },
     { name: 'add_BatchRuns_UserId', sql: 'ALTER TABLE BatchRuns ADD COLUMN UserId INTEGER REFERENCES Users(Id) ON DELETE SET NULL' },
+    { name: 'create_PlanSettings_table', sql: 'CREATE TABLE IF NOT EXISTS PlanSettings (Plan TEXT PRIMARY KEY, Name TEXT NOT NULL, DailyDeedLimit INTEGER NOT NULL DEFAULT -1, Price INTEGER NOT NULL DEFAULT 0, Features TEXT, Description TEXT)' },
   ];
 
   const applyMigration = db.transaction((m) => {
@@ -327,6 +331,17 @@ function _seedHeuristics() {
       ['Pixel Dimension guessing', 'Explicit Chord Parsing'],
     ];
     for (const [p, s] of seedData) insert.run(p, s);
+  }
+}
+
+function _seedPlanSettings() {
+  const count = db.prepare('SELECT COUNT(*) as c FROM PlanSettings').get().c;
+  if (count === 0) {
+    const insert = db.prepare('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)');
+    insert.run('free', 'Free', 5, 0, JSON.stringify(['5 deed solves/day', 'Traverse Compute', 'Legal Writer', 'Basic Dashboard']), 'Basic free tier for lightweight needs.');
+    insert.run('basic', 'Basic', 50, 500, JSON.stringify(['50 deed solves/day', 'Traverse Compute (full)', 'Legal Writer (pro)', 'Batch Deed processing (basic)']), 'Great for small teams or individual surveyors.');
+    insert.run('pro', 'Pro', -1, 1999, JSON.stringify(['Unlimited deed solves', 'Full Batch Deed processing', 'Plat Extraction with AI', 'Full Analytics Dashboard', 'Priority support']), 'Our most popular plan for professional workflows.');
+    insert.run('enterprise', 'Enterprise', -1, 9900, JSON.stringify(['Everything in Pro', '5 team members', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support']), 'For corporate and larger engineering operations.');
   }
 }
 

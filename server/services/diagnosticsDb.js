@@ -64,3 +64,5 @@ export { getUserSettings, saveUserSettings } from './db/userSettings.js';
 
 export { logTokenUsage, getUserTokenStats } from './db/tokenUsage.js';
 
+export { getAllPlanSettings, getPlanSettings, updatePlanSettings } from './db/planSettings.js';
+

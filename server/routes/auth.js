@@ -10,6 +10,7 @@ import {
   createInviteToken, getInviteToken, redeemInviteToken, listInvites, revokeInviteToken,
   getUserDailyStats, getSystemStats, getUserTokenStats,
   getAllSubscriptions, getRevenueStats, adminSetPlan, adminCancelSubscription,
+  getAllPlanSettings, updatePlanSettings,
 } from '../services/diagnosticsDb.js';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -646,6 +647,55 @@ router.delete('/orders/:userId', requireAuth, requireRole(['admin']), asyncHandl
   const userId = parseInt(req.params.userId);
   adminCancelSubscription(userId, req.user.id);
   return res.json({ success: true, userId });
+}));
+
+// ── GET /api/auth/admin/plan-settings ─────────────────────────────────────────
+router.get('/admin/plan-settings', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
+  const settings = getAllPlanSettings();
+  return res.json({ settings });
+}));
+
+// ── PUT /api/auth/admin/plan-settings/:plan ────────────────────────────────────
+router.put('/admin/plan-settings/:plan', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { plan } = req.params;
+  const { name, dailyDeedLimit, price, features, description } = req.body;
+
+  const VALID_PLANS = ['free', 'basic', 'pro', 'enterprise'];
+  if (!VALID_PLANS.includes(plan)) {
+    return res.status(400).json({ error: `Invalid plan tier: ${plan}` });
+  }
+
+  if (!name || name.trim() === '') {
+    return res.status(400).json({ error: 'Plan name is required.' });
+  }
+
+  const limitInt = parseInt(dailyDeedLimit);
+  if (isNaN(limitInt)) {
+    return res.status(400).json({ error: 'Daily deed limit must be a valid number.' });
+  }
+
+  const priceInt = parseInt(price);
+  if (isNaN(priceInt) || priceInt < 0) {
+    return res.status(400).json({ error: 'Price must be a positive number.' });
+  }
+
+  const updated = updatePlanSettings(plan, {
+    name: name.trim(),
+    dailyDeedLimit: limitInt,
+    price: priceInt,
+    features: Array.isArray(features) ? features : [],
+    description: description ? description.trim() : '',
+  });
+
+  logAudit({
+    userId: null,
+    actorId: req.user.id,
+    action: 'admin_update_plan_settings',
+    target: `plan=${plan}`,
+    detail: { name, dailyDeedLimit: limitInt, price: priceInt },
+  });
+
+  return res.json({ success: true, settings: updated });
 }));
 
 // ── POST /api/auth/forgot-password ───────────────────────────────────────────

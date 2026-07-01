@@ -200,10 +200,13 @@ export function incrementDailyUsage(userId) {
 }
 
 export function checkDailyLimit(userId, userPlan, userRole) {
-  // Admins and paid plans have no daily limit
-  if (userRole === 'admin' || userPlan === 'pro' || userPlan === 'enterprise') return { allowed: true, used: null, limit: null };
+  if (userRole === 'admin') return { allowed: true, used: null, limit: null };
+  const db = getDb();
+  const planSetting = db.prepare('SELECT DailyDeedLimit FROM PlanSettings WHERE Plan = ?').get(userPlan || 'free');
+  const limit = planSetting ? planSetting.DailyDeedLimit : 5;
+  if (limit < 0) return { allowed: true, used: null, limit: null };
   const used = getDailyUsage(userId);
-  return { allowed: used < FREE_DAILY_DEED_LIMIT, used, limit: FREE_DAILY_DEED_LIMIT };
+  return { allowed: used < limit, used, limit };
 }
 
 export function getUserDailyStats(userId, days = 30) {

@@ -13,6 +13,7 @@ import {
   getSubscriptionByStripeSubscription,
   updateUserPlan,
   getUserById,
+  getAllPlanSettings,
 } from '../services/diagnosticsDb.js';
 
 const require = createRequire(import.meta.url);
@@ -62,23 +63,62 @@ const PLANS = {
 
 // GET /api/billing/plans — public, returns plan info
 router.get('/plans', (req, res) => {
-  res.json({
-    mockMode: isMockMode(),
-    plans: Object.entries(PLANS).map(([id, p]) => ({
-      id,
-      name: p.name,
-      price: p.price,
-      interval: p.interval,
-      features: p.features,
-      priceId: p.priceId,
-    })),
-    freePlan: {
+  try {
+    const dbPlans = getAllPlanSettings();
+    const freeDb = dbPlans.find(p => p.plan === 'free');
+    const freePlan = freeDb ? {
+      id: 'free',
+      name: freeDb.name,
+      price: freeDb.price,
+      features: freeDb.features,
+      description: freeDb.description,
+    } : {
       id: 'free',
       name: 'Free',
       price: 0,
       features: ['5 deed solves/day', 'Traverse Compute', 'Legal Writer', 'Basic Dashboard'],
-    },
-  });
+      description: 'Basic free tier for lightweight needs.',
+    };
+
+    const plans = dbPlans
+      .filter(p => p.plan !== 'free')
+      .map(p => {
+        const staticConf = PLANS[p.plan] || {};
+        return {
+          id: p.plan,
+          name: p.name,
+          price: p.price,
+          interval: staticConf.interval || 'month',
+          features: p.features,
+          priceId: staticConf.priceId || null,
+          description: p.description,
+        };
+      });
+
+    res.json({
+      mockMode: isMockMode(),
+      plans,
+      freePlan,
+    });
+  } catch (err) {
+    res.json({
+      mockMode: isMockMode(),
+      plans: Object.entries(PLANS).map(([id, p]) => ({
+        id,
+        name: p.name,
+        price: p.price,
+        interval: p.interval,
+        features: p.features,
+        priceId: p.priceId,
+      })),
+      freePlan: {
+        id: 'free',
+        name: 'Free',
+        price: 0,
+        features: ['5 deed solves/day', 'Traverse Compute', 'Legal Writer', 'Basic Dashboard'],
+      },
+    });
+  }
 });
 
 // GET /api/billing/status — authenticated, returns current user's subscription
