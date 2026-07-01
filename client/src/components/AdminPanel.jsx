@@ -3,7 +3,7 @@ import { API } from '../config';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 const ROLE_C  = { admin: { bg: 'rgba(255,170,0,.12)', border: 'rgba(255,170,0,.35)', text: '#ffaa00' }, user: { bg: 'rgba(61,127,255,.1)', border: 'rgba(61,127,255,.28)', text: 'var(--accent)' } };
-const PLAN_C  = { free: { bg: 'rgba(120,120,120,.1)', border: 'rgba(120,120,120,.25)', text: '#aaa' }, pro: { bg: 'rgba(80,200,120,.12)', border: 'rgba(80,200,120,.30)', text: '#50c878' }, enterprise: { bg: 'rgba(255,170,0,.12)', border: 'rgba(255,170,0,.35)', text: '#ffaa00' } };
+const PLAN_C  = { free: { bg: 'rgba(120,120,120,.1)', border: 'rgba(120,120,120,.25)', text: '#aaa' }, basic: { bg: 'rgba(61,127,255,.12)', border: 'rgba(61,127,255,.30)', text: '#3d7fff' }, pro: { bg: 'rgba(80,200,120,.12)', border: 'rgba(80,200,120,.30)', text: '#50c878' }, enterprise: { bg: 'rgba(255,170,0,.12)', border: 'rgba(255,170,0,.35)', text: '#ffaa00' } };
 const ACTION_C = { login: '#50c878', logout: '#aaa', register: '#3d7fff', google_login: '#4285F4', password_change: '#ffaa00', force_password_reset: '#ff7070', delete_user: '#ff4444', role_change: '#a855f7', plan_change: '#50c878', create_invite: '#3d7fff', revoke_sessions: '#ff7070', profile_update: '#aaa', admin_set_plan: '#ffaa00', admin_cancel_subscription: '#ff7070' };
 const fmtDate = (s) => s ? new Date(s).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—';
 const fmtTime = (s) => s ? new Date(s).toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
@@ -212,7 +212,7 @@ function UsersTab({ auth, flash, modal, setModal }) {
           <option value="">All roles</option><option value="admin">admin</option><option value="user">user</option>
         </select>
         <select value={planFilter} onChange={e=>setPlanFilter(e.target.value)} style={{ padding:'0.5rem 0.7rem', borderRadius:'var(--radius-md)', background:'var(--bg-elevated)', border:'1px solid var(--border)', color:'var(--text-primary)', fontSize:'0.78rem' }}>
-          <option value="">All plans</option><option value="free">free</option><option value="pro">pro</option><option value="enterprise">enterprise</option>
+          <option value="">All plans</option><option value="free">free</option><option value="basic">basic</option><option value="pro">pro</option><option value="enterprise">enterprise</option>
         </select>
         <button className="btn btn-ghost" onClick={fetchUsers} title="Refresh" style={{ minWidth:38 }}>⟳</button>
         <button className="btn btn-ghost" onClick={exportCSV} style={{ fontSize:'0.75rem' }}>⬇ CSV</button>
@@ -269,7 +269,7 @@ function UsersTab({ auth, flash, modal, setModal }) {
                 setModal({ title:`Change Plan`, body:`Grant "${newPlan}" plan to ${u.username}?`, onConfirm:()=>doPlanChange(u.id, newPlan) });
               }}
                 style={{ fontSize:'0.68rem', padding:'3px 5px', borderRadius:4, background:'var(--bg-elevated)', border:'1px solid var(--border)', color:'var(--text-primary)', cursor:'pointer' }}>
-                <option value="free">free</option><option value="pro">pro</option><option value="enterprise">enterprise</option>
+                <option value="free">free</option><option value="basic">basic</option><option value="pro">pro</option><option value="enterprise">enterprise</option>
               </select>
               {/* Reset PW */}
               <button title="Force password reset" className="btn btn-ghost" style={{ fontSize:'0.65rem', padding:'2px 7px' }}
@@ -561,7 +561,7 @@ function OrdersTab({ auth, flash, modal, setModal }) {
     URL.revokeObjectURL(url);
   };
 
-  const PLAN_PRICE = { free: 0, pro: 29, enterprise: 99 };
+  const PLAN_PRICE = { free: 0, basic: 5, pro: 29, enterprise: 99 };
   const STATUS_C = { active:'#50c878', inactive:'#aaa', cancelled:'#ff7070', past_due:'#ffaa00', trialing:'#3d7fff' };
 
   const filtered = orders.filter(o => {
@@ -601,7 +601,7 @@ function OrdersTab({ auth, flash, modal, setModal }) {
           style={{ flex:1, minWidth:200, padding:'0.5rem 0.85rem', borderRadius:'var(--radius-md)', background:'var(--bg-elevated)', border:'1px solid var(--border)', color:'var(--text-primary)', fontSize:'0.81rem' }} />
         <select value={planFilter} onChange={e=>setPlanFilter(e.target.value)}
           style={{ padding:'0.5rem 0.7rem', borderRadius:'var(--radius-md)', background:'var(--bg-elevated)', border:'1px solid var(--border)', color:'var(--text-primary)', fontSize:'0.78rem' }}>
-          <option value="">All plans</option><option value="free">free</option><option value="pro">pro</option><option value="enterprise">enterprise</option>
+          <option value="">All plans</option><option value="free">free</option><option value="basic">basic</option><option value="pro">pro</option><option value="enterprise">enterprise</option>
         </select>
         <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
           style={{ padding:'0.5rem 0.7rem', borderRadius:'var(--radius-md)', background:'var(--bg-elevated)', border:'1px solid var(--border)', color:'var(--text-primary)', fontSize:'0.78rem' }}>
@@ -668,6 +668,7 @@ function OrdersTab({ auth, flash, modal, setModal }) {
                 }}
                 style={{ fontSize:'0.68rem', padding:'3px 5px', borderRadius:4, background:'var(--bg-elevated)', border:'1px solid var(--border)', color:'var(--text-primary)', cursor:'pointer' }}>
                 <option value="free">free</option>
+                <option value="basic">basic</option>
                 <option value="pro">pro</option>
                 <option value="enterprise">enterprise</option>
               </select>

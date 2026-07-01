@@ -288,11 +288,35 @@ function AppShell() {
             <span style={{
               fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase',
               padding: '2px 7px', borderRadius: '99px', flexShrink: 0,
-              background: isAdmin ? 'rgba(201,122,0,0.15)' : 'rgba(61,127,255,0.12)',
-              border: isAdmin ? '1px solid rgba(201,122,0,0.4)' : '1px solid rgba(61,127,255,0.3)',
-              color: isAdmin ? '#ffaa00' : 'var(--accent)',
+              background: isAdmin
+                ? 'rgba(201,122,0,0.15)'
+                : user?.plan === 'enterprise'
+                ? 'rgba(255,170,0,0.12)'
+                : user?.plan === 'pro'
+                ? 'rgba(80,200,120,0.12)'
+                : user?.plan === 'basic'
+                ? 'rgba(61,127,255,0.12)'
+                : 'rgba(255,255,255,0.06)',
+              border: isAdmin
+                ? '1px solid rgba(201,122,0,0.4)'
+                : user?.plan === 'enterprise'
+                ? '1px solid rgba(255,170,0,0.35)'
+                : user?.plan === 'pro'
+                ? '1px solid rgba(80,200,120,0.3)'
+                : user?.plan === 'basic'
+                ? '1px solid rgba(61,127,255,0.3)'
+                : '1px solid rgba(255,255,255,0.15)',
+              color: isAdmin
+                ? '#ffaa00'
+                : user?.plan === 'enterprise'
+                ? '#ffaa00'
+                : user?.plan === 'pro'
+                ? '#50c878'
+                : user?.plan === 'basic'
+                ? '#3d7fff'
+                : 'rgba(255,255,255,0.6)',
             }}>
-              {isAdmin ? '🔑 Admin' : user?.plan === 'pro' ? '⭐ Pro' : user?.plan === 'enterprise' ? '🏢 Enterprise' : '👤 Free'}
+              {isAdmin ? '🔑 Admin' : user?.plan === 'enterprise' ? '🏢 Enterprise' : user?.plan === 'pro' ? '⭐ Pro' : user?.plan === 'basic' ? '🔹 Basic' : '👤 Free'}
             </span>
             <button className="logout-icon-btn" onClick={logout} title="Sign Out">
               🚪
