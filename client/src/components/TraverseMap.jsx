@@ -594,6 +594,12 @@ export default function TraverseMap({
     return () => { active = false; };
   }, []);
 
+  // Reset zoom and panOffset whenever traverse data changes to center and fit the new boundary
+  useEffect(() => {
+    setZoom(1);
+    setPanOffset({ x: 0, y: 0 });
+  }, [stations, adjusted, courses, tracts]);
+
   const sensitivity = mapPanSensitivity !== undefined ? mapPanSensitivity : localSensitivity;
   const dragStart = useRef({ x: 0, y: 0 });
   const panAtDragStart = useRef({ x: 0, y: 0 });
