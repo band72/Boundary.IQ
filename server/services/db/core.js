@@ -1,29 +1,140 @@
 /**
  * db/core.js — Database connection, initialization, migrations, and shared helpers.
  *
- * This module owns the single `db` instance. All other db/* modules import
- * `getDb()` to access it — never open their own connection.
+ * This module owns the single database instance / connection pool. All other db/*
+ * modules import `query()` to execute queries — never run queries on their own connection.
  */
 
 import Database from 'better-sqlite3';
+import pg from 'pg';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { DATABASE_PATH } from '../../config.js';
+import { DATABASE_PATH, DATABASE_URL } from '../../config.js';
 import { downloadDb, uploadDb } from './persistence.js';
+import pgConnectionString from 'pg-connection-string';
 
 let db = null;
+let pool = null;
+let isPostgres = false;
 let dbPath = '';
+
+const COLUMN_CASING_MAP = {
+  batchid: 'BatchId',
+  timestamp: 'Timestamp',
+  totalfiles: 'TotalFiles',
+  passrate: 'PassRate',
+  userid: 'UserId',
+  id: 'Id',
+  filename: 'FileName',
+  parcelname: 'ParcelName',
+  geocallcount: 'GeoCallCount',
+  linearerror: 'LinearError',
+  precisionratio: 'PrecisionRatio',
+  status: 'Status',
+  repairstageused: 'RepairStageUsed',
+  extractionjson: 'ExtractionJson',
+  traversejson: 'TraverseJson',
+  agentturnsjson: 'AgentTurnsJson',
+  trustscore: 'TrustScore',
+  solutionstepsjson: 'SolutionStepsJson',
+  filehash: 'FileHash',
+  referencepointname: 'ReferencePointName',
+  referencepointnorthing: 'ReferencePointNorthing',
+  referencepointeasting: 'ReferencePointEasting',
+  pobnorthing: 'PobNorthing',
+  pobeasting: 'PobEasting',
+  problemname: 'ProblemName',
+  solutionapplied: 'SolutionApplied',
+  successcount: 'SuccessCount',
+  username: 'Username',
+  passwordhash: 'PasswordHash',
+  role: 'Role',
+  plan: 'Plan',
+  lastlogin: 'LastLogin',
+  displayname: 'DisplayName',
+  avatarurl: 'AvatarUrl',
+  forceresetpw: 'ForceResetPw',
+  token: 'Token',
+  expiresat: 'ExpiresAt',
+  useragent: 'UserAgent',
+  ipaddress: 'IpAddress',
+  createdat: 'CreatedAt',
+  stripecustomerid: 'StripeCustomerId',
+  stripesubscriptionid: 'StripeSubscriptionId',
+  updatedat: 'UpdatedAt',
+  periodend: 'PeriodEnd',
+  date: 'Date',
+  deedsolves: 'DeedSolves',
+  provider: 'Provider',
+  model: 'Model',
+  inputtokens: 'InputTokens',
+  outputtokens: 'OutputTokens',
+  totaltokens: 'TotalTokens',
+  type: 'Type',
+  actorid: 'ActorId',
+  action: 'Action',
+  target: 'Target',
+  detail: 'Detail',
+  createdbyuserid: 'CreatedByUserId',
+  email: 'Email',
+  note: 'Note',
+  usedbyuserid: 'UsedByUserId',
+  usedat: 'UsedAt',
+  activeprovider: 'ActiveProvider',
+  activemodel: 'ActiveModel',
+  openaibaseurl: 'OpenaiBaseUrl',
+  allowapifallback: 'AllowApiFallback',
+  enforcenoselfintersection: 'EnforceNoSelfIntersection',
+  geminiapikey: 'GeminiApiKey',
+  openaiapikey: 'OpenaiApiKey',
+  mappansensitivity: 'MapPanSensitivity',
+  code: 'Code',
+  attempts: 'Attempts',
+  invitetoken: 'InviteToken',
+  keyhash: 'KeyHash',
+  redeemedbyuserid: 'RedeemedByUserId',
+  redeemedat: 'RedeemedAt',
+  rawkey: 'RawKey',
+  dailydeedlimit: 'DailyDeedLimit',
+  price: 'Price',
+  features: 'Features',
+  description: 'Description',
+  avgprecision: 'avgPrecision',
+  bestprecision: 'bestPrecision',
+  avglinearerr: 'avgLinearErr',
+  maxlinearerr: 'maxLinearErr',
+  avgtrustscore: 'avgTrustScore',
+  avgclosure: 'avgClosure',
+  maxclosure: 'maxClosure',
+  avgprecisionratio: 'avgPrecisionRatio',
+  maxprecisionratio: 'maxPrecisionRatio',
+  c: 'c',
+};
+
+function normalizeRow(row) {
+  if (!row) return row;
+  const normalized = { ...row };
+  for (const key of Object.keys(row)) {
+    const lowerKey = key.toLowerCase();
+    const targetKey = COLUMN_CASING_MAP[lowerKey];
+    if (targetKey && targetKey !== key) {
+      normalized[targetKey] = row[key];
+    }
+  }
+  return normalized;
+}
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Returns the current time as a sortable ISO-like string (SQLite TEXT). */
+/** Returns the current time as a sortable ISO-like string (SQLite TEXT / Postgres TIMESTAMP). */
 export function now() {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  return new Date().toISOString().replace('T', ' ').slice(0, 23);
 }
 
 /** Returns the shared db instance. Throws if init() has not been called. */
 export function getDb() {
+  if (isPostgres) throw new Error('Using PostgreSQL connection pool. Do not use getDb() direct reference.');
   if (!db) throw new Error('Database not initialized. Call init() first.');
   return db;
 }
@@ -32,68 +143,135 @@ export function getDbPath() {
   return dbPath;
 }
 
+export function getIsPostgres() {
+  return isPostgres;
+}
+
+// ── Unified Asynchronous Query Interface ──────────────────────────────────────
+
+function translateQuery(sql) {
+  let index = 1;
+  return sql.replace(/\?/g, () => `$${index++}`);
+}
+
+export async function query(sql, params = []) {
+  if (isPostgres) {
+    const translatedSql = translateQuery(sql);
+    const res = await pool.query(translatedSql, params);
+    return {
+      rows: res.rows.map(normalizeRow),
+      changes: res.rowCount,
+    };
+  } else {
+    if (!db) throw new Error('Database not initialized. Call init() first.');
+    const stmt = db.prepare(sql);
+    const isSelectOrReturning = /^\s*(SELECT|WITH)/i.test(sql) || /RETURNING/i.test(sql);
+    if (isSelectOrReturning) {
+      const rows = stmt.all(...params);
+      return { rows: rows.map(normalizeRow), changes: 0 };
+    } else {
+      const info = stmt.run(...params);
+      return { rows: [], changes: info.changes, lastInsertRowid: info.lastInsertRowid };
+    }
+  }
+}
+
+// ── DDL Syntax Translator ────────────────────────────────────────────────────
+
+function translateDdlForPostgres(ddl) {
+  return ddl
+    .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/gi, 'SERIAL PRIMARY KEY')
+    .replace(/COLLATE NOCASE/gi, '')
+    .replace(/TEXT\s+PRIMARY\s+KEY\s+COLLATE\s+NOCASE/gi, 'TEXT PRIMARY KEY')
+    .replace(/ExtractionJson TEXT/gi, 'ExtractionJson JSONB')
+    .replace(/TraverseJson TEXT/gi, 'TraverseJson JSONB')
+    .replace(/AgentTurnsJson TEXT/gi, 'AgentTurnsJson JSONB')
+    .replace(/SolutionStepsJson TEXT/gi, 'SolutionStepsJson JSONB')
+    .replace(/Features TEXT/gi, 'Features JSONB');
+}
+
 // ── Initialization ────────────────────────────────────────────────────────────
 
 export async function init() {
-  if (DATABASE_PATH) {
-    dbPath = path.resolve(DATABASE_PATH);
+  if (DATABASE_URL && (DATABASE_URL.startsWith('postgres://') || DATABASE_URL.startsWith('postgresql://'))) {
+    isPostgres = true;
+    console.log('Connecting to PostgreSQL database...');
+    const config = pgConnectionString.parse(DATABASE_URL);
+    config.ssl = { rejectUnauthorized: false };
+    pool = new pg.Pool(config);
+    // Test connection
+    await pool.query('SELECT NOW()');
+    console.log('✓ PostgreSQL connected successfully.');
+
+    await _initializeSchema();
+    await _runMigrations();
+    await _seedHeuristics();
+    await _seedPlanSettings();
+
+    // Setup periodic log purging every 24 h
+    setTimeout(() => _purgeOldLogs(90), 5000);
+    setInterval(() => _purgeOldLogs(90), 24 * 60 * 60 * 1000);
   } else {
-    // Keep the same path as the original C# version for backwards compatibility
-    const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-    const folder = path.join(configDir, 'BoundaryQC');
-    dbPath = path.join(folder, 'BoundaryQCDiagnostics.db');
-  }
+    isPostgres = false;
+    if (DATABASE_PATH) {
+      dbPath = path.resolve(DATABASE_PATH);
+    } else {
+      const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+      const folder = path.join(configDir, 'BoundaryQC');
+      dbPath = path.join(folder, 'BoundaryQCDiagnostics.db');
+    }
 
-  const parent = path.dirname(dbPath);
-  fs.mkdirSync(parent, { recursive: true });
+    const parent = path.dirname(dbPath);
+    fs.mkdirSync(parent, { recursive: true });
 
-  // Download the database backup from GCS prior to opening
-  try {
-    await downloadDb(dbPath);
-  } catch (err) {
-    console.error('Failed to download database backup from GCS:', err);
-  }
-
-  db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  _initializeSchema();
-  _runMigrations();
-  _seedHeuristics();
-  _seedPlanSettings();
-
-  // Setup periodic database backup to GCS every 30 seconds
-  setInterval(async () => {
     try {
-      await uploadDb(db, dbPath);
+      await downloadDb(dbPath);
     } catch (err) {
-      console.error('Periodic database backup upload to GCS failed:', err);
+      console.error('Failed to download database backup from GCS:', err);
     }
-  }, 30000);
 
-  // Setup process exit/termination signal handlers to perform a final backup
-  const handleExitSignal = async (signal) => {
-    console.log(`\nReceived ${signal} - performing final database backup to GCS...`);
-    if (db) {
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    await _initializeSchema();
+    await _runMigrations();
+    await _seedHeuristics();
+    await _seedPlanSettings();
+
+    // Setup periodic database backup to GCS every 30 seconds
+    setInterval(async () => {
       try {
-        await uploadDb(db, dbPath, true);
-        console.log('✓ Final database backup completed successfully.');
+        await uploadDb(db, dbPath);
       } catch (err) {
-        console.error('Final database backup upload to GCS failed:', err);
+        console.error('Periodic database backup upload to GCS failed:', err);
       }
-    }
-    process.exit(0);
-  };
+    }, 30000);
 
-  process.on('SIGTERM', () => handleExitSignal('SIGTERM'));
-  process.on('SIGINT', () => handleExitSignal('SIGINT'));
+    const handleExitSignal = async (signal) => {
+      console.log(`\nReceived ${signal} - performing final database backup to GCS...`);
+      if (db) {
+        try {
+          await uploadDb(db, dbPath, true);
+          console.log('✓ Final database backup completed successfully.');
+        } catch (err) {
+          console.error('Final database backup upload to GCS failed:', err);
+        }
+      }
+      process.exit(0);
+    };
 
-  // Purge old logs once on startup (deferred 5 s to avoid blocking boot),
-  // then every 24 h. Prevents startup latency on large databases.
-  setTimeout(() => _purgeOldLogs(90), 5000);
-  setInterval(() => _purgeOldLogs(90), 24 * 60 * 60 * 1000);
+    process.on('SIGTERM', () => handleExitSignal('SIGTERM'));
+    process.on('SIGINT', () => handleExitSignal('SIGINT'));
+
+    setTimeout(() => _purgeOldLogs(90), 5000);
+    setInterval(() => _purgeOldLogs(90), 24 * 60 * 60 * 1000);
+  }
 }
 
 export function switchDbPath(newPath) {
+  if (isPostgres) {
+    console.warn('Database is in PostgreSQL mode; switchDbPath is ignored.');
+    return;
+  }
   if (!newPath) throw new Error('New database path cannot be empty.');
   const resolved = path.resolve(newPath);
   const parent = path.dirname(resolved);
@@ -104,24 +282,23 @@ export function switchDbPath(newPath) {
   dbPath = resolved;
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
-  _initializeSchema();
-  _runMigrations();
-  _seedHeuristics();
-  _seedPlanSettings();
+  _initializeSchemaSync();
+  _runMigrationsSync();
+  _seedHeuristicsSync();
+  _seedPlanSettingsSync();
   console.log(`✓ SQLite Database path successfully switched to: ${dbPath}`);
 }
 
 // ── Schema & migrations ───────────────────────────────────────────────────────
 
-function _initializeSchema() {
-  db.exec(`
+async function _initializeSchema() {
+  const ddl = `
     CREATE TABLE IF NOT EXISTS BatchRuns (
       BatchId TEXT PRIMARY KEY,
       Timestamp TEXT NOT NULL,
       TotalFiles INTEGER NOT NULL,
       PassRate REAL NOT NULL,
-      UserId INTEGER,
-      FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE SET NULL
+      UserId INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS DeedLogs (
@@ -268,13 +445,31 @@ function _initializeSchema() {
       FOREIGN KEY (CreatedByUserId) REFERENCES Users(Id) ON DELETE SET NULL,
       FOREIGN KEY (RedeemedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
     );
-  `);
+  `;
+
+  if (isPostgres) {
+    const postgresDdl = translateDdlForPostgres(ddl);
+    await pool.query(postgresDdl);
+  } else {
+    db.exec(ddl);
+  }
 }
 
-function _runMigrations() {
-  const appliedMigrations = new Set(
-    db.prepare('SELECT Name FROM _Migrations').all().map(r => r.Name)
-  );
+// Synchronous fallback for switchDbPath (SQLite only)
+function _initializeSchemaSync() {
+  _initializeSchema().catch(console.error);
+}
+
+async function _runMigrations() {
+  let appliedMigrations = new Set();
+  if (isPostgres) {
+    const res = await pool.query('SELECT Name FROM _Migrations');
+    appliedMigrations = new Set(res.rows.map(r => r.name || r.Name));
+  } else {
+    appliedMigrations = new Set(
+      db.prepare('SELECT Name FROM _Migrations').all().map(r => r.Name)
+    );
+  }
 
   const migrations = [
     { name: 'add_ExtractionJson',          sql: 'ALTER TABLE DeedLogs ADD COLUMN ExtractionJson TEXT' },
@@ -303,27 +498,61 @@ function _runMigrations() {
     { name: 'add_LicenseKeys_RawKey', sql: 'ALTER TABLE LicenseKeys ADD COLUMN RawKey TEXT' },
   ];
 
-  const applyMigration = db.transaction((m) => {
-    try {
-      db.exec(m.sql);
-    } catch (e) {
-      if (!e.message.includes('duplicate column name')) throw e;
+  if (isPostgres) {
+    for (const m of migrations) {
+      if (!appliedMigrations.has(m.name)) {
+        const client = await pool.connect();
+        try {
+          try {
+            await client.query(translateDdlForPostgres(m.sql));
+          } catch (e) {
+            // 42701 is duplicate column, 42P07 is duplicate table
+            if (e.code !== '42701' && e.code !== '42P07' && !e.message.includes('already exists')) {
+              throw e;
+            }
+          }
+          await client.query('INSERT INTO _Migrations (Name, AppliedAt) VALUES ($1, $2) ON CONFLICT (Name) DO NOTHING', [m.name, now()]);
+          console.log(`  ✓ Migration applied: ${m.name}`);
+        } catch (err) {
+          console.error(`Failed to apply migration ${m.name}:`, err);
+        } finally {
+          client.release();
+        }
+      }
     }
-    db.prepare('INSERT OR IGNORE INTO _Migrations (Name, AppliedAt) VALUES (?, ?)').run(m.name, now());
-  });
+  } else {
+    const applyMigration = db.transaction((m) => {
+      try {
+        db.exec(m.sql);
+      } catch (e) {
+        if (!e.message.includes('duplicate column name')) throw e;
+      }
+      db.prepare('INSERT OR IGNORE INTO _Migrations (Name, AppliedAt) VALUES (?, ?)').run(m.name, now());
+    });
 
-  for (const m of migrations) {
-    if (!appliedMigrations.has(m.name)) {
-      applyMigration(m);
-      console.log(`  ✓ Migration applied: ${m.name}`);
+    for (const m of migrations) {
+      if (!appliedMigrations.has(m.name)) {
+        applyMigration(m);
+        console.log(`  ✓ Migration applied: ${m.name}`);
+      }
     }
   }
 }
 
-function _seedHeuristics() {
-  const count = db.prepare('SELECT COUNT(*) as c FROM HeuristicTracking').get().c;
+function _runMigrationsSync() {
+  _runMigrations().catch(console.error);
+}
+
+async function _seedHeuristics() {
+  let count = 0;
+  if (isPostgres) {
+    const res = await pool.query('SELECT COUNT(*) as c FROM HeuristicTracking');
+    count = parseInt(res.rows[0].c || res.rows[0].C || 0);
+  } else {
+    count = db.prepare('SELECT COUNT(*) as c FROM HeuristicTracking').get().c;
+  }
+
   if (count === 0) {
-    const insert = db.prepare('INSERT INTO HeuristicTracking (ProblemName, SolutionApplied, SuccessCount) VALUES (?, ?, 0)');
     const seedData = [
       ['Sequence Out of Order', 'Moore-Neighbor Rearrange'],
       ['Intersecting Boundary', 'Bowtie Inversion Auto-Fix'],
@@ -331,25 +560,50 @@ function _seedHeuristics() {
       ['Shoreline Centerline Meanders', 'Shoreline Gap Solver'],
       ['Pixel Dimension guessing', 'Explicit Chord Parsing'],
     ];
-    for (const [p, s] of seedData) insert.run(p, s);
+
+    for (const [p, s] of seedData) {
+      await query('INSERT INTO HeuristicTracking (ProblemName, SolutionApplied, SuccessCount) VALUES (?, ?, 0)', [p, s]);
+    }
   }
 }
 
-function _seedPlanSettings() {
-  const count = db.prepare('SELECT COUNT(*) as c FROM PlanSettings').get().c;
+function _seedHeuristicsSync() {
+  _seedHeuristics().catch(console.error);
+}
+
+async function _seedPlanSettings() {
+  let count = 0;
+  if (isPostgres) {
+    const res = await pool.query('SELECT COUNT(*) as c FROM PlanSettings');
+    count = parseInt(res.rows[0].c || res.rows[0].C || 0);
+  } else {
+    count = db.prepare('SELECT COUNT(*) as c FROM PlanSettings').get().c;
+  }
+
   if (count === 0) {
-    const insert = db.prepare('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)');
-    insert.run('free', 'Free', 5, 0, JSON.stringify(['5 deed solves/day', 'Traverse Compute', 'Legal Writer', 'Basic Dashboard']), 'Basic free tier for lightweight needs.');
-    insert.run('basic', 'Basic', 50, 500, JSON.stringify(['50 deed solves/day', 'Traverse Compute (full)', 'Legal Writer (pro)', 'Batch Deed processing (basic)']), 'Great for small teams or individual surveyors.');
-    insert.run('pro', 'Pro', -1, 1999, JSON.stringify(['Unlimited deed solves', 'Full Batch Deed processing', 'Plat Extraction with AI', 'Full Analytics Dashboard', 'Priority support']), 'Our most popular plan for professional workflows.');
-    insert.run('enterprise', 'Enterprise', -1, 9900, JSON.stringify(['Everything in Pro', '5 team members', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support']), 'For corporate and larger engineering operations.');
+    await query('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)',
+      ['free', 'Free', 5, 0, JSON.stringify(['5 deed solves/day', 'Traverse Compute', 'Legal Writer', 'Basic Dashboard']), 'Basic free tier for lightweight needs.']
+    );
+    await query('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)',
+      ['basic', 'Basic', 50, 500, JSON.stringify(['50 deed solves/day', 'Traverse Compute (full)', 'Legal Writer (pro)', 'Batch Deed processing (basic)']), 'Great for small teams or individual surveyors.']
+    );
+    await query('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)',
+      ['pro', 'Pro', -1, 1999, JSON.stringify(['Unlimited deed solves', 'Full Batch Deed processing', 'Plat Extraction with AI', 'Full Analytics Dashboard', 'Priority support']), 'Our most popular plan for professional workflows.']
+    );
+    await query('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)',
+      ['enterprise', 'Enterprise', -1, 9900, JSON.stringify(['Everything in Pro', '5 team members', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support']), 'For corporate and larger engineering operations.']
+    );
   }
 }
 
-function _purgeOldLogs(retentionDays) {
+function _seedPlanSettingsSync() {
+  _seedPlanSettings().catch(console.error);
+}
+
+async function _purgeOldLogs(retentionDays) {
   const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString().replace('T', ' ').slice(0, 19);
-  db.prepare('DELETE FROM DeedLogs WHERE Timestamp < ?').run(cutoff);
-  db.prepare('DELETE FROM BatchRuns WHERE Timestamp < ?').run(cutoff);
+  await query('DELETE FROM DeedLogs WHERE Timestamp < ?', [cutoff]);
+  await query('DELETE FROM BatchRuns WHERE Timestamp < ?', [cutoff]);
 }
 
 // ── Shared row mapper ─────────────────────────────────────────────────────────

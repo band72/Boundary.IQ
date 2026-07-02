@@ -70,7 +70,7 @@ app.set('trust proxy', 1); // Trust the first proxy (e.g. Cloud Run load balance
 // ── Global crash guards ───────────────────────────────────────────────────────
 // Prevent unhandled promise rejections from silently crashing the process.
 process.on('unhandledRejection', (reason) => {
-  logger.error({ reason }, '⚠ Unhandled promise rejection — this is a bug');
+  logger.error({ err: reason instanceof Error ? reason : new Error(String(reason)) }, '⚠ Unhandled promise rejection — this is a bug');
 });
 process.on('uncaughtException', (err) => {
   logger.fatal({ err }, '✗ Uncaught exception — shutting down');

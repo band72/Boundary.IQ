@@ -1,38 +1,36 @@
-import { getDb } from './core.js';
+import { query } from './core.js';
 
-export function getAllPlanSettings() {
-  const db = getDb();
-  const rows = db.prepare('SELECT * FROM PlanSettings').all();
-  return rows.map(r => ({
+export async function getAllPlanSettings() {
+  const res = await query('SELECT * FROM PlanSettings');
+  return res.rows.map(r => ({
     plan: r.Plan,
     name: r.Name,
     dailyDeedLimit: r.DailyDeedLimit,
     price: r.Price,
-    features: JSON.parse(r.Features || '[]'),
+    features: typeof r.Features === 'string' ? JSON.parse(r.Features || '[]') : r.Features,
     description: r.Description,
   }));
 }
 
-export function getPlanSettings(plan) {
-  const db = getDb();
-  const r = db.prepare('SELECT * FROM PlanSettings WHERE Plan = ?').get(plan);
+export async function getPlanSettings(plan) {
+  const res = await query('SELECT * FROM PlanSettings WHERE Plan = ?', [plan]);
+  const r = res.rows[0];
   if (!r) return null;
   return {
     plan: r.Plan,
     name: r.Name,
     dailyDeedLimit: r.DailyDeedLimit,
     price: r.Price,
-    features: JSON.parse(r.Features || '[]'),
+    features: typeof r.Features === 'string' ? JSON.parse(r.Features || '[]') : r.Features,
     description: r.Description,
   };
 }
 
-export function updatePlanSettings(plan, { name, dailyDeedLimit, price, features, description }) {
-  const db = getDb();
-  db.prepare(`
+export async function updatePlanSettings(plan, { name, dailyDeedLimit, price, features, description }) {
+  await query(`
     UPDATE PlanSettings
     SET Name = ?, DailyDeedLimit = ?, Price = ?, Features = ?, Description = ?
     WHERE Plan = ?
-  `).run(name, dailyDeedLimit, price, JSON.stringify(features || []), description, plan);
+  `, [name, dailyDeedLimit, price, JSON.stringify(features || []), description, plan]);
   return getPlanSettings(plan);
 }

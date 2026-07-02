@@ -49,13 +49,13 @@ const SQUARE_PTS = [
 const W = 700, H = 340;
 
 describe('TraverseMap — coordinate projection', () => {
-  it('projects POB to bottom-left of padded canvas at zero pan', () => {
+  it('projects POB to bottom-left of padded canvas at zero pan', async () => {
     const { tx, ty } = buildProjection({ pts: SQUARE_PTS, W, H });
     expect(tx(5000)).toBeCloseTo(PAD, 1);
     expect(ty(5000)).toBeCloseTo(H - PAD, 1);
   });
 
-  it('positive panOffset.x shifts every projected x right by that amount', () => {
+  it('positive panOffset.x shifts every projected x right by that amount', async () => {
     const pan = { x: 30, y: 0 };
     const { tx: tx0 } = buildProjection({ pts: SQUARE_PTS, W, H });
     const { tx: txP } = buildProjection({ pts: SQUARE_PTS, W, H, panOffset: pan });
@@ -64,7 +64,7 @@ describe('TraverseMap — coordinate projection', () => {
     });
   });
 
-  it('positive panOffset.y shifts every projected y down by that amount', () => {
+  it('positive panOffset.y shifts every projected y down by that amount', async () => {
     const pan = { x: 0, y: 20 };
     const { ty: ty0 } = buildProjection({ pts: SQUARE_PTS, W, H });
     const { ty: tyP } = buildProjection({ pts: SQUARE_PTS, W, H, panOffset: pan });
@@ -73,7 +73,7 @@ describe('TraverseMap — coordinate projection', () => {
     });
   });
 
-  it('scale is symmetric — equal-distance N and E steps produce same pixel shift', () => {
+  it('scale is symmetric — equal-distance N and E steps produce same pixel shift', async () => {
     const { tx, ty } = buildProjection({ pts: SQUARE_PTS, W, H });
     const dPxE = Math.abs(tx(5100) - tx(5000));
     const dPxN = Math.abs(ty(5000) - ty(5100));
@@ -82,31 +82,31 @@ describe('TraverseMap — coordinate projection', () => {
 });
 
 describe('TraverseMap — hit-testing with pan offset', () => {
-  it('finds vertex 0 when mouse is exactly on its projected position', () => {
+  it('finds vertex 0 when mouse is exactly on its projected position', async () => {
     const { tx, ty } = buildProjection({ pts: SQUARE_PTS, W, H });
     const idx = findClosestVertex(tx(5000), ty(5000), SQUARE_PTS, tx, ty);
     expect(idx).toBe(0);
   });
 
-  it('finds vertex 2 when mouse is 3 px from its position (within threshold)', () => {
+  it('finds vertex 2 when mouse is 3 px from its position (within threshold)', async () => {
     const { tx, ty } = buildProjection({ pts: SQUARE_PTS, W, H });
     const idx = findClosestVertex(tx(5100) + 3, ty(5100) + 3, SQUARE_PTS, tx, ty);
     expect(idx).toBe(2);
   });
 
-  it('returns null when mouse is far from all vertices', () => {
+  it('returns null when mouse is far from all vertices', async () => {
     const { tx, ty } = buildProjection({ pts: SQUARE_PTS, W, H });
     expect(findClosestVertex(0, 0, SQUARE_PTS, tx, ty)).toBeNull();
   });
 
-  it('hit-testing works correctly after panning 30 px right', () => {
+  it('hit-testing works correctly after panning 30 px right', async () => {
     const pan = { x: 30, y: 0 };
     const { tx, ty } = buildProjection({ pts: SQUARE_PTS, W, H, panOffset: pan });
     const idx = findClosestVertex(tx(5000), ty(5000), SQUARE_PTS, tx, ty);
     expect(idx).toBe(0);
   });
 
-  it('un-panned position misses vertex when map has been panned 100 px', () => {
+  it('un-panned position misses vertex when map has been panned 100 px', async () => {
     const { tx: tx0, ty: ty0 } = buildProjection({ pts: SQUARE_PTS, W, H });
     const { tx: txP, ty: tyP } = buildProjection({ pts: SQUARE_PTS, W, H, panOffset: { x: 100, y: 0 } });
     // Mouse at OLD vertex 0 position — should miss with panned projector
@@ -118,31 +118,31 @@ describe('TraverseMap — hit-testing with pan offset', () => {
 describe('TraverseMap — pan delta math', () => {
   const canvasW = 700, cssW = 700;
 
-  it('zero drag produces zero pan offset', () => {
+  it('zero drag produces zero pan offset', async () => {
     const r = applyPanDelta({ dragStartClient: { x: 100, y: 100 }, currentClient: { x: 100, y: 100 }, panAtStart: { x: 0, y: 0 }, canvasW, cssW });
     expect(r.x).toBeCloseTo(0, 6);
     expect(r.y).toBeCloseTo(0, 6);
   });
 
-  it('100 CSS px right drag produces 0.55 * 100 = 55 canvas px offset', () => {
+  it('100 CSS px right drag produces 0.55 * 100 = 55 canvas px offset', async () => {
     const r = applyPanDelta({ dragStartClient: { x: 0, y: 0 }, currentClient: { x: 100, y: 0 }, panAtStart: { x: 0, y: 0 }, canvasW, cssW });
     expect(r.x).toBeCloseTo(55, 4);
     expect(r.y).toBeCloseTo(0, 6);
   });
 
-  it('50 CSS px down drag produces 0.55 * 50 = 27.5 canvas py offset', () => {
+  it('50 CSS px down drag produces 0.55 * 50 = 27.5 canvas py offset', async () => {
     const r = applyPanDelta({ dragStartClient: { x: 0, y: 0 }, currentClient: { x: 0, y: 50 }, panAtStart: { x: 0, y: 0 }, canvasW, cssW });
     expect(r.y).toBeCloseTo(27.5, 4);
     expect(r.x).toBeCloseTo(0, 6);
   });
 
-  it('accumulates correctly from a non-zero starting offset', () => {
+  it('accumulates correctly from a non-zero starting offset', async () => {
     const r = applyPanDelta({ dragStartClient: { x: 100, y: 100 }, currentClient: { x: 160, y: 80 }, panAtStart: { x: 20, y: -10 }, canvasW, cssW });
     expect(r.x).toBeCloseTo(20 + 60 * 0.55, 4);
     expect(r.y).toBeCloseTo(-10 + (-20) * 0.55, 4);
   });
 
-  it('halving CSS display width doubles sensitivity (scaleRatio)', () => {
+  it('halving CSS display width doubles sensitivity (scaleRatio)', async () => {
     const full = applyPanDelta({ dragStartClient: { x: 0, y: 0 }, currentClient: { x: 100, y: 0 }, panAtStart: { x: 0, y: 0 }, canvasW: 700, cssW: 700 });
     const half = applyPanDelta({ dragStartClient: { x: 0, y: 0 }, currentClient: { x: 100, y: 0 }, panAtStart: { x: 0, y: 0 }, canvasW: 700, cssW: 350 });
     expect(half.x / full.x).toBeCloseTo(2, 4);

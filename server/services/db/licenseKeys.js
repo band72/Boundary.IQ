@@ -11,7 +11,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { getDb, now } from './core.js';
+import { query, now } from './core.js';
 
 const VALID_PLANS = ['basic', 'pro', 'enterprise'];
 
@@ -19,14 +19,6 @@ const VALID_PLANS = ['basic', 'pro', 'enterprise'];
 
 function hashKey(rawKey) {
   return crypto.createHash('sha256').update(rawKey.trim().toUpperCase()).digest('hex');
-}
-
-function epochToSqlite(ms) {
-  return new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
-}
-
-function sqliteToEpoch(str) {
-  return str ? new Date(str.replace(' ', 'T') + 'Z').getTime() : null;
 }
 
 // ── Key generation ────────────────────────────────────────────────────────────
@@ -45,19 +37,19 @@ export function generateKeyString() {
  * @param {{ plan, createdByUserId, note, expiresInDays }} opts
  * @returns {{ rawKey, plan, expiresAt }}
  */
-export function createLicenseKey({ plan = 'pro', createdByUserId = null, note = null, expiresInDays = null } = {}) {
+export async function createLicenseKey({ plan = 'pro', createdByUserId = null, note = null, expiresInDays = null } = {}) {
   if (!VALID_PLANS.includes(plan)) throw new Error(`Invalid plan: ${plan}`);
 
   const rawKey = generateKeyString();
   const keyHash = hashKey(rawKey);
   const expiresAt = expiresInDays
-    ? epochToSqlite(Date.now() + expiresInDays * 86400000)
+    ? new Date(Date.now() + expiresInDays * 86400000).toISOString().replace('T', ' ').slice(0, 19)
     : null;
 
-  getDb().prepare(`
+  await query(`
     INSERT INTO LicenseKeys (KeyHash, Plan, CreatedByUserId, ExpiresAt, Note, CreatedAt)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(keyHash, plan, createdByUserId, expiresAt, note, now());
+  `, [keyHash, plan, createdByUserId, expiresAt, note, now()]);
 
   return { rawKey, plan, expiresAt };
 }
@@ -68,13 +60,14 @@ export function createLicenseKey({ plan = 'pro', createdByUserId = null, note = 
  * Attempt to redeem a license key for a user.
  * Returns { ok: true, plan } on success or { ok: false, error } on failure.
  */
-export function redeemLicenseKey(rawKey, userId) {
-  const db = getDb();
+export async function redeemLicenseKey(rawKey, userId) {
   const keyHash = hashKey(rawKey);
 
-  const row = db.prepare(
-    'SELECT * FROM LicenseKeys WHERE KeyHash = ?'
-  ).get(keyHash);
+  const res = await query(
+    'SELECT * FROM LicenseKeys WHERE KeyHash = ?',
+    [keyHash]
+  );
+  const row = res.rows[0];
 
   if (!row) return { ok: false, error: 'License key not found. Please check and try again.' };
 
@@ -86,15 +79,15 @@ export function redeemLicenseKey(rawKey, userId) {
     return { ok: false, error: 'This license key has already been redeemed.' };
   }
 
-  if (row.ExpiresAt && sqliteToEpoch(row.ExpiresAt) < Date.now()) {
+  if (row.ExpiresAt && new Date(row.ExpiresAt.replace(' ', 'T') + 'Z').getTime() < Date.now()) {
     return { ok: false, error: 'This license key has expired.' };
   }
 
   // Mark as redeemed
-  db.prepare(`
+  await query(`
     UPDATE LicenseKeys SET RedeemedByUserId = ?, RedeemedAt = ?
     WHERE KeyHash = ?
-  `).run(userId, now(), keyHash);
+  `, [userId, now(), keyHash]);
 
   return { ok: true, plan: row.Plan };
 }
@@ -104,28 +97,41 @@ export function redeemLicenseKey(rawKey, userId) {
 /**
  * Get all license keys redeemed by a user (for display in settings).
  */
-export function getLicenseKeysForUser(userId) {
-  return getDb().prepare(`
+export async function getLicenseKeysForUser(userId) {
+  const res = await query(`
     SELECT Plan, RedeemedAt, ExpiresAt, Note
     FROM LicenseKeys
     WHERE RedeemedByUserId = ?
     ORDER BY RedeemedAt DESC
-  `).all(userId);
+  `, [userId]);
+  return res.rows;
 }
 
 /**
  * Admin: list all license keys (hashes masked for security).
  */
-export function listAllLicenseKeys() {
-  return getDb().prepare(`
+export async function listAllLicenseKeys() {
+  const res = await query(`
     SELECT
-      substr(KeyHash, 1, 8) || '…' AS keyPrefix,
       Plan, Note,
       RedeemedByUserId, RedeemedAt,
-      ExpiresAt, CreatedAt, CreatedByUserId
+      ExpiresAt, CreatedAt, CreatedByUserId, KeyHash
     FROM LicenseKeys
     ORDER BY CreatedAt DESC
-  `).all();
+  `);
+  return res.rows.map(r => {
+    const hash = r.KeyHash || '';
+    return {
+      keyPrefix: hash.substring(0, 8) + '…',
+      Plan: r.Plan,
+      Note: r.Note,
+      RedeemedByUserId: r.RedeemedByUserId,
+      RedeemedAt: r.RedeemedAt,
+      ExpiresAt: r.ExpiresAt,
+      CreatedAt: r.CreatedAt,
+      CreatedByUserId: r.CreatedByUserId,
+    };
+  });
 }
 
 // ── Private Key Env Persistence ───────────────────────────────────────────────
@@ -189,7 +195,7 @@ export function getOrCreateLicensePrivateKey() {
 /**
  * Create a signed license key for a specific user and plan.
  */
-export function createSignedLicenseKeyForUser({ plan, userId, createdByUserId = null } = {}) {
+export async function createSignedLicenseKeyForUser({ plan, userId, createdByUserId = null } = {}) {
   if (!VALID_PLANS.includes(plan)) throw new Error(`Invalid plan: ${plan}`);
 
   const privateKeyPem = getOrCreateLicensePrivateKey();
@@ -209,10 +215,10 @@ export function createSignedLicenseKeyForUser({ plan, userId, createdByUserId = 
   const rawKey = `BIQ-${plan.toUpperCase()}-${payloadB64}.${signature}`;
   const keyHash = hashKey(rawKey);
 
-  getDb().prepare(`
+  await query(`
     INSERT INTO LicenseKeys (KeyHash, Plan, CreatedByUserId, RedeemedByUserId, RedeemedAt, Note, CreatedAt, RawKey)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     keyHash,
     plan,
     createdByUserId,
@@ -221,7 +227,7 @@ export function createSignedLicenseKeyForUser({ plan, userId, createdByUserId = 
     `Generated for user ID ${userId} (${plan})`,
     now(),
     rawKey
-  );
+  ]);
 
   return { rawKey, plan };
 }
@@ -229,12 +235,12 @@ export function createSignedLicenseKeyForUser({ plan, userId, createdByUserId = 
 /**
  * Retrieve the active license key for a specific user.
  */
-export function getActiveLicenseKeyForUser(userId) {
-  return getDb().prepare(`
+export async function getActiveLicenseKeyForUser(userId) {
+  const res = await query(`
     SELECT RawKey, Plan, RedeemedAt, ExpiresAt
     FROM LicenseKeys
     WHERE RedeemedByUserId = ?
-    ORDER BY rowid DESC LIMIT 1
-  `).get(userId);
+    ORDER BY CreatedAt DESC, RedeemedAt DESC LIMIT 1
+  `, [userId]);
+  return res.rows[0] || null;
 }
-

@@ -1,6 +1,6 @@
 /**
  * db/pendingRegistrations.js
- * SQLite-backed store for email verification pending registrations.
+ * Database-backed store for email verification pending registrations.
  *
  * Replaces the in-memory Map that was wiped on every Cloud Run restart/redeploy.
  * Passwords are stored as a salted SHA-256 hash so plain-text is never written
@@ -10,7 +10,7 @@
  * Auto-cleanup of expired rows runs on module load (after 5 s) and every 30 min.
  */
 
-import { getDb, now } from './core.js';
+import { query, now } from './core.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,17 +29,22 @@ function sqliteToEpoch(str) {
  * @param {string} email  Lowercase email (used as PK)
  * @param {{ username, password, code, expiresAt, inviteToken }} value
  */
-export function upsertPendingRegistration(email, { username, password, code, expiresAt, inviteToken }) {
-  const db = getDb();
-
+export async function upsertPendingRegistration(email, { username, password, code, expiresAt, inviteToken }) {
   // Store password as-is in a dedicated column; it is a plain-text bcrypt input
   // but is only valid for 15 min and deleted immediately on successful verify.
-  // The table is never exposed through the API and is local SQLite.
-  db.prepare(`
-    INSERT OR REPLACE INTO PendingRegistrations
+  await query(`
+    INSERT INTO PendingRegistrations
       (Email, Username, PasswordHash, Code, Attempts, ExpiresAt, InviteToken, CreatedAt)
     VALUES (?, ?, ?, ?, 0, ?, ?, ?)
-  `).run(
+    ON CONFLICT (Email) DO UPDATE SET
+      Username = EXCLUDED.Username,
+      PasswordHash = EXCLUDED.PasswordHash,
+      Code = EXCLUDED.Code,
+      Attempts = 0,
+      ExpiresAt = EXCLUDED.ExpiresAt,
+      InviteToken = EXCLUDED.InviteToken,
+      CreatedAt = EXCLUDED.CreatedAt
+  `, [
     email.toLowerCase(),
     username,
     password,        // stored transiently; deleted within 15 min
@@ -47,7 +52,7 @@ export function upsertPendingRegistration(email, { username, password, code, exp
     epochToSqlite(expiresAt),
     inviteToken || null,
     now(),
-  );
+  ]);
 }
 
 /**
@@ -55,17 +60,18 @@ export function upsertPendingRegistration(email, { username, password, code, exp
  * Returns an object compatible with the old in-memory Map shape:
  *   { username, password, code, expiresAt (epoch ms), inviteToken, attempts }
  */
-export function getPendingRegistration(email) {
-  const db = getDb();
-  const row = db.prepare(
-    'SELECT * FROM PendingRegistrations WHERE Email = ? COLLATE NOCASE'
-  ).get(email.toLowerCase());
+export async function getPendingRegistration(email) {
+  const res = await query(
+    'SELECT * FROM PendingRegistrations WHERE LOWER(Email) = LOWER(?)',
+    [email.toLowerCase()]
+  );
+  const row = res.rows[0];
 
   if (!row) return null;
 
   const expiresAtMs = sqliteToEpoch(row.ExpiresAt);
   if (expiresAtMs < Date.now()) {
-    db.prepare('DELETE FROM PendingRegistrations WHERE Email = ?').run(email.toLowerCase());
+    await query('DELETE FROM PendingRegistrations WHERE LOWER(Email) = LOWER(?)', [email.toLowerCase()]);
     return null;
   }
 
@@ -82,42 +88,50 @@ export function getPendingRegistration(email) {
 /**
  * Delete a pending registration after successful verification or lockout.
  */
-export function deletePendingRegistration(email) {
-  getDb().prepare(
-    'DELETE FROM PendingRegistrations WHERE Email = ? COLLATE NOCASE'
-  ).run(email.toLowerCase());
+export async function deletePendingRegistration(email) {
+  await query(
+    'DELETE FROM PendingRegistrations WHERE LOWER(Email) = LOWER(?)',
+    [email.toLowerCase()]
+  );
 }
 
 /**
  * Increment the failed attempt counter and return the new count.
  */
-export function incrementVerifyAttempts(email) {
-  const db = getDb();
-  db.prepare(
-    'UPDATE PendingRegistrations SET Attempts = Attempts + 1 WHERE Email = ? COLLATE NOCASE'
-  ).run(email.toLowerCase());
-  const row = db.prepare(
-    'SELECT Attempts FROM PendingRegistrations WHERE Email = ? COLLATE NOCASE'
-  ).get(email.toLowerCase());
-  return row?.Attempts ?? 1;
+export async function incrementVerifyAttempts(email) {
+  await query(
+    'UPDATE PendingRegistrations SET Attempts = Attempts + 1 WHERE LOWER(Email) = LOWER(?)',
+    [email.toLowerCase()]
+  );
+  const res = await query(
+    'SELECT Attempts FROM PendingRegistrations WHERE LOWER(Email) = LOWER(?)',
+    [email.toLowerCase()]
+  );
+  return res.rows[0]?.Attempts ?? 1;
 }
 
 /**
  * Purge all expired pending registrations.
  */
-export function purgeExpiredPendingRegistrations() {
-  const deleted = getDb().prepare(
-    'DELETE FROM PendingRegistrations WHERE ExpiresAt < ?'
-  ).run(now()).changes;
+export async function purgeExpiredPendingRegistrations() {
+  const res = await query(
+    'DELETE FROM PendingRegistrations WHERE ExpiresAt < ?',
+    [now()]
+  );
+  const deleted = res.changes;
   if (deleted > 0) console.log(`✓ Purged ${deleted} expired pending registration(s).`);
   return deleted;
 }
 
 // ── Periodic cleanup ──────────────────────────────────────────────────────────
 setTimeout(() => {
-  try { purgeExpiredPendingRegistrations(); } catch { /* DB may not be ready yet on import */ }
+  purgeExpiredPendingRegistrations().catch(err => {
+    /* DB may not be ready yet on import */
+  });
 }, 5000);
 
 setInterval(() => {
-  try { purgeExpiredPendingRegistrations(); } catch { /* ignore */ }
+  purgeExpiredPendingRegistrations().catch(err => {
+    /* ignore */
+  });
 }, 30 * 60 * 1000);

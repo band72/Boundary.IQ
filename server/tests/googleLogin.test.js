@@ -124,7 +124,7 @@ describe('Google Login Integration Test Suite', () => {
     expect(data.plan).toBe('free');
 
     // Confirm user was written to the test database
-    const userInDb = getUserById(data.id);
+    const userInDb = await getUserById(data.id);
     expect(userInDb).toBeDefined();
     expect(userInDb.username).toBe(email);
 

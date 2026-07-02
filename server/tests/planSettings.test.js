@@ -34,10 +34,10 @@ describe('Admin Plan Settings Integration Test Suite', () => {
     baseUrl = `http://localhost:${port}/api`;
 
     // Create test accounts
-    const adminUser = createUser('settings_admin', 'password123', 'admin@example.com');
-    updateUserRole(adminUser.id, 'admin');
+    const adminUser = await createUser('settings_admin', 'password123', 'admin@example.com');
+    await updateUserRole(adminUser.id, 'admin');
 
-    const regularUser = createUser('settings_user', 'password123', 'user@example.com');
+    const regularUser = await createUser('settings_user', 'password123', 'user@example.com');
 
     // Fetch tokens
     const adminRes = await fetch(`${baseUrl}/auth/login`, {
@@ -127,7 +127,7 @@ describe('Admin Plan Settings Integration Test Suite', () => {
 
   it('should verify checkDailyLimit respects dynamic DB configurations', async () => {
     // Check limit dynamically for free user (which has 5 solves limit)
-    const limitCheckFree = checkDailyLimit(999, 'free', 'user');
+    const limitCheckFree = await checkDailyLimit(999, 'free', 'user');
     expect(limitCheckFree.limit).toBe(5);
 
     // Now update free plan limit using PUT admin setting
@@ -148,7 +148,7 @@ describe('Admin Plan Settings Integration Test Suite', () => {
     expect(updateRes.status).toBe(200);
 
     // Verify limit check is now updated to 12
-    const limitCheckUpdated = checkDailyLimit(999, 'free', 'user');
+    const limitCheckUpdated = await checkDailyLimit(999, 'free', 'user');
     expect(limitCheckUpdated.limit).toBe(12);
   });
 });

@@ -182,7 +182,7 @@ function _getPartFamily(fileName) {
 }
 
 // GET /api/folderscan/scan
-router.get('/scan', scanLimiter, (req, res) => {
+router.get('/scan', scanLimiter, async (req, res) => {
   const validPath = validatePath(req.query.path);
   if (!validPath) return res.status(403).json({ error: 'Path is not allowed. Set BOUNDARY_SCAN_ROOTS env var to configure.' });
   if (!fs.existsSync(validPath)) return res.status(404).json({ error: `Directory not found: ${validPath}` });
@@ -204,7 +204,7 @@ router.get('/scan', scanLimiter, (req, res) => {
 });
 
 // GET /api/folderscan/debug-skipped
-router.get('/debug-skipped', (req, res) => {
+router.get('/debug-skipped', async (req, res) => {
   const validPath = validatePath(req.query.path);
   if (!validPath) return res.status(403).json({ error: 'Path is not allowed.' });
   if (!fs.existsSync(validPath)) return res.status(404).json({ error: `Directory not found: ${validPath}` });
@@ -238,13 +238,13 @@ function releaseLock() {
 }
 
 // GET /api/folderscan/status  — is the server currently processing?
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   const stat = lockService.status();
   res.json(stat);
 });
 
 // POST /api/folderscan/reset-lock — force-release the processing lock
-router.post('/reset-lock', (req, res) => {
+router.post('/reset-lock', async (req, res) => {
   const { wasLocked, previousInfo } = lockService.reset();
   console.log('🔓 Processing lock was force-released by manual client request.');
   res.json({
@@ -256,14 +256,14 @@ router.post('/reset-lock', (req, res) => {
 });
 
 // Wrapper helper to inject Point of Reference parameters automatically into saveDeedLog
-function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, fileHash = null) {
+async function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, fileHash = null) {
   const refName = req.query.refName || null;
   const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
   const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
   const pobN = parseFloat(req.query.pobN) || 5000;
   const pobE = parseFloat(req.query.pobE) || 5000;
 
-  db.saveDeedLog(
+  await db.saveDeedLog(
     batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed,
     extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
     refName, refN, refE, pobN, pobE, fileHash
@@ -477,7 +477,7 @@ router.post('/process-batch', async (req, res) => {
     const batchId = uuidv4();
     const results = new Array(batch.length);
 
-    db.saveBatchRun(batchId, batch.length, 0.0);
+    await db.saveBatchRun(batchId, batch.length, 0.0);
     console.log(`FolderScan batch ${batchIndex}/${totalBatches - 1}: ${batch.length} files from ${req.query.path} using ${geminiVision.getActiveProvider()}/${geminiVision.getActiveModel()}`);
 
     const sem = new lockService.FifoSemaphore(concurrency);
@@ -524,7 +524,7 @@ router.post('/process-batch', async (req, res) => {
 
         // Check cache
         if (!forceOcr) {
-          const solvedCase = db.findSolvedCase(fileName, fileHash);
+          const solvedCase = await db.findSolvedCase(fileName, fileHash);
           if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
             console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
             const cachedEx = JSON.parse(solvedCase.extractionJson);
@@ -555,7 +555,7 @@ router.post('/process-batch', async (req, res) => {
           }
 
           // Check skipped cache
-          const skippedCase = db.findSkippedCase(fileName, fileHash);
+          const skippedCase = await db.findSkippedCase(fileName, fileHash);
           if (skippedCase?.extractionJson) {
             console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
             const cachedEx = JSON.parse(skippedCase.extractionJson);
@@ -609,7 +609,7 @@ router.post('/process-batch', async (req, res) => {
 
             // Check solved cache for this parcel
             if (!forceOcr) {
-              const solvedCase = db.findSolvedCase(parcelFileName, parcelHash);
+              const solvedCase = await db.findSolvedCase(parcelFileName, parcelHash);
               if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
                 console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
                 const cachedEx = JSON.parse(solvedCase.extractionJson);
@@ -646,7 +646,7 @@ router.post('/process-batch', async (req, res) => {
               }
 
               // Check skipped cache for this parcel
-              const skippedCase = db.findSkippedCase(parcelFileName, parcelHash);
+              const skippedCase = await db.findSkippedCase(parcelFileName, parcelHash);
               if (skippedCase?.extractionJson) {
                 console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
                 const cachedEx = JSON.parse(skippedCase.extractionJson);
@@ -992,7 +992,7 @@ router.post('/process-batch', async (req, res) => {
         const parcelLabel = resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
         const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
         saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson, fileHash);
-        if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
+        if (extraction.courses?.length > 0) await db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
       } catch (ex) {
         console.error(`FolderScan item failed: ${fileName}`, ex.message);
         results[index] = { fileName, status: 'error', extraction: { rawText: rawDocText || '' }, traverse: null, legalDescription: null, error: ex.message, fileHash, agentTurns: null };
@@ -1007,7 +1007,7 @@ router.post('/process-batch', async (req, res) => {
 
     const succeeded = results.filter(r => r?.status === 'success').length;
     const passRate = results.length > 0 ? succeeded / results.length : 0;
-    db.saveBatchRun(batchId, results.length, passRate);
+    await db.saveBatchRun(batchId, results.length, passRate);
 
     // Auto-output
     let outputFolder = null;
@@ -1178,7 +1178,7 @@ router.post('/process-file', async (req, res) => {
     let mime = inferMimeType(fileName);
     const fileHash = crypto.createHash('sha256').update(imageBytes).digest('hex');
 
-    db.saveBatchRun(batchId, 1, 0.0);
+    await db.saveBatchRun(batchId, 1, 0.0);
     console.log(`FolderScan processing single file: ${fileName} (hash=${fileHash})`);
 
     // Check if getDocType returns 'SKIP'
@@ -1228,7 +1228,7 @@ router.post('/process-file', async (req, res) => {
     }
 
     if (!force) {
-      const solvedCase = db.findSolvedCase(fileName, fileHash);
+      const solvedCase = await db.findSolvedCase(fileName, fileHash);
       if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
         const cachedEx = JSON.parse(solvedCase.extractionJson);
         const cachedTr = JSON.parse(solvedCase.traverseJson);
@@ -1294,7 +1294,7 @@ router.post('/process-file', async (req, res) => {
         }
       }
 
-      const skippedCase = db.findSkippedCase(fileName, fileHash);
+      const skippedCase = await db.findSkippedCase(fileName, fileHash);
       if (skippedCase?.extractionJson) {
         console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
         const cachedEx = JSON.parse(skippedCase.extractionJson);
@@ -1362,7 +1362,7 @@ router.post('/process-file', async (req, res) => {
 
         // Check cache (unless forced)
         if (!force) {
-          const solvedCase = db.findSolvedCase(parcelFileName, parcelHash);
+          const solvedCase = await db.findSolvedCase(parcelFileName, parcelHash);
           if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
             console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
             const cachedEx = JSON.parse(solvedCase.extractionJson);
@@ -1398,7 +1398,7 @@ router.post('/process-file', async (req, res) => {
             continue;
           }
 
-          const skippedCase = db.findSkippedCase(parcelFileName, parcelHash);
+          const skippedCase = await db.findSkippedCase(parcelFileName, parcelHash);
           if (skippedCase?.extractionJson) {
             console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
             const cachedEx = JSON.parse(skippedCase.extractionJson);
@@ -1732,7 +1732,7 @@ router.post('/process-file', async (req, res) => {
     const parcelLabel = resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : `[${extraction.classification}] ${path.parse(fileName).name}`;
     const stepsJson = repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null;
     saveDeedLogWrapper(req, batchId, fileName, parcelLabel, extraction.courses?.length || 0, traverse?.closure?.linearError || 0, parsePrecisionRatio(traverse?.closure?.precisionRatio), status, stageUsed, JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null, repairResult.agentTurns ? JSON.stringify(repairResult.agentTurns) : null, repairResult.trustScore ?? null, stepsJson, fileHash);
-    if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
+    if (extraction.courses?.length > 0) await db.incrementHeuristic(stageUsed, 'FolderScan auto-repair');
 
     // Rec 4: Record endpoint for potential Part B chaining
     if ((status === 'PASS' || status === 'MEANDER') && _partFamily) {
@@ -1791,7 +1791,7 @@ router.post('/chain-adjacent', async (req, res) => {
     const pobN = pob?.northing ?? 5000;
     const pobE = pob?.easting  ?? 5000;
     const batchId = inBatchId || uuidv4();
-    db.saveBatchRun(batchId, 1, 0.0);
+    await db.saveBatchRun(batchId, 1, 0.0);
 
     console.log(`Chain-Adjacent: ${fileName} — extracting secondary deed (${secondaryDeedText.length} chars)…`);
 
@@ -1898,7 +1898,7 @@ router.post('/resolve-plat-manual', async (req, res) => {
     const pobN = pob?.northing ?? 5000;
     const pobE = pob?.easting  ?? 5000;
     const batchId = inBatchId || uuidv4();
-    db.saveBatchRun(batchId, 1, 0.0);
+    await db.saveBatchRun(batchId, 1, 0.0);
 
     const platResult = platLookup.resolveManualCoords(manualCoords);
     const traverse   = traverseSvc.compute({ pointOfBeginning: { northing: pobN, easting: pobE }, courses: platResult.courses, units, isOpenEnded: false });
@@ -2052,7 +2052,7 @@ router.post('/retry-failed', async (req, res) => {
 
   try {
     // Get all files that are still failing
-    const failedFileNames = db.getFailedFileNames();
+    const failedFileNames = await db.getFailedFileNames();
     send('init', { total: failedFileNames.length, models: modelsToTry, maxPasses });
 
     if (failedFileNames.length === 0) {
@@ -2112,7 +2112,7 @@ router.post('/retry-failed', async (req, res) => {
 
     let fixed = 0, stillFailing = 0, skipped = 0;
     const batchId = uuidv4();
-    db.saveBatchRun(batchId, queue.length, 0);
+    await db.saveBatchRun(batchId, queue.length, 0);
 
     // Process with concurrency limit — use atomic index capture to avoid cursor++ race
     let cursor = 0;
@@ -2254,7 +2254,7 @@ router.post('/retry-failed', async (req, res) => {
     await Promise.all(workers);
 
     const passRate = queue.length > 0 ? fixed / queue.length : 0;
-    db.saveBatchRun(batchId, queue.length, passRate);
+    await db.saveBatchRun(batchId, queue.length, passRate);
 
     send('done', {
       total: queue.length,
@@ -2277,7 +2277,7 @@ router.post('/retry-failed', async (req, res) => {
 });
 
 // GET /api/folderscan/browse - Safe directory browser for selection
-router.get('/browse', (req, res) => {
+router.get('/browse', async (req, res) => {
   try {
     const roots = getAllowedRoots();
     let currentPath = req.query.path ? path.resolve(req.query.path) : roots[0];

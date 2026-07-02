@@ -3,7 +3,7 @@
  */
 
 import crypto from 'crypto';
-import { getDb, now } from './core.js';
+import { query, now } from './core.js';
 import { upsertSubscription } from './subscriptions.js';
 
 // ── Password hashing ──────────────────────────────────────────────────────────
@@ -35,13 +35,13 @@ export function verifyPassword(password, storedHash) {
 
 // ── User CRUD ─────────────────────────────────────────────────────────────────
 
-export function createUser(username, password, role = null, plan = 'free') {
-  const db = getDb();
-  const existing = db.prepare('SELECT Id FROM Users WHERE Username = ? COLLATE NOCASE').get(username);
-  if (existing) throw new Error('Username already exists');
+export async function createUser(username, password, role = null, plan = 'free') {
+  const existingRes = await query('SELECT Id FROM Users WHERE LOWER(Username) = LOWER(?)', [username]);
+  if (existingRes.rows[0]) throw new Error('Username already exists');
 
   const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
-  const totalUsers = db.prepare('SELECT COUNT(*) as c FROM Users').get().c;
+  const countRes = await query('SELECT COUNT(*) as c FROM Users');
+  const totalUsers = parseInt(countRes.rows[0].c || 0);
   let effectiveRole = role;
   if (!effectiveRole) {
     if (totalUsers === 0) {
@@ -54,34 +54,36 @@ export function createUser(username, password, role = null, plan = 'free') {
   }
 
   const passwordHash = hashPassword(password);
-  const result = db.prepare('INSERT INTO Users (Username, PasswordHash, Role, Plan, Timestamp) VALUES (?, ?, ?, ?, ?)')
-    .run(username, passwordHash, effectiveRole, plan, now());
+  const result = await query(
+    'INSERT INTO Users (Username, PasswordHash, Role, Plan, Timestamp) VALUES (?, ?, ?, ?, ?) RETURNING Id',
+    [username, passwordHash, effectiveRole, plan, now()]
+  );
 
-  return { id: result.lastInsertRowid, username, role: effectiveRole, plan };
+  const insertedId = result.rows[0]?.Id || result.rows[0]?.id;
+  return { id: insertedId, username, role: effectiveRole, plan };
 }
 
-export function verifyUser(username, password) {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM Users WHERE Username = ? COLLATE NOCASE').get(username);
+export async function verifyUser(username, password) {
+  const res = await query('SELECT * FROM Users WHERE LOWER(Username) = LOWER(?)', [username]);
+  const row = res.rows[0];
   if (!row) return null;
   const { valid, needsRehash, newHash } = verifyPassword(password, row.PasswordHash);
   if (!valid) return null;
   if (needsRehash && newHash) {
-    db.prepare('UPDATE Users SET PasswordHash = ? WHERE Id = ?').run(newHash, row.Id);
+    await query('UPDATE Users SET PasswordHash = ? WHERE Id = ?', [newHash, row.Id]);
   }
-  touchLastLogin(row.Id);
+  await touchLastLogin(row.Id);
   return { id: row.Id, username: row.Username, role: row.Role, plan: row.Plan || 'free' };
 }
 
-export function findUserByUsername(username) {
-  const db = getDb();
-  const row = db.prepare('SELECT Id as id, Username as username, Role as role, Plan as plan FROM Users WHERE Username = ? COLLATE NOCASE').get(username);
+export async function findUserByUsername(username) {
+  const res = await query('SELECT Id as id, Username as username, Role as role, Plan as plan FROM Users WHERE LOWER(Username) = LOWER(?)', [username]);
+  const row = res.rows[0];
   return row ? { id: row.id, username: row.username, role: row.role, plan: row.plan || 'free' } : null;
 }
 
-export function getAllUsers() {
-  const db = getDb();
-  return db.prepare(`
+export async function getAllUsers() {
+  const res = await query(`
     SELECT u.Id as id, u.Username as username, u.Role as role, u.Plan as plan,
            u.Timestamp as createdAt, u.LastLogin as lastLogin, u.DisplayName as displayName,
            s.Status as subStatus, s.PeriodEnd as subPeriodEnd, s.StripeCustomerId as stripeCustomerId,
@@ -89,9 +91,10 @@ export function getAllUsers() {
     FROM Users u
     LEFT JOIN Subscriptions s ON s.UserId = u.Id
     LEFT JOIN TokenUsage t ON t.UserId = u.Id
-    GROUP BY u.Id
+    GROUP BY u.Id, u.Username, u.Role, u.Plan, u.Timestamp, u.LastLogin, u.DisplayName, s.Status, s.PeriodEnd, s.StripeCustomerId
     ORDER BY u.Timestamp DESC
-  `).all().map(r => ({
+  `);
+  return res.rows.map(r => ({
     id: r.id, username: r.username, role: r.role, plan: r.plan || 'free',
     createdAt: r.createdAt, lastLogin: r.lastLogin, displayName: r.displayName,
     subStatus: r.subStatus, subPeriodEnd: r.subPeriodEnd, stripeCustomerId: r.stripeCustomerId,
@@ -99,9 +102,8 @@ export function getAllUsers() {
   }));
 }
 
-export function getUserById(userId) {
-  const db = getDb();
-  const row = db.prepare(`
+export async function getUserById(userId) {
+  const res = await query(`
     SELECT u.Id as id, u.Username as username, u.Role as role, u.Plan as plan,
            u.Timestamp as createdAt, u.LastLogin as lastLogin, u.DisplayName as displayName,
            s.Status as subStatus, s.PeriodEnd as subPeriodEnd, s.StripeCustomerId as stripeCustomerId,
@@ -109,7 +111,8 @@ export function getUserById(userId) {
     FROM Users u
     LEFT JOIN Subscriptions s ON s.UserId = u.Id
     WHERE u.Id = ?
-  `).get(userId);
+  `, [userId]);
+  const row = res.rows[0];
   if (!row) return null;
   return {
     id: row.id, username: row.username, role: row.role, plan: row.plan || 'free',
@@ -119,113 +122,119 @@ export function getUserById(userId) {
   };
 }
 
-export function updateUserRole(userId, role) {
+export async function updateUserRole(userId, role) {
   const allowed = ['user', 'pro', 'admin'];
   if (!allowed.includes(role)) throw new Error(`Invalid role: ${role}`);
-  getDb().prepare('UPDATE Users SET Role = ? WHERE Id = ?').run(role, userId);
+  await query('UPDATE Users SET Role = ? WHERE Id = ?', [role, userId]);
 }
 
-export function updateUserPlan(userId, plan) {
-  const db = getDb();
+export async function updateUserPlan(userId, plan) {
   const allowed = ['free', 'basic', 'pro', 'enterprise'];
   if (!allowed.includes(plan)) throw new Error(`Invalid plan: ${plan}`);
-  db.prepare('UPDATE Users SET Plan = ? WHERE Id = ?').run(plan, userId);
-  upsertSubscription(userId, {
+  await query('UPDATE Users SET Plan = ? WHERE Id = ?', [plan, userId]);
+  await upsertSubscription(userId, {
     plan,
     status: plan === 'free' ? 'inactive' : 'active',
     periodEnd: plan === 'free' ? null : new Date(Date.now() + 365 * 86400000).toISOString(),
   });
 }
 
-export function touchLastLogin(userId) {
-  getDb().prepare('UPDATE Users SET LastLogin = ? WHERE Id = ?').run(now(), userId);
+export async function touchLastLogin(userId) {
+  await query('UPDATE Users SET LastLogin = ? WHERE Id = ?', [now(), userId]);
 }
 
-export function getUserCount() {
-  return getDb().prepare('SELECT COUNT(*) as c FROM Users').get().c;
+export async function getUserCount() {
+  const res = await query('SELECT COUNT(*) as c FROM Users');
+  return parseInt(res.rows[0].c || 0);
 }
 
-export function deleteUser(userId) {
-  const result = getDb().prepare('DELETE FROM Users WHERE Id = ?').run(userId);
+export async function deleteUser(userId) {
+  const result = await query('DELETE FROM Users WHERE Id = ?', [userId]);
   return result.changes > 0;
 }
 
-export function updateProfile(userId, { displayName } = {}) {
-  getDb().prepare('UPDATE Users SET DisplayName = ? WHERE Id = ?').run(displayName || null, userId);
+export async function updateProfile(userId, { displayName } = {}) {
+  await query('UPDATE Users SET DisplayName = ? WHERE Id = ?', [displayName || null, userId]);
 }
 
-export function updatePassword(userId, newPassword) {
+export async function updatePassword(userId, newPassword) {
   const hash = hashPassword(newPassword);
-  getDb().prepare('UPDATE Users SET PasswordHash = ?, ForceResetPw = 0 WHERE Id = ?').run(hash, userId);
+  await query('UPDATE Users SET PasswordHash = ?, ForceResetPw = 0 WHERE Id = ?', [hash, userId]);
 }
 
-export function forceResetPassword(userId) {
-  const db = getDb();
+export async function forceResetPassword(userId) {
   const tempPw = crypto.randomBytes(6).toString('hex'); // 12-char hex
   const hash = hashPassword(tempPw);
-  db.prepare('UPDATE Users SET PasswordHash = ?, ForceResetPw = 1 WHERE Id = ?').run(hash, userId);
-  db.prepare('DELETE FROM Sessions WHERE UserId = ?').run(userId);
+  await query('UPDATE Users SET PasswordHash = ?, ForceResetPw = 1 WHERE Id = ?', [hash, userId]);
+  await query('DELETE FROM Sessions WHERE UserId = ?', [userId]);
   return tempPw;
 }
 
-export function verifyPasswordOnly(userId, password) {
-  const row = getDb().prepare('SELECT PasswordHash FROM Users WHERE Id = ?').get(userId);
+export async function verifyPasswordOnly(userId, password) {
+  const res = await query('SELECT PasswordHash FROM Users WHERE Id = ?', [userId]);
+  const row = res.rows[0];
   if (!row) return false;
   return verifyPassword(password, row.PasswordHash).valid;
 }
 
-export function checkForceReset(userId) {
-  const row = getDb().prepare('SELECT ForceResetPw FROM Users WHERE Id = ?').get(userId);
-  return row?.ForceResetPw === 1;
+export async function checkForceReset(userId) {
+  const res = await query('SELECT ForceResetPw FROM Users WHERE Id = ?', [userId]);
+  return res.rows[0]?.ForceResetPw === 1;
 }
 
 // ── Usage tracking ─────────────────────────────────────────────────────────────
 
 export const FREE_DAILY_DEED_LIMIT = 5;
 
-export function getDailyUsage(userId) {
-  const db = getDb();
+export async function getDailyUsage(userId) {
   const date = now().slice(0, 10);
-  const row = db.prepare('SELECT DeedSolves FROM UsageTracking WHERE UserId = ? AND Date = ?').get(userId, date);
+  const res = await query('SELECT DeedSolves FROM UsageTracking WHERE UserId = ? AND Date = ?', [userId, date]);
+  const row = res.rows[0];
   return row ? row.DeedSolves : 0;
 }
 
-export function incrementDailyUsage(userId) {
-  const db = getDb();
+export async function incrementDailyUsage(userId) {
   const date = now().slice(0, 10);
-  db.prepare(`
+  await query(`
     INSERT INTO UsageTracking (UserId, Date, DeedSolves) VALUES (?, ?, 1)
-    ON CONFLICT(UserId, Date) DO UPDATE SET DeedSolves = DeedSolves + 1
-  `).run(userId, date);
+    ON CONFLICT(UserId, Date) DO UPDATE SET DeedSolves = UsageTracking.DeedSolves + 1
+  `, [userId, date]);
 }
 
-export function checkDailyLimit(userId, userPlan, userRole) {
+export async function checkDailyLimit(userId, userPlan, userRole) {
   if (userRole === 'admin') return { allowed: true, used: null, limit: null };
-  const db = getDb();
-  const planSetting = db.prepare('SELECT DailyDeedLimit FROM PlanSettings WHERE Plan = ?').get(userPlan || 'free');
+  const res = await query('SELECT DailyDeedLimit FROM PlanSettings WHERE Plan = ?', [userPlan || 'free']);
+  const planSetting = res.rows[0];
   const limit = planSetting ? planSetting.DailyDeedLimit : 5;
   if (limit < 0) return { allowed: true, used: null, limit: null };
-  const used = getDailyUsage(userId);
+  const used = await getDailyUsage(userId);
   return { allowed: used < limit, used, limit };
 }
 
-export function getUserDailyStats(userId, days = 30) {
+export async function getUserDailyStats(userId, days = 30) {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-  return getDb().prepare(`
+  const res = await query(`
     SELECT Date as date, DeedSolves as deedSolves
     FROM UsageTracking
     WHERE UserId = ? AND Date >= ?
     ORDER BY Date ASC
-  `).all(userId, since);
+  `, [userId, since]);
+  return res.rows;
 }
 
-export function getSystemStats() {
-  const db = getDb();
-  const userCount = db.prepare('SELECT COUNT(*) as c FROM Users').get().c;
-  const proCount = db.prepare("SELECT COUNT(*) as c FROM Users WHERE Plan != 'free'").get().c;
-  const sessionCount = db.prepare('SELECT COUNT(*) as c FROM Sessions WHERE ExpiresAt > ?').get(now()).c;
+export async function getSystemStats() {
+  const userCountRes = await query('SELECT COUNT(*) as c FROM Users');
+  const proCountRes = await query("SELECT COUNT(*) as c FROM Users WHERE Plan != 'free'");
+  const sessionCountRes = await query('SELECT COUNT(*) as c FROM Sessions WHERE ExpiresAt > ?', [now()]);
   const todayDate = now().slice(0, 10);
-  const todaySolves = db.prepare('SELECT COALESCE(SUM(DeedSolves),0) as s FROM UsageTracking WHERE Date = ?').get(todayDate).s;
-  const totalSolves = db.prepare('SELECT COALESCE(SUM(DeedSolves),0) as s FROM UsageTracking').get().s;
-  return { userCount, proCount, sessionCount, todaySolves, totalSolves };
+  const todaySolvesRes = await query('SELECT COALESCE(SUM(DeedSolves),0) as s FROM UsageTracking WHERE Date = ?', [todayDate]);
+  const totalSolvesRes = await query('SELECT COALESCE(SUM(DeedSolves),0) as s FROM UsageTracking');
+
+  return {
+    userCount: parseInt(userCountRes.rows[0].c || 0),
+    proCount: parseInt(proCountRes.rows[0].c || 0),
+    sessionCount: parseInt(sessionCountRes.rows[0].c || 0),
+    todaySolves: parseInt(todaySolvesRes.rows[0].s || 0),
+    totalSolves: parseInt(totalSolvesRes.rows[0].s || 0),
+  };
 }

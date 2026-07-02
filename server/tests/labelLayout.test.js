@@ -9,28 +9,28 @@ describe('labelLayout Utility Tests', () => {
   const H = 480;
 
   describe('getLeaderIntersection', () => {
-    it('correctly calculates intersection on the right boundary of the box', () => {
+    it('correctly calculates intersection on the right boundary of the box', async () => {
       // Box centered at (0, 0), size 20x10. Anchor is at (50, 0)
       const res = getLeaderIntersection(50, 0, 0, 0, 20, 10);
       expect(res.x).toBeCloseTo(10);
       expect(res.y).toBeCloseTo(0);
     });
 
-    it('correctly calculates intersection on the top boundary of the box', () => {
+    it('correctly calculates intersection on the top boundary of the box', async () => {
       // Box centered at (0, 0), size 20x10. Anchor is at (0, -30)
       const res = getLeaderIntersection(0, -30, 0, 0, 20, 10);
       expect(res.x).toBeCloseTo(0);
       expect(res.y).toBeCloseTo(-5);
     });
 
-    it('correctly calculates diagonal intersection', () => {
+    it('correctly calculates diagonal intersection', async () => {
       // Box centered at (0, 0), size 20x20. Anchor is at (50, 50)
       const res = getLeaderIntersection(50, 50, 0, 0, 20, 20);
       expect(res.x).toBeCloseTo(10);
       expect(res.y).toBeCloseTo(10);
     });
 
-    it('returns the center if anchor is at the center', () => {
+    it('returns the center if anchor is at the center', async () => {
       const res = getLeaderIntersection(0, 0, 0, 0, 20, 20);
       expect(res.x).toBe(0);
       expect(res.y).toBe(0);
@@ -53,7 +53,7 @@ describe('labelLayout Utility Tests', () => {
       { type: 'Line', bearing: 'N', distance: 100 }
     ];
 
-    it('successfully places station and segment labels in non-overlapping positions', () => {
+    it('successfully places station and segment labels in non-overlapping positions', async () => {
       const resolved = resolveLabels(ctx, points, courses, W, H, {
         showStations: true,
         showSegments: true,
@@ -74,7 +74,7 @@ describe('labelLayout Utility Tests', () => {
       expect(segments[0].text).toBe('L1');
     });
 
-    it('resolves overlap by pushing labels away and setting needsLeader', () => {
+    it('resolves overlap by pushing labels away and setting needsLeader', async () => {
       // Two points extremely close to each other
       const closePoints = [
         { x: 100, y: 100 },
@@ -104,7 +104,7 @@ describe('labelLayout Utility Tests', () => {
       expect(hasLeader).toBe(true);
     });
 
-    it('enforces boundary constraints so labels do not clip off canvas', () => {
+    it('enforces boundary constraints so labels do not clip off canvas', async () => {
       // Vertex near top-left boundary corner (1, 1)
       const borderPoints = [
         { x: 1, y: 1 },
@@ -132,7 +132,7 @@ describe('labelLayout Utility Tests', () => {
       });
     });
 
-    it('gracefully handles zero-length segments without crashing', () => {
+    it('gracefully handles zero-length segments without crashing', async () => {
       const degeneratePoints = [
         { x: 100, y: 100 },
         { x: 100, y: 100 } // Same point
@@ -149,7 +149,7 @@ describe('labelLayout Utility Tests', () => {
       }).not.toThrow();
     });
 
-    it('formats segments as full labels in auto mode if segment is long enough', () => {
+    it('formats segments as full labels in auto mode if segment is long enough', async () => {
       const longPoints = [
         { x: 100, y: 100 },
         { x: 400, y: 100 }
@@ -172,7 +172,7 @@ describe('labelLayout Utility Tests', () => {
       expect(lbl.useTable).toBe(false);
     });
 
-    it('falls back to tags in auto mode if segment is too short', () => {
+    it('falls back to tags in auto mode if segment is too short', async () => {
       const shortPoints = [
         { x: 100, y: 100 },
         { x: 105, y: 100 }
@@ -194,7 +194,7 @@ describe('labelLayout Utility Tests', () => {
       expect(lbl.useTable).toBe(true);
     });
 
-    it('propagates the leaderStyle configuration', () => {
+    it('propagates the leaderStyle configuration', async () => {
       const resolved = resolveLabels(ctx, points, courses, W, H, {
         showStations: true,
         showSegments: true,

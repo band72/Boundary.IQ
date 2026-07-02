@@ -180,7 +180,7 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
 
     it('should successfully login and update last login timestamp', async () => {
       // Find initial lastLogin in DB
-      const userBefore = getUserById(user1Id);
+      const userBefore = await getUserById(user1Id);
       expect(userBefore.lastLogin).toBeNull();
 
       const response = await fetch(`${baseUrl}/auth/login`, {
@@ -195,7 +195,7 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
       expect(data.username).toBe(user1Creds.username);
 
       // Verify lastLogin has been updated in database
-      const userAfter = getUserById(user1Id);
+      const userAfter = await getUserById(user1Id);
       expect(userAfter.lastLogin).not.toBeNull();
     });
 
@@ -273,7 +273,7 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
       expect(data.role).toBe('pro');
 
       // Verify in DB
-      const user = getUserById(user1Id);
+      const user = await getUserById(user1Id);
       expect(user.role).toBe('pro');
     });
 
@@ -321,7 +321,7 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
     it('should return correct subscription status for user', async () => {
       // Note: we upgraded user1's role to 'pro' in the previous block,
       // but plan is still 'free' by default. Let's reset role to 'user' to verify cleanly
-      updateUserRole(user1Id, 'user');
+      await updateUserRole(user1Id, 'user');
 
       const response = await fetch(`${baseUrl}/billing/status`, {
         headers: { 'Authorization': `Bearer ${user1Token}` }
@@ -351,7 +351,7 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
       expect(data.plan).toBe('pro');
 
       // Verify plan is updated in database
-      const user = getUserById(user1Id);
+      const user = await getUserById(user1Id);
       expect(user.plan).toBe('pro');
     });
   });
@@ -414,7 +414,7 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
       expect(data.received).toBe(true);
 
       // Verify subscription record was created/upserted in database
-      const sub = getSubscriptionByUser(user1Id);
+      const sub = await getSubscriptionByUser(user1Id);
       expect(sub).not.toBeNull();
       expect(sub.Status).toBe('active');
       expect(sub.Plan).toBe('enterprise');
@@ -422,7 +422,7 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
       expect(sub.StripeSubscriptionId).toBe('sub_tester1');
 
       // Verify user plan was updated to enterprise
-      const user = getUserById(user1Id);
+      const user = await getUserById(user1Id);
       expect(user.plan).toBe('enterprise');
     });
 
@@ -456,12 +456,12 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
       expect(response.status).toBe(200);
 
       // Verify updated values in DB
-      const sub = getSubscriptionByUser(user1Id);
+      const sub = await getSubscriptionByUser(user1Id);
       expect(sub.Status).toBe('active');
       expect(sub.Plan).toBe('basic');
       expect(sub.PeriodEnd).toBe(new Date(periodEndUnix * 1000).toISOString());
 
-      const user = getUserById(user1Id);
+      const user = await getUserById(user1Id);
       expect(user.plan).toBe('basic');
     });
 
@@ -488,11 +488,11 @@ describe('Login, Roles, and Subscriptions Test Suite', () => {
       expect(response.status).toBe(200);
 
       // Verify subscription record status and plan updated to free in DB
-      const sub = getSubscriptionByUser(user1Id);
+      const sub = await getSubscriptionByUser(user1Id);
       expect(sub.Status).toBe('cancelled');
       expect(sub.Plan).toBe('free');
 
-      const user = getUserById(user1Id);
+      const user = await getUserById(user1Id);
       expect(user.plan).toBe('free');
     });
   });

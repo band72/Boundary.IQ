@@ -3,26 +3,33 @@
  */
 
 import fs from 'fs';
-import { getDb, now, getDbPath, mapDeedLog } from './core.js';
+import { query, now, getDbPath, mapDeedLog, getIsPostgres } from './core.js';
 import { getStore } from './context.js';
 
 // ── Batch Runs ────────────────────────────────────────────────────────────────
 
-export function saveBatchRun(batchId, totalFiles, passRate, userId) {
+export async function saveBatchRun(batchId, totalFiles, passRate, userId) {
   const finalUserId = userId !== undefined ? userId : (getStore()?.userId || null);
-  getDb().prepare('INSERT OR REPLACE INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate, UserId) VALUES (?, ?, ?, ?, ?)')
-    .run(batchId, now(), totalFiles, passRate, finalUserId);
+  await query(`
+    INSERT INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate, UserId)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (BatchId) DO UPDATE SET
+      Timestamp = EXCLUDED.Timestamp,
+      TotalFiles = EXCLUDED.TotalFiles,
+      PassRate = EXCLUDED.PassRate,
+      UserId = EXCLUDED.UserId
+  `, [batchId, now(), totalFiles, passRate, finalUserId]);
 }
 
-export function getRecentBatchRuns() {
-  return getDb().prepare('SELECT * FROM BatchRuns ORDER BY Timestamp DESC LIMIT 20').all().map(r => ({
+export async function getRecentBatchRuns() {
+  const res = await query('SELECT * FROM BatchRuns ORDER BY Timestamp DESC LIMIT 20');
+  return res.rows.map(r => ({
     batchId: r.BatchId, timestamp: r.Timestamp, totalFiles: r.TotalFiles, passRate: r.PassRate,
   }));
 }
 
-export function getBatchStats(batchId) {
-  const db = getDb();
-  const counts = db.prepare(`
+export async function getBatchStats(batchId) {
+  const countsRes = await query(`
     SELECT
       COUNT(*)                                                    AS total,
       SUM(CASE WHEN Status='PASS'    THEN 1 ELSE 0 END)          AS passed,
@@ -38,155 +45,166 @@ export function getBatchStats(batchId) {
       MAX(CASE WHEN Status='FAIL'    THEN LinearError  ELSE NULL END) AS maxLinearErr,
       AVG(CASE WHEN Status='PASS'    THEN TrustScore   ELSE NULL END) AS avgTrustScore
     FROM DeedLogs WHERE BatchId = ?
-  `).get(batchId);
+  `, [batchId]);
+  const counts = countsRes.rows[0];
 
-  const stages = db.prepare(`
+  const stagesRes = await query(`
     SELECT RepairStageUsed AS stage, COUNT(*) AS count,
            SUM(CASE WHEN Status='PASS' THEN 1 ELSE 0 END) AS passed
     FROM DeedLogs WHERE BatchId = ?
     GROUP BY RepairStageUsed ORDER BY count DESC LIMIT 12
-  `).all(batchId).map(r => ({ stage: r.stage || 'Unknown', count: r.count, passed: r.passed }));
+  `, [batchId]);
+  const stages = stagesRes.rows.map(r => ({ stage: r.stage || 'Unknown', count: parseInt(r.count || 0), passed: parseInt(r.passed || 0) }));
 
-  const failedFiles = db.prepare(`
+  const failedFilesRes = await query(`
     SELECT FileName, LinearError, RepairStageUsed
     FROM DeedLogs WHERE BatchId = ? AND Status IN ('FAIL','ERROR')
     ORDER BY LinearError DESC LIMIT 50
-  `).all(batchId).map(r => ({ fileName: r.FileName, linearError: r.LinearError, stage: r.RepairStageUsed }));
+  `, [batchId]);
+  const failedFiles = failedFilesRes.rows.map(r => ({ fileName: r.FileName, linearError: r.LinearError, stage: r.RepairStageUsed }));
 
-  const precisionBuckets = db.prepare(`
+  const precisionBucketsRes = await query(`
     SELECT
       SUM(CASE WHEN PrecisionRatio >= 50000  AND PrecisionRatio < 999999990 THEN 1 ELSE 0 END) AS excellent,
       SUM(CASE WHEN PrecisionRatio >= 10000  AND PrecisionRatio <  50000    THEN 1 ELSE 0 END) AS good,
       SUM(CASE WHEN PrecisionRatio >=  5000  AND PrecisionRatio <  10000    THEN 1 ELSE 0 END) AS fair,
       SUM(CASE WHEN PrecisionRatio >       0 AND PrecisionRatio <   5000    THEN 1 ELSE 0 END) AS poor
     FROM DeedLogs WHERE BatchId = ? AND Status = 'PASS'
-  `).get(batchId);
+  `, [batchId]);
+  const precisionBuckets = precisionBucketsRes.rows[0];
 
   return {
     batchId,
     counts: {
-      total: counts?.total || 0, passed: counts?.passed || 0, failed: counts?.failed || 0,
-      errors: counts?.errors || 0, meanders: counts?.meanders || 0, skipped: counts?.skipped || 0,
+      total: parseInt(counts?.total || 0), passed: parseInt(counts?.passed || 0), failed: parseInt(counts?.failed || 0),
+      errors: parseInt(counts?.errors || 0), meanders: parseInt(counts?.meanders || 0), skipped: parseInt(counts?.skipped || 0),
     },
     passRate: (counts?.total > 0) ? (counts.passed / counts.total) : 0,
     precision: {
-      avg: counts?.avgPrecision || 0, best: counts?.bestPrecision || 0,
-      excellent: precisionBuckets?.excellent || 0, good: precisionBuckets?.good || 0,
-      fair: precisionBuckets?.fair || 0, poor: precisionBuckets?.poor || 0,
+      avg: parseFloat(counts?.avgPrecision || 0), best: parseFloat(counts?.bestPrecision || 0),
+      excellent: parseInt(precisionBuckets?.excellent || 0), good: parseInt(precisionBuckets?.good || 0),
+      fair: parseInt(precisionBuckets?.fair || 0), poor: parseInt(precisionBuckets?.poor || 0),
     },
-    closure: { avgLinearErr: counts?.avgLinearErr || 0, maxLinearErr: counts?.maxLinearErr || 0 },
-    avgTrustScore: counts?.avgTrustScore || null,
+    closure: { avgLinearErr: parseFloat(counts?.avgLinearErr || 0), maxLinearErr: parseFloat(counts?.maxLinearErr || 0) },
+    avgTrustScore: counts?.avgTrustScore !== null ? parseFloat(counts.avgTrustScore) : null,
     stages,
     failedFiles,
   };
 }
 
-export function getRecentBatchesWithStats(limit = 30, userId = null) {
-  const db = getDb();
-  let query = 'SELECT * FROM BatchRuns';
+export async function getRecentBatchesWithStats(limit = 30, userId = null) {
+  let queryStr = 'SELECT * FROM BatchRuns';
   const params = [];
   if (userId) {
-    query += ' WHERE UserId = ?';
+    queryStr += ' WHERE UserId = ?';
     params.push(userId);
   }
-  query += ' ORDER BY Timestamp DESC LIMIT ?';
+  queryStr += ' ORDER BY Timestamp DESC LIMIT ?';
   params.push(limit);
 
-  const batches = db.prepare(query).all(...params);
+  const res = await query(queryStr, params);
+  const batches = res.rows;
   if (batches.length === 0) return [];
 
-  return batches.map(b => {
+  return Promise.all(batches.map(async (b) => {
     return {
       batchId: b.BatchId,
       timestamp: b.Timestamp,
       totalFiles: b.TotalFiles,
       passRate: b.PassRate,
-      stats: getBatchStats(b.BatchId),
+      stats: await getBatchStats(b.BatchId),
     };
-  });
+  }));
 }
 
 // ── Deed Logs ─────────────────────────────────────────────────────────────────
 
-export function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
-  const db = getDb();
-
+export async function saveDeedLog(batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
   // Ensure batchId exists in BatchRuns to satisfy the foreign key constraint
-  const batchExists = db.prepare('SELECT 1 FROM BatchRuns WHERE BatchId = ?').get(batchId);
-  if (!batchExists) {
-    db.prepare('INSERT INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate) VALUES (?, ?, 0, 0.0)').run(batchId, now());
+  const batchExistsRes = await query('SELECT 1 FROM BatchRuns WHERE BatchId = ?', [batchId]);
+  if (!batchExistsRes.rows[0]) {
+    await query('INSERT INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate) VALUES (?, ?, 0, 0.0)', [batchId, now()]);
   }
 
   let finalRefPointName = referencePointName;
   if (!finalRefPointName && extractionJson) {
     try {
-      const parsed = JSON.parse(extractionJson);
+      const parsed = typeof extractionJson === 'string' ? JSON.parse(extractionJson) : extractionJson;
       finalRefPointName = parsed.ReferencePointName || parsed.referencePointName || null;
     } catch {}
   }
 
-  db.prepare(`
+  await query(`
     INSERT INTO DeedLogs (
       BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
       ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson,
       ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting, FileHash
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, now(),
-    extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
+    typeof extractionJson === 'object' && extractionJson !== null ? JSON.stringify(extractionJson) : extractionJson,
+    typeof traverseJson === 'object' && traverseJson !== null ? JSON.stringify(traverseJson) : traverseJson,
+    typeof agentTurnsJson === 'object' && agentTurnsJson !== null ? JSON.stringify(agentTurnsJson) : agentTurnsJson,
+    trustScore,
+    typeof solutionStepsJson === 'object' && solutionStepsJson !== null ? JSON.stringify(solutionStepsJson) : solutionStepsJson,
     finalRefPointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
-  );
+  ]);
 }
 
-export function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
-  const db = getDb();
+export async function saveCorrectedDeed(fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, referencePointName = null, referencePointNorthing = null, referencePointEasting = null, pobNorthing = null, pobEasting = null, fileHash = null) {
   let finalRefPointName = referencePointName;
   if (!finalRefPointName && extractionJson) {
     try {
-      const parsed = JSON.parse(extractionJson);
+      const parsed = typeof extractionJson === 'string' ? JSON.parse(extractionJson) : extractionJson;
       finalRefPointName = parsed.ReferencePointName || parsed.referencePointName || null;
     } catch {}
   }
 
-  const row = db.prepare('SELECT Id, BatchId FROM DeedLogs WHERE FileName = ? COLLATE NOCASE ORDER BY Timestamp DESC LIMIT 1').get(fileName);
+  const rowRes = await query('SELECT Id, BatchId FROM DeedLogs WHERE LOWER(FileName) = LOWER(?) ORDER BY Timestamp DESC LIMIT 1', [fileName]);
+  const row = rowRes.rows[0];
   const batchId = row ? row.BatchId : 'CORRECTED';
 
   // Ensure batchId exists in BatchRuns to satisfy the foreign key constraint
-  const batchExists = db.prepare('SELECT 1 FROM BatchRuns WHERE BatchId = ?').get(batchId);
-  if (!batchExists) {
-    db.prepare('INSERT INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate) VALUES (?, ?, 0, 0.0)').run(batchId, now());
+  const batchExistsRes = await query('SELECT 1 FROM BatchRuns WHERE BatchId = ?', [batchId]);
+  if (!batchExistsRes.rows[0]) {
+    await query('INSERT INTO BatchRuns (BatchId, Timestamp, TotalFiles, PassRate) VALUES (?, ?, 0, 0.0)', [batchId, now()]);
   }
 
+  const extStr = typeof extractionJson === 'object' && extractionJson !== null ? JSON.stringify(extractionJson) : extractionJson;
+  const travStr = typeof traverseJson === 'object' && traverseJson !== null ? JSON.stringify(traverseJson) : traverseJson;
+  const turnsStr = typeof agentTurnsJson === 'object' && agentTurnsJson !== null ? JSON.stringify(agentTurnsJson) : agentTurnsJson;
+  const stepsStr = typeof solutionStepsJson === 'object' && solutionStepsJson !== null ? JSON.stringify(solutionStepsJson) : solutionStepsJson;
+
   if (row) {
-    db.prepare(`
+    await query(`
       UPDATE DeedLogs
       SET Status = ?, RepairStageUsed = ?, ExtractionJson = ?, TraverseJson = ?, AgentTurnsJson = ?,
           TrustScore = ?, SolutionStepsJson = ?, Timestamp = ?,
           ReferencePointName = ?, ReferencePointNorthing = ?, ReferencePointEasting = ?,
           PobNorthing = ?, PobEasting = ?, FileHash = ?
       WHERE Id = ?
-    `).run(
-      status, repairStageUsed, extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson, now(),
+    `, [
+      status, repairStageUsed, extStr, travStr, turnsStr, trustScore, stepsStr, now(),
       finalRefPointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash, row.Id
-    );
+    ]);
     return row.Id;
   } else {
-    const result = db.prepare(`
+    const result = await query(`
       INSERT INTO DeedLogs (
         BatchId, FileName, ParcelName, GeoCallCount, LinearError, PrecisionRatio, Status, RepairStageUsed, Timestamp,
         ExtractionJson, TraverseJson, AgentTurnsJson, TrustScore, SolutionStepsJson,
         ReferencePointName, ReferencePointNorthing, ReferencePointEasting, PobNorthing, PobEasting, FileHash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING Id
+    `, [
       batchId, fileName, parcelName || 'Manual Corrected', 0, 0, 0, status, repairStageUsed, now(),
-      extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
+      extStr, travStr, turnsStr, trustScore, stepsStr,
       finalRefPointName, referencePointNorthing, referencePointEasting, pobNorthing, pobEasting, fileHash
-    );
-    return result.lastInsertRowid;
+    ]);
+    return result.rows[0]?.Id || result.rows[0]?.id;
   }
 }
 
-export function searchDeedLogs(query, status, maxError, userId = null) {
+export async function searchDeedLogs(queryStr, status, maxError, userId = null) {
   let sql = 'SELECT d.* FROM DeedLogs d';
   if (userId) {
     sql += ' JOIN BatchRuns b ON d.BatchId = b.BatchId';
@@ -197,43 +215,57 @@ export function searchDeedLogs(query, status, maxError, userId = null) {
     sql += ' AND b.UserId = ?';
     params.push(userId);
   }
-  if (query) { sql += ' AND (d.FileName LIKE ? OR d.ParcelName LIKE ?)'; params.push(`%${query}%`, `%${query}%`); }
-  if (status) { sql += ' AND d.Status = ? COLLATE NOCASE'; params.push(status); }
-  if (maxError != null) { sql += ' AND d.LinearError <= ?'; params.push(maxError); }
+  if (queryStr) {
+    sql += ' AND (d.FileName LIKE ? OR d.ParcelName LIKE ?)';
+    params.push(`%${queryStr}%`, `%${queryStr}%`);
+  }
+  if (status) {
+    sql += ' AND LOWER(d.Status) = LOWER(?)';
+    params.push(status);
+  }
+  if (maxError != null) {
+    sql += ' AND d.LinearError <= ?';
+    params.push(maxError);
+  }
   sql += ' ORDER BY d.Timestamp DESC LIMIT 100';
-  return getDb().prepare(sql).all(...params).map(mapDeedLog);
+
+  const res = await query(sql, params);
+  return res.rows.map(mapDeedLog);
 }
 
-export function findSolvedCase(fileName, fileHash = null) {
-  const db = getDb();
+export async function findSolvedCase(fileName, fileHash = null) {
   let rows = [];
   if (fileHash) {
-    rows = db.prepare(`
+    const resHash = await query(`
       SELECT * FROM DeedLogs
       WHERE FileHash = ? AND Status IN ('PASS', 'MEANDER')
         AND TraverseJson IS NOT NULL AND ExtractionJson IS NOT NULL AND GeoCallCount > 0
       ORDER BY Timestamp DESC LIMIT 5
-    `).all(fileHash);
+    `, [fileHash]);
+    rows = resHash.rows;
+
     if (rows.length === 0) {
-      rows = db.prepare(`
+      const resFile = await query(`
         SELECT * FROM DeedLogs
-        WHERE FileName = ? COLLATE NOCASE AND (FileHash IS NULL OR FileHash = '') AND Status IN ('PASS', 'MEANDER')
+        WHERE LOWER(FileName) = LOWER(?) AND (FileHash IS NULL OR FileHash = '') AND Status IN ('PASS', 'MEANDER')
           AND TraverseJson IS NOT NULL AND ExtractionJson IS NOT NULL AND GeoCallCount > 0
         ORDER BY Timestamp DESC LIMIT 5
-      `).all(fileName);
+      `, [fileName]);
+      rows = resFile.rows;
     }
   } else {
-    rows = db.prepare(`
+    const resFileOnly = await query(`
       SELECT * FROM DeedLogs
-      WHERE FileName = ? COLLATE NOCASE AND Status IN ('PASS', 'MEANDER')
+      WHERE LOWER(FileName) = LOWER(?) AND Status IN ('PASS', 'MEANDER')
         AND TraverseJson IS NOT NULL AND ExtractionJson IS NOT NULL AND GeoCallCount > 0
       ORDER BY Timestamp DESC LIMIT 5
-    `).all(fileName);
+    `, [fileName]);
+    rows = resFileOnly.rows;
   }
 
   for (const row of rows) {
     try {
-      const ex = JSON.parse(row.ExtractionJson);
+      const ex = typeof row.ExtractionJson === 'string' ? JSON.parse(row.ExtractionJson) : row.ExtractionJson;
       const courses = ex.courses || ex.Courses || [];
       if (courses.length > 0) return mapDeedLog(row);
     } catch {}
@@ -241,65 +273,76 @@ export function findSolvedCase(fileName, fileHash = null) {
   return null;
 }
 
-export function findSkippedCase(fileName, fileHash = null) {
-  const db = getDb();
+export async function findSkippedCase(fileName, fileHash = null) {
   let rows = [];
   if (fileHash) {
-    rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileHash = ? AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileHash);
+    const resHash = await query(`SELECT * FROM DeedLogs WHERE FileHash = ? AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`, [fileHash]);
+    rows = resHash.rows;
     if (rows.length === 0) {
-      rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND (FileHash IS NULL OR FileHash = '') AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileName);
+      const resFile = await query(`SELECT * FROM DeedLogs WHERE LOWER(FileName) = LOWER(?) AND (FileHash IS NULL OR FileHash = '') AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`, [fileName]);
+      rows = resFile.rows;
     }
   } else {
-    rows = db.prepare(`SELECT * FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`).all(fileName);
+    const resFileOnly = await query(`SELECT * FROM DeedLogs WHERE LOWER(FileName) = LOWER(?) AND Status = 'SKIPPED' ORDER BY Timestamp DESC LIMIT 1`, [fileName]);
+    rows = resFileOnly.rows;
   }
   return rows.length > 0 ? mapDeedLog(rows[0]) : null;
 }
 
-export function purgeStaleCache(fileName = null) {
-  const db = getDb();
+export async function purgeStaleCache(fileName = null) {
   let result;
   if (fileName) {
-    result = db.prepare(`
-      DELETE FROM DeedLogs WHERE Status = 'PASS' AND FileName = ? COLLATE NOCASE
+    result = await query(`
+      DELETE FROM DeedLogs WHERE Status = 'PASS' AND LOWER(FileName) = LOWER(?)
         AND (PrecisionRatio >= 999999990 OR GeoCallCount = 0 OR TraverseJson IS NULL)
-    `).run(fileName);
+    `, [fileName]);
   } else {
-    result = db.prepare(`
+    result = await query(`
       DELETE FROM DeedLogs WHERE Status = 'PASS'
         AND (PrecisionRatio >= 999999990 OR GeoCallCount = 0 OR TraverseJson IS NULL)
-    `).run();
+    `);
   }
   return result.changes;
 }
 
-export function purgeOldLogs(retentionDays) {
-  const db = getDb();
+export async function purgeOldLogs(retentionDays) {
   const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString().replace('T', ' ').slice(0, 19);
   let deleted = 0;
-  deleted += db.prepare('DELETE FROM DeedLogs WHERE Timestamp < ?').run(cutoff).changes;
-  deleted += db.prepare('DELETE FROM BatchRuns WHERE Timestamp < ?').run(cutoff).changes;
-  db.exec('VACUUM');
+  const delLogs = await query('DELETE FROM DeedLogs WHERE Timestamp < ?', [cutoff]);
+  deleted += delLogs.changes;
+  const delBatches = await query('DELETE FROM BatchRuns WHERE Timestamp < ?', [cutoff]);
+  deleted += delBatches.changes;
+  if (!getIsPostgres()) {
+    const db = await import('./core.js').then(m => m.getDb());
+    db.exec('VACUUM');
+  }
   return deleted;
 }
 
-export function clearFailedCache() {
-  const db = getDb();
-  const deleted = db.prepare("DELETE FROM DeedLogs WHERE Status != 'PASS'").run().changes;
-  db.exec('VACUUM');
-  return deleted;
+export async function clearFailedCache() {
+  const del = await query("DELETE FROM DeedLogs WHERE Status != 'PASS'");
+  if (!getIsPostgres()) {
+    const db = await import('./core.js').then(m => m.getDb());
+    db.exec('VACUUM');
+  }
+  return del.changes;
 }
 
-export function clearAllCache() {
-  const db = getDb();
+export async function clearAllCache() {
   let deleted = 0;
-  deleted += db.prepare('DELETE FROM DeedLogs').run().changes;
-  deleted += db.prepare('DELETE FROM BatchRuns').run().changes;
-  db.exec('VACUUM');
+  const delLogs = await query('DELETE FROM DeedLogs');
+  deleted += delLogs.changes;
+  const delBatches = await query('DELETE FROM BatchRuns');
+  deleted += delBatches.changes;
+  if (!getIsPostgres()) {
+    const db = await import('./core.js').then(m => m.getDb());
+    db.exec('VACUUM');
+  }
   return deleted;
 }
 
-export function getFailedFileNames() {
-  return getDb().prepare(`
+export async function getFailedFileNames() {
+  const res = await query(`
     SELECT DISTINCT FileName FROM DeedLogs d
     WHERE Status IN ('ERROR', 'FAIL')
       AND NOT EXISTS (
@@ -307,54 +350,61 @@ export function getFailedFileNames() {
         WHERE p.FileName = d.FileName AND p.Status IN ('PASS', 'MEANDER') AND p.Timestamp >= d.Timestamp
       )
     ORDER BY FileName
-  `).all().map(r => r.FileName);
+  `);
+  return res.rows.map(r => r.FileName);
 }
 
-export function getFailedDeedList(limit = 200, bucket = null) {
+export async function getFailedDeedList(limit = 200, bucket = null) {
   const bucketWhere = {
     nearClosed:    'AND LinearError <= 1.0',
-    minorError:    'AND LinearError > 1.0 AND LinearError <= 10.0',
-    moderateError: 'AND LinearError > 10.0 AND LinearError <= 100.0',
-    majorError:    'AND LinearError > 100.0',
+    minorError:    'AND d.LinearError > 1.0 AND d.LinearError <= 10.0',
+    moderateError: 'AND d.LinearError > 10.0 AND d.LinearError <= 100.0',
+    majorError:    'AND d.LinearError > 100.0',
   }[bucket] || '';
 
-  const rows = getDb().prepare(`
+  const res = await query(`
     SELECT d.FileName, d.LinearError, d.PrecisionRatio, d.Status, d.RepairStageUsed,
-           d.Timestamp, d.BatchId, d.GeoCallCount, d.TrustScore, d.ExtractionJson
+           d.Timestamp, d.BatchId, d.GeoCallCount, d.TrustScore, d.ExtractionJson, d.ParcelName
     FROM DeedLogs d
     INNER JOIN (
       SELECT FileName, MAX(Timestamp) AS LatestFailTs
-      FROM DeedLogs WHERE Status IN ('FAIL','ERROR') ${bucketWhere} GROUP BY FileName
+      FROM DeedLogs WHERE Status IN ('FAIL','ERROR') GROUP BY FileName
     ) latest ON d.FileName = latest.FileName AND d.Timestamp = latest.LatestFailTs
-    WHERE d.Status IN ('FAIL','ERROR')
+    WHERE d.Status IN ('FAIL','ERROR') ${bucketWhere}
       AND NOT EXISTS (
         SELECT 1 FROM DeedLogs p
         WHERE p.FileName = d.FileName AND p.Status IN ('PASS','MEANDER') AND p.Timestamp >= d.Timestamp
       )
     ORDER BY d.LinearError DESC, d.FileName LIMIT ?
-  `).all(limit);
+  `, [limit]);
 
-  return rows.map(r => ({
+  return res.rows.map(r => ({
     fileName: r.FileName, linearError: r.LinearError, precisionRatio: r.PrecisionRatio,
     status: r.Status, repairStageUsed: r.RepairStageUsed, timestamp: r.Timestamp,
     batchId: r.BatchId, geoCallCount: r.GeoCallCount, trustScore: r.TrustScore, parcelName: r.ParcelName,
     extractionSummary: (() => {
-      try { const ex = JSON.parse(r.ExtractionJson || 'null'); return ex ? (ex.mentalMapSummary || ex.message || null) : null; } catch { return null; }
+      try {
+        const ex = typeof r.ExtractionJson === 'string' ? JSON.parse(r.ExtractionJson || 'null') : r.ExtractionJson;
+        return ex ? (ex.mentalMapSummary || ex.message || null) : null;
+      } catch {
+        return null;
+      }
     })(),
   }));
 }
 
-export function getDeedDetail(fileName) {
-  const r = getDb().prepare(`
-    SELECT * FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND Status IN ('FAIL','ERROR','MEANDER')
+export async function getDeedDetail(fileName) {
+  const res = await query(`
+    SELECT * FROM DeedLogs WHERE LOWER(FileName) = LOWER(?) AND Status IN ('FAIL','ERROR','MEANDER')
     ORDER BY Timestamp DESC LIMIT 1
-  `).get(fileName);
+  `, [fileName]);
+  const r = res.rows[0];
   if (!r) return null;
 
   let extraction = null, traverse = null, agentTurns = null;
-  try { extraction = JSON.parse(r.ExtractionJson); } catch {}
-  try { traverse   = JSON.parse(r.TraverseJson);   } catch {}
-  try { agentTurns = JSON.parse(r.AgentTurnsJson); } catch {}
+  try { extraction = typeof r.ExtractionJson === 'string' ? JSON.parse(r.ExtractionJson) : r.ExtractionJson; } catch {}
+  try { traverse   = typeof r.TraverseJson === 'string' ? JSON.parse(r.TraverseJson) : r.TraverseJson;     } catch {}
+  try { agentTurns = typeof r.AgentTurnsJson === 'string' ? JSON.parse(r.AgentTurnsJson) : r.AgentTurnsJson; } catch {}
 
   return {
     id: r.Id, fileName: r.FileName, parcelName: r.ParcelName, status: r.Status,
@@ -364,23 +414,28 @@ export function getDeedDetail(fileName) {
   };
 }
 
-export function getSolutionSteps(fileName) {
-  const row = getDb().prepare(`
+export async function getSolutionSteps(fileName) {
+  const res = await query(`
     SELECT SolutionStepsJson, RepairStageUsed, Status, Timestamp
-    FROM DeedLogs WHERE FileName = ? COLLATE NOCASE AND SolutionStepsJson IS NOT NULL
+    FROM DeedLogs WHERE LOWER(FileName) = LOWER(?) AND SolutionStepsJson IS NOT NULL
     ORDER BY Timestamp DESC LIMIT 1
-  `).get(fileName);
+  `, [fileName]);
+  const row = res.rows[0];
   if (!row) return null;
   try {
-    return { fileName, repairStageUsed: row.RepairStageUsed, status: row.Status, timestamp: row.Timestamp, steps: JSON.parse(row.SolutionStepsJson) };
-  } catch { return null; }
+    const steps = typeof row.SolutionStepsJson === 'string' ? JSON.parse(row.SolutionStepsJson) : row.SolutionStepsJson;
+    return { fileName, repairStageUsed: row.RepairStageUsed, status: row.Status, timestamp: row.Timestamp, steps };
+  } catch {
+    return null;
+  }
 }
 
-export function getDatabaseStats(userId = null) {
-  const db = getDb();
+export async function getDatabaseStats(userId = null) {
   const dbPath = getDbPath();
   let fileSizeBytes = 0;
-  try { fileSizeBytes = fs.statSync(dbPath).size; } catch {}
+  if (!getIsPostgres()) {
+    try { fileSizeBytes = fs.statSync(dbPath).size; } catch {}
+  }
 
   let deedLogCount;
   let currentStatusCounts;
@@ -388,36 +443,67 @@ export function getDatabaseStats(userId = null) {
   let range;
 
   if (userId) {
-    deedLogCount = db.prepare('SELECT COUNT(*) as c FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?').get(userId).c;
-    currentStatusCounts = db.prepare(`
+    const countRes = await query('SELECT COUNT(*) as c FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?', [userId]);
+    deedLogCount = parseInt(countRes.rows[0].c || 0);
+
+    const countsRes = await query(`
       SELECT Status, COUNT(*) as cnt FROM (
         SELECT FileName, Status FROM DeedLogs d
         JOIN BatchRuns b ON d.BatchId = b.BatchId
         WHERE b.UserId = ? AND d.Timestamp = (SELECT MAX(Timestamp) FROM DeedLogs WHERE FileName = d.FileName)
-        GROUP BY FileName
-      ) GROUP BY Status
-    `).all(userId);
-    batchRunCount = db.prepare('SELECT COUNT(*) as c FROM BatchRuns WHERE UserId = ?').get(userId).c;
-    range = db.prepare('SELECT MIN(d.Timestamp) as oldest, MAX(d.Timestamp) as newest FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?').get(userId);
+        GROUP BY FileName, Status
+      ) g GROUP BY Status
+    `, [userId]);
+    currentStatusCounts = countsRes.rows;
+
+    const runCountRes = await query('SELECT COUNT(*) as c FROM BatchRuns WHERE UserId = ?', [userId]);
+    batchRunCount = parseInt(runCountRes.rows[0].c || 0);
+
+    const rangeRes = await query('SELECT MIN(d.Timestamp) as oldest, MAX(d.Timestamp) as newest FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?', [userId]);
+    range = rangeRes.rows[0];
   } else {
-    deedLogCount = db.prepare('SELECT COUNT(*) as c FROM DeedLogs').get().c;
-    currentStatusCounts = db.prepare(`
+    const countRes = await query('SELECT COUNT(*) as c FROM DeedLogs');
+    deedLogCount = parseInt(countRes.rows[0].c || 0);
+
+    const countsRes = await query(`
       SELECT Status, COUNT(*) as cnt FROM (
         SELECT FileName, Status FROM DeedLogs d
         WHERE Timestamp = (SELECT MAX(Timestamp) FROM DeedLogs WHERE FileName = d.FileName)
-        GROUP BY FileName
-      ) GROUP BY Status
-    `).all();
-    batchRunCount = db.prepare('SELECT COUNT(*) as c FROM BatchRuns').get().c;
-    range = db.prepare('SELECT MIN(Timestamp) as oldest, MAX(Timestamp) as newest FROM DeedLogs').get();
+        GROUP BY FileName, Status
+      ) g GROUP BY Status
+    `);
+    currentStatusCounts = countsRes.rows;
+
+    const runCountRes = await query('SELECT COUNT(*) as c FROM BatchRuns');
+    batchRunCount = parseInt(runCountRes.rows[0].c || 0);
+
+    const rangeRes = await query('SELECT MIN(Timestamp) as oldest, MAX(Timestamp) as newest FROM DeedLogs');
+    range = rangeRes.rows[0];
   }
 
-  const _sm = Object.fromEntries(currentStatusCounts.map(r => [r.Status, r.cnt]));
-  const heuristicCount = db.prepare('SELECT COUNT(*) as c FROM HeuristicTracking').get().c;
+  const _sm = Object.fromEntries(currentStatusCounts.map(r => [r.Status, parseInt(r.cnt || 0)]));
+
+  const heuristicCountRes = await query('SELECT COUNT(*) as c FROM HeuristicTracking');
+  const heuristicCount = parseInt(heuristicCountRes.rows[0].c || 0);
 
   let classifications;
-  if (userId) {
-    classifications = db.prepare(`
+  if (getIsPostgres()) {
+    classifications = await query(`
+      SELECT
+        CASE WHEN d.ExtractionJson IS NOT NULL THEN d.ExtractionJson->>'Classification'
+             WHEN d.ParcelName LIKE '[%]%' THEN substring(d.ParcelName from 2 for position(']' in d.ParcelName) - 2)
+             ELSE 'UNKNOWN' END as class,
+        COUNT(*) as count,
+        SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed,
+        SUM(CASE WHEN d.Status = 'FAIL' THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN d.Status = 'MEANDER' THEN 1 ELSE 0 END) as meanders,
+        SUM(CASE WHEN d.Status = 'ERROR' THEN 1 ELSE 0 END) as errors
+      FROM DeedLogs d
+      ${userId ? 'JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?' : ''}
+      GROUP BY class ORDER BY count DESC
+    `, userId ? [userId] : []);
+  } else {
+    classifications = await query(`
       SELECT
         CASE WHEN d.ExtractionJson IS NOT NULL AND json_valid(d.ExtractionJson) THEN json_extract(d.ExtractionJson, '$.Classification')
              WHEN d.ParcelName LIKE '[%]%' THEN substr(d.ParcelName, 2, instr(d.ParcelName, ']') - 2)
@@ -428,45 +514,31 @@ export function getDatabaseStats(userId = null) {
         SUM(CASE WHEN d.Status = 'MEANDER' THEN 1 ELSE 0 END) as meanders,
         SUM(CASE WHEN d.Status = 'ERROR' THEN 1 ELSE 0 END) as errors
       FROM DeedLogs d
-      JOIN BatchRuns b ON d.BatchId = b.BatchId
-      WHERE b.UserId = ?
+      ${userId ? 'JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?' : ''}
       GROUP BY class ORDER BY count DESC
-    `).all(userId);
-  } else {
-    classifications = db.prepare(`
-      SELECT
-        CASE WHEN ExtractionJson IS NOT NULL AND json_valid(ExtractionJson) THEN json_extract(ExtractionJson, '$.Classification')
-             WHEN ParcelName LIKE '[%]%' THEN substr(ParcelName, 2, instr(ParcelName, ']') - 2)
-             ELSE 'UNKNOWN' END as class,
-        COUNT(*) as count,
-        SUM(CASE WHEN Status = 'PASS' THEN 1 ELSE 0 END) as passed,
-        SUM(CASE WHEN Status = 'FAIL' THEN 1 ELSE 0 END) as failed,
-        SUM(CASE WHEN Status = 'MEANDER' THEN 1 ELSE 0 END) as meanders,
-        SUM(CASE WHEN Status = 'ERROR' THEN 1 ELSE 0 END) as errors
-      FROM DeedLogs GROUP BY class ORDER BY count DESC
-    `).all();
+    `, userId ? [userId] : []);
   }
-  const classificationList = classifications.map(c => ({ class: c.class || 'UNKNOWN', count: c.count, passed: c.passed, failed: c.failed, meanders: c.meanders, errors: c.errors }));
+  const classificationList = classifications.rows.map(c => ({ class: c.class || 'UNKNOWN', count: parseInt(c.count || 0), passed: parseInt(c.passed || 0), failed: parseInt(c.failed || 0), meanders: parseInt(c.meanders || 0), errors: parseInt(c.errors || 0) }));
 
   let repairStages;
   if (userId) {
-    repairStages = db.prepare(`
+    repairStages = await query(`
       SELECT d.RepairStageUsed as stage, COUNT(*) as count, SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed
       FROM DeedLogs d
       JOIN BatchRuns b ON d.BatchId = b.BatchId
-      WHERE b.UserId = ? AND stage IS NOT NULL AND stage != '' GROUP BY stage ORDER BY count DESC
-    `).all(userId);
+      WHERE b.UserId = ? AND d.RepairStageUsed IS NOT NULL AND d.RepairStageUsed != '' GROUP BY d.RepairStageUsed ORDER BY count DESC
+    `, [userId]);
   } else {
-    repairStages = db.prepare(`
+    repairStages = await query(`
       SELECT RepairStageUsed as stage, COUNT(*) as count, SUM(CASE WHEN Status = 'PASS' THEN 1 ELSE 0 END) as passed
-      FROM DeedLogs WHERE stage IS NOT NULL AND stage != '' GROUP BY stage ORDER BY count DESC
-    `).all();
+      FROM DeedLogs WHERE RepairStageUsed IS NOT NULL AND RepairStageUsed != '' GROUP BY RepairStageUsed ORDER BY count DESC
+    `);
   }
-  const repairStageList = repairStages.map(s => ({ stage: s.stage || 'Unknown', count: s.count, passed: s.passed }));
+  const repairStageList = repairStages.rows.map(s => ({ stage: s.stage || 'Unknown', count: parseInt(s.count || 0), passed: parseInt(s.passed || 0) }));
 
   let errors;
   if (userId) {
-    errors = db.prepare(`
+    const errorsRes = await query(`
       SELECT
         SUM(CASE WHEN d.LinearError <= 1.0 THEN 1 ELSE 0 END) as nearClosed,
         SUM(CASE WHEN d.LinearError > 1.0 AND d.LinearError <= 10.0 THEN 1 ELSE 0 END) as minorError,
@@ -476,9 +548,10 @@ export function getDatabaseStats(userId = null) {
       JOIN BatchRuns b ON d.BatchId = b.BatchId
       WHERE b.UserId = ? AND d.Status = 'FAIL'
         AND NOT EXISTS (SELECT 1 FROM DeedLogs p WHERE p.FileName = d.FileName AND p.Status IN ('PASS','MEANDER') AND p.Timestamp >= d.Timestamp)
-    `).get(userId);
+    `, [userId]);
+    errors = errorsRes.rows[0];
   } else {
-    errors = db.prepare(`
+    const errorsRes = await query(`
       SELECT
         SUM(CASE WHEN LinearError <= 1.0 THEN 1 ELSE 0 END) as nearClosed,
         SUM(CASE WHEN LinearError > 1.0 AND LinearError <= 10.0 THEN 1 ELSE 0 END) as minorError,
@@ -486,46 +559,63 @@ export function getDatabaseStats(userId = null) {
         SUM(CASE WHEN LinearError > 100.0 THEN 1 ELSE 0 END) as majorError
       FROM DeedLogs d WHERE Status = 'FAIL'
         AND NOT EXISTS (SELECT 1 FROM DeedLogs p WHERE p.FileName = d.FileName AND p.Status IN ('PASS','MEANDER') AND p.Timestamp >= d.Timestamp)
-    `).get();
+    `);
+    errors = errorsRes.rows[0];
   }
 
   return {
-    dbPath, fileSizeMb: Math.round(fileSizeBytes / 1048576 * 100) / 100, fileSizeBytes,
-    deedLogCount, passCount: _sm['PASS']||0, failCount: _sm['FAIL']||0,
-    meanderCount: _sm['MEANDER']||0, errorCount: _sm['ERROR']||0,
-    batchRunCount, heuristicCount,
-    oldestTimestamp: range?.oldest || null, newestTimestamp: range?.newest || null,
-    classifications: classificationList, repairStages: repairStageList,
-    errorDistribution: { nearClosed: errors?.nearClosed||0, minorError: errors?.minorError||0, moderateError: errors?.moderateError||0, majorError: errors?.majorError||0 },
+    dbPath: getIsPostgres() ? 'postgresql://' : dbPath,
+    fileSizeMb: Math.round(fileSizeBytes / 1048576 * 100) / 100,
+    fileSizeBytes,
+    deedLogCount,
+    passCount: _sm['PASS'] || 0,
+    failCount: _sm['FAIL'] || 0,
+    meanderCount: _sm['MEANDER'] || 0,
+    errorCount: _sm['ERROR'] || 0,
+    batchRunCount,
+    heuristicCount,
+    oldestTimestamp: range?.oldest || null,
+    newestTimestamp: range?.newest || null,
+    classifications: classificationList,
+    repairStages: repairStageList,
+    errorDistribution: {
+      nearClosed: parseInt(errors?.nearClosed || 0),
+      minorError: parseInt(errors?.minorError || 0),
+      moderateError: parseInt(errors?.moderateError || 0),
+      majorError: parseInt(errors?.majorError || 0),
+    },
   };
 }
 
-export function getHeuristicTracking() {
-  return getDb().prepare('SELECT * FROM HeuristicTracking ORDER BY SuccessCount DESC').all().map(r => ({
-    id: r.Id, problemName: r.ProblemName, solutionApplied: r.SolutionApplied, successCount: r.SuccessCount,
+export async function getHeuristicTracking() {
+  const res = await query('SELECT * FROM HeuristicTracking ORDER BY SuccessCount DESC');
+  return res.rows.map(r => ({
+    id: r.Id, problemName: r.ProblemName, solutionApplied: r.SolutionApplied, successCount: parseInt(r.SuccessCount || 0),
   }));
 }
 
-export function incrementHeuristic(problemName, solutionApplied) {
-  const db = getDb();
-  const row = db.prepare('SELECT Id FROM HeuristicTracking WHERE ProblemName = ? AND SolutionApplied = ?').get(problemName, solutionApplied);
+export async function incrementHeuristic(problemName, solutionApplied) {
+  const rowRes = await query('SELECT Id FROM HeuristicTracking WHERE ProblemName = ? AND SolutionApplied = ?', [problemName, solutionApplied]);
+  const row = rowRes.rows[0];
   if (row) {
-    db.prepare('UPDATE HeuristicTracking SET SuccessCount = SuccessCount + 1 WHERE Id = ?').run(row.Id);
+    await query('UPDATE HeuristicTracking SET SuccessCount = SuccessCount + 1 WHERE Id = ?', [row.Id]);
   } else {
-    db.prepare('INSERT INTO HeuristicTracking (ProblemName, SolutionApplied, SuccessCount) VALUES (?, ?, 1)').run(problemName, solutionApplied);
+    await query('INSERT INTO HeuristicTracking (ProblemName, SolutionApplied, SuccessCount) VALUES (?, ?, 1)', [problemName, solutionApplied]);
   }
 }
 
-export function getDeedsByReferencePoint(refPointName) {
-  return getDb().prepare(`
-    SELECT * FROM DeedLogs WHERE ReferencePointName = ? COLLATE NOCASE AND Status IN ('PASS', 'MEANDER') ORDER BY Timestamp DESC
-  `).all(refPointName).map(mapDeedLog);
+export async function getDeedsByReferencePoint(refPointName) {
+  const res = await query(`
+    SELECT * FROM DeedLogs WHERE LOWER(ReferencePointName) = LOWER(?) AND Status IN ('PASS', 'MEANDER') ORDER BY Timestamp DESC
+  `, [refPointName]);
+  return res.rows.map(mapDeedLog);
 }
 
-export function getDistinctReferencePoints() {
-  return getDb().prepare(`
+export async function getDistinctReferencePoints() {
+  const res = await query(`
     SELECT DISTINCT ReferencePointName FROM DeedLogs
     WHERE ReferencePointName IS NOT NULL AND ReferencePointName != ''
     ORDER BY ReferencePointName
-  `).all().map(r => r.ReferencePointName);
+  `);
+  return res.rows.map(r => r.ReferencePointName);
 }

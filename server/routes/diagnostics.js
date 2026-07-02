@@ -11,16 +11,16 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/diagnostics/recent-batches  — last 30 runs with inline stats
-router.get('/recent-batches', (req, res) => {
+router.get('/recent-batches', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 30, 100);
     const userId = req.user.role === 'admin' ? null : req.user.id;
-    res.json(db.getRecentBatchesWithStats(limit, userId));
+    res.json(await db.getRecentBatchesWithStats(limit, userId));
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
 // GET /api/diagnostics/batch-stats/:batchId  — full stats for one run
-router.get('/batch-stats/:batchId', (req, res) => {
+router.get('/batch-stats/:batchId', async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       const row = db.getDb().prepare('SELECT UserId FROM BatchRuns WHERE BatchId = ?').get(req.params.batchId);
@@ -28,65 +28,65 @@ router.get('/batch-stats/:batchId', (req, res) => {
         return res.status(403).json({ error: 'Access forbidden to this batch run.' });
       }
     }
-    res.json(db.getBatchStats(req.params.batchId));
+    res.json(await db.getBatchStats(req.params.batchId));
   }
   catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
-router.get('/search', (req, res) => {
+router.get('/search', async (req, res) => {
   try {
     const { query, status, maxError } = req.query;
     const userId = req.user.role === 'admin' ? null : req.user.id;
-    res.json(db.searchDeedLogs(query || null, status || null, maxError ? parseFloat(maxError) : null, userId));
+    res.json(await db.searchDeedLogs(query || null, status || null, maxError ? parseFloat(maxError) : null, userId));
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
-router.get('/heuristics', (req, res) => {
-  try { res.json(db.getHeuristicTracking()); }
+router.get('/heuristics', async (req, res) => {
+  try { res.json(await db.getHeuristicTracking()); }
   catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     const userId = req.user.role === 'admin' ? null : req.user.id;
-    res.json(db.getDatabaseStats(userId));
+    res.json(await db.getDatabaseStats(userId));
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
 // GET /api/diagnostics/failed-deeds?bucket=nearClosed&limit=200
-router.get('/failed-deeds', (req, res) => {
+router.get('/failed-deeds', async (req, res) => {
   try {
     const limit  = Math.min(parseInt(req.query.limit) || 200, 500);
     const bucket = req.query.bucket || null;
-    res.json(db.getFailedDeedList(limit, bucket));
+    res.json(await db.getFailedDeedList(limit, bucket));
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
-router.post('/purge', (req, res) => {
+router.post('/purge', async (req, res) => {
   let days = parseInt(req.query.days);
   if (isNaN(days)) days = 90;
   if (days < 0) return res.status(400).json({ error: 'Retention days must be at least 0.' });
   try {
-    const deleted = db.purgeOldLogs(days);
-    res.json({ deleted, message: `Purged ${deleted} records older than ${days} days.`, stats: db.getDatabaseStats() });
+    const deleted = await db.purgeOldLogs(days);
+    res.json({ deleted, message: `Purged ${deleted} records older than ${days} days.`, stats: await db.getDatabaseStats() });
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
-router.post('/clear-failed', (req, res) => {
+router.post('/clear-failed', async (req, res) => {
   try {
-    const deleted = db.clearFailedCache();
-    res.json({ deleted, message: `Cleared ${deleted} failed deed entries. They will be retried on next batch run.`, stats: db.getDatabaseStats() });
+    const deleted = await db.clearFailedCache();
+    res.json({ deleted, message: `Cleared ${deleted} failed deed entries. They will be retried on next batch run.`, stats: await db.getDatabaseStats() });
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
-router.post('/clear-all', (req, res) => {
+router.post('/clear-all', async (req, res) => {
   try {
-    const deleted = db.clearAllCache();
-    res.json({ deleted, message: `Cleared ${deleted} records. All deed logs and batch runs deleted.`, stats: db.getDatabaseStats() });
+    const deleted = await db.clearAllCache();
+    res.json({ deleted, message: `Cleared ${deleted} records. All deed logs and batch runs deleted.`, stats: await db.getDatabaseStats() });
   } catch (ex) { res.status(400).json({ error: ex.message }); }
 });
 
-router.post('/save-correction', (req, res) => {
+router.post('/save-correction', async (req, res) => {
   try {
     const {
       fileName, parcelName, status, repairStageUsed, extractionJson, traverseJson,
@@ -98,7 +98,7 @@ router.post('/save-correction', (req, res) => {
 
     let finalFileHash = fileHash;
     if (!finalFileHash) {
-      const recent = db.getDeedDetail(fileName);
+      const recent = await db.getDeedDetail(fileName);
       if (recent?.fileHash) {
         finalFileHash = recent.fileHash;
       } else {
@@ -109,7 +109,7 @@ router.post('/save-correction', (req, res) => {
       }
     }
     
-    const id = db.saveCorrectedDeed(
+    const id = await db.saveCorrectedDeed(
       fileName, 
       parcelName || 'Manual Corrected', 
       status || 'PASS', 
@@ -135,11 +135,11 @@ router.post('/save-correction', (req, res) => {
 
 // GET /api/diagnostics/solution-steps?file=filename.doc
 // Returns the structured solution steps for a specific processed file.
-router.get('/solution-steps', (req, res) => {
+router.get('/solution-steps', async (req, res) => {
   try {
     const { file } = req.query;
     if (!file) return res.status(400).json({ error: 'file query parameter is required.' });
-    const result = db.getSolutionSteps(file);
+    const result = await db.getSolutionSteps(file);
     if (!result) return res.status(404).json({ error: `No solution steps found for "${file}". Process the file first.` });
     res.json(result);
   } catch (ex) {
@@ -151,10 +151,10 @@ router.get('/solution-steps', (req, res) => {
 
 // Removes degenerate PASS cache entries (zero-segment, 999999999 precision ratio).
 // Body: { fileName?: string }  — omit fileName to purge all stale entries globally.
-router.post('/purge-stale-cache', (req, res) => {
+router.post('/purge-stale-cache', async (req, res) => {
   try {
     const { fileName } = req.body || {};
-    const removed = db.purgeStaleCache(fileName || null);
+    const removed = await db.purgeStaleCache(fileName || null);
     res.json({ success: true, removed, message: `Removed ${removed} stale cache entries${fileName ? ` for ${fileName}` : ' globally'}.` });
   } catch (ex) {
     res.status(500).json({ error: ex.message });
@@ -164,7 +164,7 @@ router.post('/purge-stale-cache', (req, res) => {
 // GET /api/diagnostics/deed-text?fileName=X&folder=/path/to/folder
 // Reads the raw extracted text file from disk (_extracted/<basename>.txt).
 // Falls back to the extraction message from the DB if the txt file is not found.
-router.get("/deed-text", (req, res) => {
+router.get("/deed-text", async (req, res) => {
   try {
     const { fileName, folder } = req.query;
     if (!fileName) return res.status(400).json({ error: "fileName is required." });
@@ -181,7 +181,7 @@ router.get("/deed-text", (req, res) => {
     }
 
     // Fall back to extraction data from DB
-    const row = db.getDeedDetail(fileName);
+    const row = await db.getDeedDetail(fileName);
     if (row?.extraction) {
       const ex = row.extraction;
       // Handle both PascalCase (C#) and camelCase fields
@@ -214,31 +214,31 @@ router.get("/deed-text", (req, res) => {
 // GET /api/diagnostics/deed-detail?fileName=X
 // Returns the full DB row (including extractionJson & traverseJson) for the latest
 // FAIL/ERROR record matching the given filename.
-router.get("/deed-detail", (req, res) => {
+router.get("/deed-detail", async (req, res) => {
   try {
     const { fileName } = req.query;
     if (!fileName) return res.status(400).json({ error: "fileName is required." });
-    const row = db.getDeedDetail(fileName);
+    const row = await db.getDeedDetail(fileName);
     if (!row) return res.status(404).json({ error: `No record found for "${fileName}".` });
     res.json(row);
   } catch (ex) { res.status(500).json({ error: ex.message }); }
 });
 
 // GET /api/diagnostics/reference-points — returns a list of distinct POR names
-router.get('/reference-points', (req, res) => {
+router.get('/reference-points', async (req, res) => {
   try {
-    res.json(db.getDistinctReferencePoints());
+    res.json(await db.getDistinctReferencePoints());
   } catch (ex) {
     res.status(500).json({ error: ex.message });
   }
 });
 
 // GET /api/diagnostics/by-reference-point?name=X — returns all passed deeds under reference point X
-router.get('/by-reference-point', (req, res) => {
+router.get('/by-reference-point', async (req, res) => {
   try {
     const { name } = req.query;
     if (!name) return res.status(400).json({ error: 'name query parameter is required.' });
-    res.json(db.getDeedsByReferencePoint(name));
+    res.json(await db.getDeedsByReferencePoint(name));
   } catch (ex) {
     res.status(500).json({ error: ex.message });
   }

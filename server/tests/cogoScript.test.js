@@ -454,7 +454,7 @@ MAPCHK BND3
 
 describe('COGO Command Batch Script Solver Tests', () => {
 
-  it('successfully parses the 100+ line COGO batch script and calculates all coordinates', () => {
+  it('successfully parses the 100+ line COGO batch script and calculates all coordinates', async () => {
     const { points, boundaries } = parseCogoBatchScript(comprehensiveCogoScript);
 
     // 1. Verify Points exist
@@ -483,7 +483,7 @@ describe('COGO Command Batch Script Solver Tests', () => {
     expect(boundaries.BND3).toHaveLength(22);
   });
 
-  it('runs MAPCHK on BND and verifies closure and area metrics', () => {
+  it('runs MAPCHK on BND and verifies closure and area metrics', async () => {
     const { points, boundaries } = parseCogoBatchScript(comprehensiveCogoScript);
     const mc = computeMapCheck(boundaries.BND, points);
 
@@ -494,7 +494,7 @@ describe('COGO Command Batch Script Solver Tests', () => {
     expect(mc.areaAcres).toBeCloseTo(1.1985, 4);
   });
 
-  it('runs MAPCHK on BNDB (corrected) and verifies closure and area metrics', () => {
+  it('runs MAPCHK on BNDB (corrected) and verifies closure and area metrics', async () => {
     const { points, boundaries } = parseCogoBatchScript(comprehensiveCogoScript);
     const mc = computeMapCheck(boundaries.BNDB, points);
 
@@ -505,7 +505,7 @@ describe('COGO Command Batch Script Solver Tests', () => {
     expect(mc.areaAcres).toBeCloseTo(20.6600, 4);
   });
 
-  it('runs MAPCHK on BND3 and verifies closure and area metrics', () => {
+  it('runs MAPCHK on BND3 and verifies closure and area metrics', async () => {
     const { points, boundaries } = parseCogoBatchScript(comprehensiveCogoScript);
     const mc = computeMapCheck(boundaries.BND3, points);
 
@@ -516,7 +516,7 @@ describe('COGO Command Batch Script Solver Tests', () => {
     expect(mc.areaAcres).toBeCloseTo(13.7889, 4);
   });
 
-  it('verifies radial side shots from Point 29', () => {
+  it('verifies radial side shots from Point 29', async () => {
     const { points } = parseCogoBatchScript(comprehensiveCogoScript);
     
     // Side shot Pt 99 from Pt 29
@@ -531,7 +531,7 @@ describe('COGO Command Batch Script Solver Tests', () => {
     expect(p99.easting).toBeCloseTo(5242.3071 + 35.3553, 2);
   });
 
-  it('verifies offset line points from line 28->29', () => {
+  it('verifies offset line points from line 28->29', async () => {
     const { points } = parseCogoBatchScript(comprehensiveCogoScript);
     
     // Offset Pt 100 from Pt 28
@@ -546,7 +546,7 @@ describe('COGO Command Batch Script Solver Tests', () => {
     expect(p100.easting).toBeCloseTo(5228.8352 + 49.1542, 2);
   });
 
-  it('verifies translation and rotation commands', () => {
+  it('verifies translation and rotation commands', async () => {
     const { points } = parseCogoBatchScript(comprehensiveCogoScript);
 
     // Pt 201 should be shifted by dx=50, dy=100

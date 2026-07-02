@@ -52,6 +52,7 @@ export const MAP_PAN_SENSITIVITY = (() => {
 
 // ── Database ──────────────────────────────────────────────────────────────────
 export const DATABASE_PATH = getEnv('DATABASE_PATH');
+export const DATABASE_URL = getEnv('DATABASE_URL');
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 export const FRONTEND_URL   = getEnv('FRONTEND_URL')   || 'http://localhost:5174';
@@ -119,7 +120,7 @@ export const cfg = {
   GEMINI_API_KEY, ACTIVE_PROVIDER, ACTIVE_MODEL,
   OLLAMA_URL, OLLAMA_PATH, OLLAMA_RUNS_ON_WSL, OLLAMA_FALLBACK_MODEL,
   OPENAI_BASE_URL, DEFAULT_LOCAL_MODEL, ALLOW_API_FALLBACK,
-  DATABASE_PATH,
+  DATABASE_PATH, DATABASE_URL,
   FRONTEND_URL, CLOUD_RUN_URL, FLY_APP_URL, ALLOWED_ORIGINS,
   GOOGLE_CLIENT_ID, INVITE_ONLY, RESEND_API_KEY, EMAIL_FROM, EMAIL_FROM_NAME,
   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,

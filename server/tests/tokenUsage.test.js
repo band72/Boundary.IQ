@@ -16,7 +16,7 @@ describe('AI Token Tracking & Telemetry tests', () => {
     }
     switchDbPath(TEST_DB_PATH);
     // Create a temporary test user
-    const user = createUser(username, 'TestPassword123!', 'user');
+    const user = await createUser(username, 'TestPassword123!', 'user');
     testUserId = user.id;
   });
 
@@ -33,7 +33,7 @@ describe('AI Token Tracking & Telemetry tests', () => {
   });
 
 
-  it('successfully creates the TokenUsage table and verifies columns', () => {
+  it('successfully creates the TokenUsage table and verifies columns', async () => {
     const db = getDb();
     const info = db.prepare("PRAGMA table_info(TokenUsage)").all();
     const columns = info.map(c => c.name);
@@ -49,9 +49,9 @@ describe('AI Token Tracking & Telemetry tests', () => {
     expect(columns).toContain('Timestamp');
   });
 
-  it('can log token usage and fetch aggregates per user', () => {
+  it('can log token usage and fetch aggregates per user', async () => {
     // Log two separate AI submissions for the test user
-    logTokenUsage({
+    await logTokenUsage({
       userId: testUserId,
       provider: 'gemini',
       model: 'gemini-2.5-flash',
@@ -61,7 +61,7 @@ describe('AI Token Tracking & Telemetry tests', () => {
       type: 'deed-solve'
     });
 
-    logTokenUsage({
+    await logTokenUsage({
       userId: testUserId,
       provider: 'gemini',
       model: 'gemini-2.5-flash',
@@ -72,14 +72,14 @@ describe('AI Token Tracking & Telemetry tests', () => {
     });
 
     // Retrieve stats
-    const stats = getUserTokenStats(testUserId);
+    const stats = await getUserTokenStats(testUserId);
     expect(stats.inputTokens).toBe(350);
     expect(stats.outputTokens).toBe(750);
     expect(stats.totalTokens).toBe(1100);
   });
 
-  it('returns aggregated token usage in getAllUsers list', () => {
-    const users = getAllUsers();
+  it('returns aggregated token usage in getAllUsers list', async () => {
+    const users = await getAllUsers();
     const target = users.find(u => u.id === testUserId);
 
     expect(target).toBeDefined();
@@ -96,7 +96,7 @@ describe('AI Token Tracking & Telemetry tests', () => {
     const batchId = `test_batch_${Date.now()}`;
     
     // Save batch run for the test user
-    saveBatchRun(batchId, 3, 0.9, testUserId);
+    await saveBatchRun(batchId, 3, 0.9, testUserId);
 
     const db = getDb();
     const row = db.prepare('SELECT UserId FROM BatchRuns WHERE BatchId = ?').get(batchId);

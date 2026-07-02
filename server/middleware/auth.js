@@ -22,7 +22,7 @@ function parseCookies(cookieHeader) {
  * Express middleware to validate session token via Authorization header or Cookie.
  * Attaches the authenticated user object to req.user.
  */
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   try {
     let token = null;
     const authHeader = req.headers.authorization;
@@ -38,7 +38,7 @@ export function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Access denied. Authentication token not found in cookies or headers.' });
     }
 
-    const sessionUser = getSession(token);
+    const sessionUser = await getSession(token);
     if (!sessionUser) {
       return res.status(401).json({ error: 'Access denied. Session has expired or is invalid.' });
     }
@@ -51,7 +51,7 @@ export function requireAuth(req, res, next) {
       plan: sessionUser.plan || 'free',
     };
 
-    const userSettings = getUserSettings(sessionUser.userId) || {};
+    const userSettings = await getUserSettings(sessionUser.userId) || {};
     const contextSettings = {
       userId: sessionUser.userId,
       activeProvider: userSettings.ActiveProvider || undefined,
@@ -128,8 +128,8 @@ export function requirePlan(minPlan = 'pro') {
 export function trackDeedUsage(req, res, next) {
   if (!req.user) return next();
   // Import lazily to avoid circular deps
-  import('../services/diagnosticsDb.js').then(({ checkDailyLimit, incrementDailyUsage }) => {
-    const limit = checkDailyLimit(req.user.id, req.user.plan, req.user.role);
+  import('../services/diagnosticsDb.js').then(async ({ checkDailyLimit, incrementDailyUsage }) => {
+    const limit = await checkDailyLimit(req.user.id, req.user.plan, req.user.role);
     req.usage = limit;
 
     if (!limit.allowed) {
@@ -144,7 +144,7 @@ export function trackDeedUsage(req, res, next) {
     }
 
     // Increment usage count before processing
-    incrementDailyUsage(req.user.id);
+    await incrementDailyUsage(req.user.id);
     next();
   }).catch(err => {
     log.error({ err: err.message }, 'trackDeedUsage error');

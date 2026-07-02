@@ -124,7 +124,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
     const batchId = uuidv4();
     const results = new Array(files.length);
 
-    db.saveBatchRun(batchId, files.length, 0.0);
+    await db.saveBatchRun(batchId, files.length, 0.0);
 
     // Start keepalive heartbeat immediately to prevent idle connection timeout
     res.setHeader('Content-Type', 'application/json');
@@ -165,7 +165,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
         fileHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
 
         // Check cache
-        const solvedCase = db.findSolvedCase(fileName, fileHash);
+        const solvedCase = await db.findSolvedCase(fileName, fileHash);
         if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
           log.info({ fileName, hash: fileHash.slice(0, 8) }, 'SQLite Case Finder: cache hit — reusing solved case');
           const cachedExtraction = JSON.parse(solvedCase.extractionJson);
@@ -195,13 +195,13 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
           };
           const linErr = cachedTraverse.closure?.linearError ?? cachedTraverse.Closure?.LinearError ?? 0;
           const precRatio = cachedTraverse.closure?.precisionRatio ?? cachedTraverse.Closure?.PrecisionRatio ?? '';
-          db.saveDeedLog(batchId, fileName, solvedCase.parcelName || 'CACHED',
+          await db.saveDeedLog(batchId, fileName, solvedCase.parcelName || 'CACHED',
             courses.length, linErr,
             parsePrecisionRatio(precRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved',
             solvedCase.extractionJson, solvedCase.traverseJson,
             solvedCase.agentTurnsJson ?? null, solvedCase.trustScore ?? null, solvedCase.solutionStepsJson ?? null,
             refName, refN, refE, pobN, pobE, fileHash);
-          db.incrementHeuristic('SQLite Case Finder Solved', 'Auto-retrieve Solved Boundary');
+          await db.incrementHeuristic('SQLite Case Finder Solved', 'Auto-retrieve Solved Boundary');
           return;
         }
 
@@ -268,7 +268,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
             conceptualAnalysis: extraction.conceptualAnalysis || null,
             fileHash, agentTurns: null
           };
-          db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
+          await db.saveDeedLog(batchId, fileName, `[SKIPPED] ${path.parse(fileName).name}`, 0, 0, 0,
             'SKIPPED', 'Non-traversable document', JSON.stringify(extraction), null, null, null, null,
             refName, refN, refE, pobN, pobE, fileHash);
           return;
@@ -294,18 +294,18 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
         // Fix #12: persist agent turn telemetry and trust score
         const agentTurnsJson = repairResult.agentTurns?.length ? JSON.stringify(repairResult.agentTurns) : null;
 
-        db.saveDeedLog(batchId, fileName, parcelLabel, extraction.courses?.length || 0,
+        await db.saveDeedLog(batchId, fileName, parcelLabel, extraction.courses?.length || 0,
           linearError, precisionRatio, status, stageUsed,
           JSON.stringify(extraction), traverse ? JSON.stringify(traverse) : null,
           agentTurnsJson, repairResult.trustScore ?? null,
           repairResult.solutionSteps ? JSON.stringify(repairResult.solutionSteps) : null,
           refName, refN, refE, pobN, pobE, fileHash);
 
-        if (extraction.courses?.length > 0) db.incrementHeuristic(stageUsed, 'Auto-repair pipeline');
+        if (extraction.courses?.length > 0) await db.incrementHeuristic(stageUsed, 'Auto-repair pipeline');
       } catch (ex) {
         log.error({ fileName, err: ex.message }, 'Batch item failed');
         results[index] = { fileName, status: 'error', extraction: null, traverse: null, legalDescription: null, error: ex.message, fileHash, agentTurns: null };
-        db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE, fileHash);
+        await db.saveDeedLog(batchId, fileName, 'ERROR PARCEL', 0, 999, 0, 'ERROR', 'AI Extraction Error', null, null, null, null, null, refName, refN, refE, pobN, pobE, fileHash);
       } finally {
         try {
           if (file.path && fs.existsSync(file.path)) {
@@ -349,7 +349,7 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
 
     const succeeded = results.filter(r => r?.status === 'success').length;
     const passRate = results.length > 0 ? succeeded / results.length : 0;
-    db.saveBatchRun(batchId, results.length, passRate);
+    await db.saveBatchRun(batchId, results.length, passRate);
 
     if (keepAlive) clearInterval(keepAlive);
     res.write(JSON.stringify({ results, totalProcessed: results.length, succeeded, failed: results.length - succeeded }));

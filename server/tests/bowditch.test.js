@@ -57,18 +57,18 @@ describe('Bowditch (Compass Rule) Adjustment', () => {
     { northing: 5000.00, easting: 5000.01 },  // 0.01 ft east misclosure
   ];
 
-  it('Last adjusted station closes back to POB (northing)', () => {
+  it('Last adjusted station closes back to POB (northing)', async () => {
     const adj = bowditchAdjust(COURSES_ERR, STATIONS_ERR);
     expect(adj[adj.length - 1].northing).toBeCloseTo(adj[0].northing, 8);
   });
 
-  it('Last adjusted station closes back to POB (easting)', () => {
+  it('Last adjusted station closes back to POB (easting)', async () => {
     const adj = bowditchAdjust(COURSES_ERR, STATIONS_ERR);
     expect(adj[adj.length - 1].easting).toBeCloseTo(adj[0].easting, 8);
   });
 
   // ── Case 2: Error distribution ────────────────────────────────────────────
-  it('Correction applied to final station equals total misclosure error', () => {
+  it('Correction applied to final station equals total misclosure error', async () => {
     const courses = [
       { distance: 200 },
       { distance: 100 },
@@ -96,7 +96,7 @@ describe('Bowditch (Compass Rule) Adjustment', () => {
   });
 
   // ── Case 3: Perfect closure — no corrections applied ─────────────────────
-  it('Zero misclosure: adjusted stations equal raw stations', () => {
+  it('Zero misclosure: adjusted stations equal raw stations', async () => {
     const courses = [
       { distance: 100 },
       { distance: 100 },
@@ -120,7 +120,7 @@ describe('Bowditch (Compass Rule) Adjustment', () => {
   });
 
   // ── Case 4: Edge — empty / single station ────────────────────────────────
-  it('Returns input unchanged when stations array has 1 or fewer entries', () => {
+  it('Returns input unchanged when stations array has 1 or fewer entries', async () => {
     const result = bowditchAdjust([], [{ northing: 5000, easting: 5000 }]);
     expect(result).toHaveLength(1);
     expect(result[0].northing).toBe(5000);

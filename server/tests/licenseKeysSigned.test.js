@@ -32,10 +32,10 @@ describe('Cryptographic License Keys Test Suite', () => {
     baseUrl = `http://localhost:${port}/api`;
 
     // Create admin user and target user
-    const adminUser = createUser('license_admin', 'password123', 'admin@example.com');
-    updateUserRole(adminUser.id, 'admin');
+    const adminUser = await createUser('license_admin', 'password123', 'admin@example.com');
+    await updateUserRole(adminUser.id, 'admin');
 
-    const targetUser = createUser('license_target', 'password123', 'target@example.com');
+    const targetUser = await createUser('license_target', 'password123', 'target@example.com');
     targetUserId = targetUser.id;
 
     // Login admin
@@ -61,14 +61,14 @@ describe('Cryptographic License Keys Test Suite', () => {
     }
   });
 
-  it('should generate/retrieve the license private key successfully', () => {
+  it('should generate/retrieve the license private key successfully', async () => {
     const key = getOrCreateLicensePrivateKey();
     expect(key).toBeDefined();
     expect(key).toContain('-----BEGIN PRIVATE KEY-----');
   });
 
-  it('should create and retrieve a signed license key for a user via DB service', () => {
-    const { rawKey, plan } = createSignedLicenseKeyForUser({
+  it('should create and retrieve a signed license key for a user via DB service', async () => {
+    const { rawKey, plan } = await createSignedLicenseKeyForUser({
       plan: 'pro',
       userId: targetUserId
     });
@@ -77,7 +77,7 @@ describe('Cryptographic License Keys Test Suite', () => {
     expect(rawKey).toContain('BIQ-PRO-');
     expect(plan).toBe('pro');
 
-    const activeKey = getActiveLicenseKeyForUser(targetUserId);
+    const activeKey = await getActiveLicenseKeyForUser(targetUserId);
     expect(activeKey).toBeDefined();
     expect(activeKey.RawKey).toBe(rawKey);
     expect(activeKey.Plan).toBe('pro');

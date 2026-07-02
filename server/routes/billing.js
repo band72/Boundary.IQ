@@ -62,9 +62,9 @@ const PLANS = {
 };
 
 // GET /api/billing/plans — public, returns plan info
-router.get('/plans', (req, res) => {
+router.get('/plans', async (req, res) => {
   try {
-    const dbPlans = getAllPlanSettings();
+    const dbPlans = await getAllPlanSettings();
     const freeDb = dbPlans.find(p => p.plan === 'free');
     const freePlan = freeDb ? {
       id: 'free',
@@ -122,10 +122,10 @@ router.get('/plans', (req, res) => {
 });
 
 // GET /api/billing/status — authenticated, returns current user's subscription
-router.get('/status', requireAuth, (req, res) => {
+router.get('/status', requireAuth, async (req, res) => {
   try {
-    const sub = getSubscriptionByUser(req.user.id);
-    const user = getUserById(req.user.id);
+    const sub = await getSubscriptionByUser(req.user.id);
+    const user = await getUserById(req.user.id);
     res.json({
       plan: user?.plan || 'free',
       role: req.user.role,
@@ -149,7 +149,7 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
 
     if (isMockMode()) {
       // Mock mode: immediately upgrade the user
-      updateUserPlan(req.user.id, plan);
+      await updateUserPlan(req.user.id, plan);
       return res.json({
         mockMode: true,
         success: true,
@@ -165,10 +165,10 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
     }
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
-    const user = getUserById(req.user.id);
+    const user = await getUserById(req.user.id);
 
     // Reuse existing Stripe customer if available
-    const existingSub = getSubscriptionByUser(req.user.id);
+    const existingSub = await getSubscriptionByUser(req.user.id);
     let customerParams = {};
     if (existingSub?.StripeCustomerId) {
       customerParams = { customer: existingSub.StripeCustomerId };
@@ -217,7 +217,7 @@ router.post('/portal', requireAuth, async (req, res) => {
     }
 
     const stripe = getStripe();
-    const sub = getSubscriptionByUser(req.user.id);
+    const sub = await getSubscriptionByUser(req.user.id);
 
     if (!sub?.StripeCustomerId) {
       return res.status(404).json({ error: 'No Stripe customer found. Please upgrade first.' });
@@ -275,7 +275,7 @@ router.post('/webhook', async (req, res) => {
         const userId = parseInt(session.metadata?.userId);
         const plan = session.metadata?.plan || 'pro';
         if (userId) {
-          upsertSubscription(userId, {
+          await upsertSubscription(userId, {
             plan,
             stripeCustomerId: session.customer,
             stripeSubscriptionId: session.subscription,
@@ -289,11 +289,11 @@ router.post('/webhook', async (req, res) => {
 
       case 'customer.subscription.updated': {
         const sub = event.data.object;
-        const existing = getSubscriptionByStripeSubscription(sub.id);
+        const existing = await getSubscriptionByStripeSubscription(sub.id);
         if (existing) {
           const plan = sub.metadata?.plan || existing.Plan || 'pro';
           const periodEnd = new Date(sub.current_period_end * 1000).toISOString();
-          upsertSubscription(existing.userId, {
+          await upsertSubscription(existing.userId, {
             plan,
             stripeSubscriptionId: sub.id,
             status: sub.status,
@@ -305,9 +305,9 @@ router.post('/webhook', async (req, res) => {
 
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
-        const existing = getSubscriptionByStripeSubscription(sub.id);
+        const existing = await getSubscriptionByStripeSubscription(sub.id);
         if (existing) {
-          upsertSubscription(existing.userId, {
+          await upsertSubscription(existing.userId, {
             plan: 'free',
             stripeSubscriptionId: sub.id,
             status: 'cancelled',
@@ -320,7 +320,7 @@ router.post('/webhook', async (req, res) => {
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
-        const existing = getSubscriptionByStripeCustomer(invoice.customer);
+        const existing = await getSubscriptionByStripeCustomer(invoice.customer);
         if (existing) {
           console.warn(`⚠ [Billing] Payment failed for userId=${existing.UserId}`);
         }

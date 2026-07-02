@@ -56,7 +56,7 @@ function deedPreviewSummary(parsed) {
 
 describe('deedParser', () => {
 
-  it('Empty input returns all zeros/false', () => {
+  it('Empty input returns all zeros/false', async () => {
     const p = previewDeedText('');
     expect(p.courseCount).toBe(0);
     expect(p.bearingCount).toBe(0);
@@ -66,7 +66,7 @@ describe('deedParser', () => {
     expect(p.pobCoords).toBeNull();
   });
 
-  it('Simple 4-course deed: detects 4 THENCE clauses and 4 bearings', () => {
+  it('Simple 4-course deed: detects 4 THENCE clauses and 4 bearings', async () => {
     const text = `
       BEGINNING at a point;
       THENCE N 00°00'00" E, a distance of 100.00 feet;
@@ -80,7 +80,7 @@ describe('deedParser', () => {
     expect(p.hasPOB).toBe(true);
   });
 
-  it('Curve detection: "THENCE along a curve to the right" triggers curveCount >= 1', () => {
+  it('Curve detection: "THENCE along a curve to the right" triggers curveCount >= 1', async () => {
     const text = `
       THENCE along a curve to the right, having a Radius of 200.00 feet,
       an arc length of 157.08 feet to a point.
@@ -89,24 +89,24 @@ describe('deedParser', () => {
     expect(p.curveCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('Commencement detection: "COMMENCING AT" sets hasCommencement=true', () => {
+  it('Commencement detection: "COMMENCING AT" sets hasCommencement=true', async () => {
     const p = previewDeedText('COMMENCING AT the Southeast corner of Section 14.');
     expect(p.hasCommencement).toBe(true);
   });
 
-  it('POB detection: "POINT OF BEGINNING" sets hasPOB=true', () => {
+  it('POB detection: "POINT OF BEGINNING" sets hasPOB=true', async () => {
     const p = previewDeedText('...to the POINT OF BEGINNING.');
     expect(p.hasPOB).toBe(true);
   });
 
-  it('POB coordinate extraction: Northing/Easting parsed correctly', () => {
+  it('POB coordinate extraction: Northing/Easting parsed correctly', async () => {
     const p = previewDeedText('having coordinates Northing 5000.00, Easting 5000.00');
     expect(p.pobCoords).not.toBeNull();
     expect(p.pobCoords.northing).toBe(5000);
     expect(p.pobCoords.easting).toBe(5000);
   });
 
-  it('deedPreviewSummary returns string containing course count', () => {
+  it('deedPreviewSummary returns string containing course count', async () => {
     const p = previewDeedText(`
       THENCE N 00°00'00" E, 100 feet;
       THENCE N 90°00'00" E, 100 feet;
@@ -118,7 +118,7 @@ describe('deedParser', () => {
     expect(summary).toContain('4 courses');
   });
 
-  it('Null/undefined input returns zero counts', () => {
+  it('Null/undefined input returns zero counts', async () => {
     expect(previewDeedText(null).courseCount).toBe(0);
     expect(previewDeedText(undefined).courseCount).toBe(0);
   });

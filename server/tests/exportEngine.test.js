@@ -59,61 +59,61 @@ const SQUARE = [
 describe('exportEngine', () => {
 
   describe('GeoJSON', () => {
-    it('type is FeatureCollection', () => {
+    it('type is FeatureCollection', async () => {
       const fc = JSON.parse(toGeoJson(SQUARE));
       expect(fc.type).toBe('FeatureCollection');
     });
 
-    it('has exactly one feature', () => {
+    it('has exactly one feature', async () => {
       const fc = JSON.parse(toGeoJson(SQUARE));
       expect(fc.features).toHaveLength(1);
     });
 
-    it('feature geometry type is Polygon', () => {
+    it('feature geometry type is Polygon', async () => {
       const fc = JSON.parse(toGeoJson(SQUARE));
       expect(fc.features[0].geometry.type).toBe('Polygon');
     });
 
-    it('coordinate ring is closed (first === last)', () => {
+    it('coordinate ring is closed (first === last)', async () => {
       const fc = JSON.parse(toGeoJson(SQUARE));
       const ring = fc.features[0].geometry.coordinates[0];
       expect(ring[0]).toEqual(ring[ring.length - 1]);
     });
 
-    it('ring has N+1 positions (closed)', () => {
+    it('ring has N+1 positions (closed)', async () => {
       const fc = JSON.parse(toGeoJson(SQUARE));
       const ring = fc.features[0].geometry.coordinates[0];
       expect(ring).toHaveLength(SQUARE.length + 1);
     });
 
-    it('parcelName property is preserved in output', () => {
+    it('parcelName property is preserved in output', async () => {
       const fc = JSON.parse(toGeoJson(SQUARE, { parcel: 'Lot 42' }));
       expect(fc.features[0].properties.parcelName).toBe('Lot 42');
     });
   });
 
   describe('KML', () => {
-    it('contains XML declaration', () => {
+    it('contains XML declaration', async () => {
       expect(toKml(SQUARE)).toContain('<?xml');
     });
 
-    it('contains <kml> root element', () => {
+    it('contains <kml> root element', async () => {
       expect(toKml(SQUARE)).toContain('<kml');
     });
 
-    it('contains <Placemark>', () => {
+    it('contains <Placemark>', async () => {
       expect(toKml(SQUARE)).toContain('<Placemark>');
     });
 
-    it('contains <LinearRing>', () => {
+    it('contains <LinearRing>', async () => {
       expect(toKml(SQUARE)).toContain('<LinearRing>');
     });
 
-    it('contains <coordinates>', () => {
+    it('contains <coordinates>', async () => {
       expect(toKml(SQUARE)).toContain('<coordinates>');
     });
 
-    it('parcel name appears in KML output', () => {
+    it('parcel name appears in KML output', async () => {
       expect(toKml(SQUARE, { parcel: 'Lot 42' })).toContain('Lot 42');
     });
   });

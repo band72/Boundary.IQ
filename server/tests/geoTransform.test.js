@@ -40,32 +40,32 @@ const POB = { pobLat: 30.0, pobLng: -97.0, pobNorthing: 5000, pobEasting: 5000 }
 
 describe('geoTransform — localToLatLng', () => {
 
-  it('Identity: POB station returns exact POB lat/lng', () => {
+  it('Identity: POB station returns exact POB lat/lng', async () => {
     const result = localToLatLng([{ northing: 5000, easting: 5000 }], { ...POB });
     expect(result[0][0]).toBeCloseTo(30.0, 8);
     expect(result[0][1]).toBeCloseTo(-97.0, 8);
   });
 
-  it('North displacement: 100 ft north → lat > 30.0, lng ≈ -97.0', () => {
+  it('North displacement: 100 ft north → lat > 30.0, lng ≈ -97.0', async () => {
     const result = localToLatLng([{ northing: 5100, easting: 5000 }], { ...POB });
     expect(result[0][0]).toBeGreaterThan(30.0);
     expect(result[0][1]).toBeCloseTo(-97.0, 8);
   });
 
-  it('East displacement: 100 ft east → lat ≈ 30.0, lng > -97.0', () => {
+  it('East displacement: 100 ft east → lat ≈ 30.0, lng > -97.0', async () => {
     const result = localToLatLng([{ northing: 5000, easting: 5100 }], { ...POB });
     expect(result[0][0]).toBeCloseTo(30.0, 8);
     expect(result[0][1]).toBeGreaterThan(-97.0);
   });
 
-  it('90° rotation: 100 ft north → rotates to equivalent of 100 ft east', () => {
+  it('90° rotation: 100 ft north → rotates to equivalent of 100 ft east', async () => {
     const result = localToLatLng([{ northing: 5100, easting: 5000 }], { ...POB, rotationDeg: 90 });
     // After 90° clockwise rotation: dN=100 → rotN=0, rotE=100 → only eastward displacement
     expect(result[0][0]).toBeCloseTo(30.0, 5);    // no northing change
     expect(result[0][1]).toBeGreaterThan(-97.0);    // positive easting change
   });
 
-  it('Scale factor 2× doubles lat displacement', () => {
+  it('Scale factor 2× doubles lat displacement', async () => {
     const r1 = localToLatLng([{ northing: 5100, easting: 5000 }], { ...POB, scaleFactor: 1 });
     const r2 = localToLatLng([{ northing: 5100, easting: 5000 }], { ...POB, scaleFactor: 2 });
     const disp1 = r1[0][0] - 30.0;

@@ -104,7 +104,7 @@ router.post('/model', asyncHandler(async (req, res) => {
 
     saveSystemSettingsToEnv(undefined, undefined, provider, model || undefined, allowApiFallback, enforceNoSelfIntersection, undefined, undefined, undefined, undefined, undefined, mapPanSensitivity);
     log.info({ provider, model, actor: req.user?.username }, 'Global AI provider switched by Admin');
-    dbSvc.logAudit({
+    await dbSvc.logAudit({
       actorId: req.user.id,
       action: 'admin_change_global_model',
       detail: { provider, model, allowApiFallback, enforceNoSelfIntersection, mapPanSensitivity },
@@ -120,7 +120,7 @@ router.post('/model', asyncHandler(async (req, res) => {
       mapPanSensitivity: getMapPanSensitivity(),
     });
   } else {
-    dbSvc.saveUserSettings(req.user.id, {
+    await dbSvc.saveUserSettings(req.user.id, {
       activeProvider: provider,
       activeModel: model,
       openaiBaseUrl,
@@ -129,7 +129,7 @@ router.post('/model', asyncHandler(async (req, res) => {
       mapPanSensitivity
     });
     log.info({ provider, model, actor: req.user?.username }, 'User local AI provider switched');
-    dbSvc.logAudit({
+    await dbSvc.logAudit({
       userId: req.user.id,
       actorId: req.user.id,
       action: 'change_user_model',
@@ -195,7 +195,7 @@ router.post('/ollama/start', requireRole(['admin']), asyncHandler(async (req, re
 
   if (status.online) {
     log.info({ modelCount: status.models.length }, 'Ollama auto-started via settings');
-    dbSvc.logAudit({
+    await dbSvc.logAudit({
       actorId: req.user.id,
       action: 'admin_start_ollama',
       ipAddress: getIp(req)
@@ -220,7 +220,7 @@ router.post('/keys', asyncHandler(async (req, res) => {
     }
     saveSystemSettingsToEnv(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, geminiApiKey);
     log.info({ actor: req.user?.username }, 'Global API keys updated dynamically by Admin');
-    dbSvc.logAudit({
+    await dbSvc.logAudit({
       actorId: req.user.id,
       action: 'admin_change_global_keys',
       detail: { hasGeminiKey: !!geminiApiKey, hasOpenAiKey: !!openAiApiKey },
@@ -228,12 +228,12 @@ router.post('/keys', asyncHandler(async (req, res) => {
     });
     res.json({ success: true, message: 'API keys updated successfully in server memory and persisted to .env.' });
   } else {
-    dbSvc.saveUserSettings(req.user.id, {
+    await dbSvc.saveUserSettings(req.user.id, {
       geminiApiKey,
       openaiApiKey: openAiApiKey
     });
     log.info({ actor: req.user?.username }, 'User local API keys updated dynamically');
-    dbSvc.logAudit({
+    await dbSvc.logAudit({
       userId: req.user.id,
       actorId: req.user.id,
       action: 'change_user_keys',
@@ -302,7 +302,7 @@ router.post('/system', requireRole(['admin']), asyncHandler(async (req, res) => 
   // 5. Persist to .env file for server restarts
   saveSystemSettingsToEnv(dbPath, scanRoots, undefined, undefined, undefined, undefined, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled, undefined, undefined, licensePrivateKey);
 
-  dbSvc.logAudit({
+  await dbSvc.logAudit({
     actorId: req.user.id,
     action: 'admin_change_system_settings',
     detail: { dbPath, scanRoots, ocrCacheDir, downloadsDir, wordDocTrainingDir, ocrEnabled, licensePrivateKey: licensePrivateKey ? '***' : '' },

@@ -61,7 +61,7 @@ describe('Resend Verification Email Test Suite', () => {
     expect(regData.verificationRequired).toBe(true);
 
     // Get the first verification code from the database
-    const pending1 = getPendingRegistration(email);
+    const pending1 = await getPendingRegistration(email);
     expect(pending1).toBeDefined();
     expect(pending1.code).toBeDefined();
     const firstCode = pending1.code;
@@ -78,7 +78,7 @@ describe('Resend Verification Email Test Suite', () => {
     expect(resendData.success).toBe(true);
 
     // Get the second verification code from the database and verify it has changed
-    const pending2 = getPendingRegistration(email);
+    const pending2 = await getPendingRegistration(email);
     expect(pending2).toBeDefined();
     expect(pending2.code).toBeDefined();
     expect(pending2.code).not.toBe(firstCode); // Code should be regenerated!

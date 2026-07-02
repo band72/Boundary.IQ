@@ -92,7 +92,7 @@ function calculateSideShot(station, bearingStr, distance) {
 describe('Comprehensive COGO & Traverse Scripting Tests', () => {
 
   describe('1. Coordinates, Bearings, and Basic Traverse Loop Closure', () => {
-    it('calculates loop closure and Shoelace area on a standard 5-leg traverse', () => {
+    it('calculates loop closure and Shoelace area on a standard 5-leg traverse', async () => {
       const pob = { northing: 5000, easting: 5000 };
       const courses = [
         { type: 'Line', bearing: 'N 00°00\'00" E', distance: 100 },
@@ -140,7 +140,7 @@ describe('Comprehensive COGO & Traverse Scripting Tests', () => {
   });
 
   describe('2. Curves and Reverse Curves Geometry', () => {
-    it('computes tangent curves and verifies correct radial center alignment', () => {
+    it('computes tangent curves and verifies correct radial center alignment', async () => {
       const pob = { northing: 5000, easting: 5000 };
       const courses = [
         { type: 'Line', bearing: 'N00°00\'00"E', distance: 100 },
@@ -174,7 +174,7 @@ describe('Comprehensive COGO & Traverse Scripting Tests', () => {
       expect(curveStation.easting).toBeCloseTo(5100, 2);
     });
 
-    it('computes a reverse curve (Right-Left) sequence and verifies tangency transition', () => {
+    it('computes a reverse curve (Right-Left) sequence and verifies tangency transition', async () => {
       const pob = { northing: 5000, easting: 5000 };
       const courses = [
         { type: 'Line', bearing: 'N00E', distance: 100 },
@@ -206,7 +206,7 @@ describe('Comprehensive COGO & Traverse Scripting Tests', () => {
   });
 
   describe('3. Offset Lines Calculations', () => {
-    it('generates parallel offset lines to the right and left of a linear segment', () => {
+    it('generates parallel offset lines to the right and left of a linear segment', async () => {
       const p1 = { northing: 5000, easting: 5000 };
       const p2 = { northing: 5100, easting: 5100 }; // Segment going N45E, distance 141.42 ft
       
@@ -229,7 +229,7 @@ describe('Comprehensive COGO & Traverse Scripting Tests', () => {
   });
 
   describe('4. Intersections and Side Shots', () => {
-    it('calculates the intersection of two bearing lines (bearing-bearing intersection)', () => {
+    it('calculates the intersection of two bearing lines (bearing-bearing intersection)', async () => {
       const pointA = { northing: 5000, easting: 5000 }; // Line A going North (0 azimuth)
       const pointB = { northing: 5100, easting: 5100 }; // Line B going West (270 azimuth)
 
@@ -243,7 +243,7 @@ describe('Comprehensive COGO & Traverse Scripting Tests', () => {
       expect(intersect.easting).toBeCloseTo(5000, 4);
     });
 
-    it('computes coordinates for radial side shots from traverse stations', () => {
+    it('computes coordinates for radial side shots from traverse stations', async () => {
       const station = { northing: 5100, easting: 5100 };
       const sideShotPoint = calculateSideShot(station, 'S45°00\'00"E', 141.4214);
 
@@ -257,7 +257,7 @@ describe('Comprehensive COGO & Traverse Scripting Tests', () => {
   });
 
   describe('5. Map Checks & Self-Intersections (Bow-tie detection)', () => {
-    it('detects a self-intersecting polygon (bowtie) and flags it', () => {
+    it('detects a self-intersecting polygon (bowtie) and flags it', async () => {
       // 4-sided shape crossing over itself (bowtie)
       // P1: (5000, 5000)
       // P2: (5100, 5100) (crossing leg 1)
@@ -276,7 +276,7 @@ describe('Comprehensive COGO & Traverse Scripting Tests', () => {
       expect(isSelfIntersecting).toBe(true);
     });
 
-    it('correctly reports non-self-intersecting for standard convex boundaries', () => {
+    it('correctly reports non-self-intersecting for standard convex boundaries', async () => {
       const stations = [
         { seq: 0, northing: 5000, easting: 5000 },
         { seq: 1, northing: 5100, easting: 5000 },

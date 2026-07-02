@@ -3,30 +3,31 @@
  */
 
 import crypto from 'crypto';
-import { getDb, now } from './core.js';
+import { query, now } from './core.js';
 
-export function createSession(userId, { ipAddress = null, userAgent = null } = {}) {
-  const db = getDb();
+export async function createSession(userId, { ipAddress = null, userAgent = null } = {}) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString().replace('T', ' ').slice(0, 19);
-  db.prepare('INSERT INTO Sessions (Token, UserId, ExpiresAt, IpAddress, UserAgent, CreatedAt) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(token, userId, expiresAt, ipAddress, userAgent, now());
+  await query(
+    'INSERT INTO Sessions (Token, UserId, ExpiresAt, IpAddress, UserAgent, CreatedAt) VALUES (?, ?, ?, ?, ?, ?)',
+    [token, userId, expiresAt, ipAddress, userAgent, now()]
+  );
   return token;
 }
 
-export function getSession(token) {
-  const db = getDb();
+export async function getSession(token) {
   // Fast-reject malformed tokens (expected: 64-char hex from randomBytes(32))
   if (!token || typeof token !== 'string' || token.length !== 64 || !/^[0-9a-f]+$/i.test(token)) {
     return null;
   }
 
-  const row = db.prepare(`
+  const res = await query(`
     SELECT s.Token, s.ExpiresAt, u.Id as UserId, u.Username, u.Role, u.Plan
     FROM Sessions s
     INNER JOIN Users u ON s.UserId = u.Id
     WHERE s.Token = ?
-  `).get(token);
+  `, [token]);
+  const row = res.rows[0];
 
   if (!row) return null;
 
@@ -43,30 +44,33 @@ export function getSession(token) {
 
   // Check expiration
   if (row.ExpiresAt < now()) {
-    db.prepare('DELETE FROM Sessions WHERE Token = ?').run(token);
+    await query('DELETE FROM Sessions WHERE Token = ?', [token]);
     return null;
   }
 
   return { userId: row.UserId, username: row.Username, role: row.Role, plan: row.Plan || 'free' };
 }
 
-export function deleteSession(token) {
-  getDb().prepare('DELETE FROM Sessions WHERE Token = ?').run(token);
+export async function deleteSession(token) {
+  await query('DELETE FROM Sessions WHERE Token = ?', [token]);
 }
 
-export function purgeExpiredSessions() {
-  const deleted = getDb().prepare('DELETE FROM Sessions WHERE ExpiresAt < ?').run(now()).changes;
+export async function purgeExpiredSessions() {
+  const res = await query('DELETE FROM Sessions WHERE ExpiresAt < ?', [now()]);
+  const deleted = res.changes;
   if (deleted > 0) console.log(`✓ Purged ${deleted} expired session(s).`);
   return deleted;
 }
 
-export function getUserSessions(userId) {
-  return getDb().prepare(`
+export async function getUserSessions(userId) {
+  const res = await query(`
     SELECT Token, ExpiresAt, IpAddress, UserAgent, CreatedAt
     FROM Sessions
     WHERE UserId = ?
     ORDER BY CreatedAt DESC
-  `).all(userId).map(s => {
+  `, [userId]);
+
+  return res.rows.map(s => {
     const tok = s.Token || '';
     return {
       token: tok.substring(0, 8) + '…', // masked for security
@@ -80,14 +84,16 @@ export function getUserSessions(userId) {
   });
 }
 
-export function revokeSession(token) {
-  getDb().prepare('DELETE FROM Sessions WHERE Token = ?').run(token);
+export async function revokeSession(token) {
+  await query('DELETE FROM Sessions WHERE Token = ?', [token]);
 }
 
-export function revokeAllUserSessions(userId) {
-  return getDb().prepare('DELETE FROM Sessions WHERE UserId = ?').run(userId).changes;
+export async function revokeAllUserSessions(userId) {
+  const res = await query('DELETE FROM Sessions WHERE UserId = ?', [userId]);
+  return res.changes;
 }
 
-export function revokeAllUserSessionsExcept(userId, keepToken) {
-  return getDb().prepare('DELETE FROM Sessions WHERE UserId = ? AND Token != ?').run(userId, keepToken).changes;
+export async function revokeAllUserSessionsExcept(userId, keepToken) {
+  const res = await query('DELETE FROM Sessions WHERE UserId = ? AND Token != ?', [userId, keepToken]);
+  return res.changes;
 }

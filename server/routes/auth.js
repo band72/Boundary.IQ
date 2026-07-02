@@ -48,9 +48,9 @@ function getGoogleClient() {
 
 // Thin adapter: delegates to DB module, key API matches old Map
 const pendingRegistrations = {
-  set: (key, value) => upsertPendingRegistration(key, value),
-  get: (key) => getPendingRegistration(key),
-  delete: (key) => deletePendingRegistration(key),
+  set: async (key, value) => await upsertPendingRegistration(key, value),
+  get: async (key) => await getPendingRegistration(key),
+  delete: async (key) => await deletePendingRegistration(key),
 };
 
 // ── POST /api/auth/register ────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     if (!inviteToken) {
       return res.status(403).json({ error: 'Registration is invite-only. Please use a valid invite link.', inviteOnly: true });
     }
-    const invite = getInviteToken(inviteToken);
+    const invite = await getInviteToken(inviteToken);
     if (!invite || invite.used || invite.expired) {
       return res.status(403).json({ error: 'Invite link is invalid or has expired.' });
     }
@@ -93,7 +93,7 @@ router.post('/register', asyncHandler(async (req, res) => {
   }
 
   // Pre-validate that username does not already exist
-  const existingUser = findUserByUsername(trimmedUsername);
+  const existingUser = await findUserByUsername(trimmedUsername);
   if (existingUser) {
     return res.status(400).json({ error: 'Username/Email already exists' });
   }
@@ -101,7 +101,7 @@ router.post('/register', asyncHandler(async (req, res) => {
   if (!isTestUser) {
     // Generate 6-digit verification code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    pendingRegistrations.set(lowercaseUsername, {
+    await pendingRegistrations.set(lowercaseUsername, {
       username: trimmedUsername,
       password,
       inviteToken,
@@ -128,12 +128,12 @@ router.post('/register', asyncHandler(async (req, res) => {
   }
 
   // Skip verification (tests or special bypass accounts)
-  const user = createUser(trimmedUsername, password);
-  const token = createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
+  const user = await createUser(trimmedUsername, password);
+  const token = await createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
 
-  if (inviteToken) redeemInviteToken(inviteToken, user.id);
+  if (inviteToken) await redeemInviteToken(inviteToken, user.id);
 
-  logAudit({ userId: user.id, actorId: user.id, action: 'register', ipAddress: getIp(req) });
+  await logAudit({ userId: user.id, actorId: user.id, action: 'register', ipAddress: getIp(req) });
   sendWelcomeEmail({ to: user.username, username: user.username, plan: user.plan }).catch(() => {});
 
   res.cookie('boundaryiq_auth_token', token, {
@@ -154,21 +154,21 @@ router.post('/verify-registration', asyncHandler(async (req, res) => {
   }
 
   const lowercaseEmail = email.trim().toLowerCase();
-  const pending = pendingRegistrations.get(lowercaseEmail);
+  const pending = await pendingRegistrations.get(lowercaseEmail);
   if (!pending) {
     return res.status(400).json({ error: 'No pending registration found for this email, or code has expired.' });
   }
 
   if (pending.expiresAt < Date.now()) {
-    pendingRegistrations.delete(lowercaseEmail);
+    await pendingRegistrations.delete(lowercaseEmail);
     return res.status(400).json({ error: 'Verification code has expired. Please sign up again.' });
   }
 
   // Brute-force protection: max 5 attempts per pending registration
   const MAX_ATTEMPTS = 5;
-  const attempts = incrementVerifyAttempts(lowercaseEmail);
+  const attempts = await incrementVerifyAttempts(lowercaseEmail);
   if (attempts > MAX_ATTEMPTS) {
-    pendingRegistrations.delete(lowercaseEmail);
+    await pendingRegistrations.delete(lowercaseEmail);
     return res.status(429).json({ error: 'Too many failed attempts. Please sign up again with a new code.' });
   }
 
@@ -182,15 +182,15 @@ router.post('/verify-registration', asyncHandler(async (req, res) => {
   }
 
   // Success! Handoff to database creation
-  const user = createUser(pending.username, pending.password);
-  const token = createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
+  const user = await createUser(pending.username, pending.password);
+  const token = await createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
 
-  if (pending.inviteToken) redeemInviteToken(pending.inviteToken, user.id);
+  if (pending.inviteToken) await redeemInviteToken(pending.inviteToken, user.id);
 
-  logAudit({ userId: user.id, actorId: user.id, action: 'register', ipAddress: getIp(req) });
+  await logAudit({ userId: user.id, actorId: user.id, action: 'register', ipAddress: getIp(req) });
   sendWelcomeEmail({ to: user.username, username: user.username, plan: user.plan }).catch(() => {});
 
-  pendingRegistrations.delete(lowercaseEmail);
+  await pendingRegistrations.delete(lowercaseEmail);
 
   res.cookie('boundaryiq_auth_token', token, {
     httpOnly: true,
@@ -210,7 +210,7 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
   }
 
   const lowercaseEmail = email.trim().toLowerCase();
-  const pending = pendingRegistrations.get(lowercaseEmail);
+  const pending = await pendingRegistrations.get(lowercaseEmail);
   if (!pending) {
     return res.status(400).json({ error: 'No pending registration found for this email, or code has expired. Please sign up again.' });
   }
@@ -219,7 +219,7 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   
   // Extend expiration by another 15 minutes and reset attempts
-  pendingRegistrations.set(lowercaseEmail, {
+  await pendingRegistrations.set(lowercaseEmail, {
     username: pending.username,
     password: pending.password,
     inviteToken: pending.inviteToken,
@@ -262,13 +262,13 @@ router.post('/login', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 
-  const user = verifyUser(trimmedUsername, password);
+  const user = await verifyUser(trimmedUsername, password);
   if (!user) return res.status(401).json({ error: 'Invalid username or password' });
 
-  touchLastLogin(user.id);
-  const token = createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
-  const forceReset = checkForceReset(user.id);
-  logAudit({ userId: user.id, actorId: user.id, action: 'login', ipAddress: getIp(req) });
+  await touchLastLogin(user.id);
+  const token = await createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
+  const forceReset = await checkForceReset(user.id);
+  await logAudit({ userId: user.id, actorId: user.id, action: 'login', ipAddress: getIp(req) });
 
   res.cookie('boundaryiq_auth_token', token, {
     httpOnly: true,
@@ -295,7 +295,7 @@ router.post('/logout', asyncHandler(async (req, res) => {
     token = cookies.boundaryiq_auth_token;
   }
 
-  if (token) deleteSession(token);
+  if (token) await deleteSession(token);
   res.clearCookie('boundaryiq_auth_token');
   return res.json({ success: true, message: 'Logged out successfully' });
 }));
@@ -306,19 +306,19 @@ router.get('/me', asyncHandler(async (req, res) => {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
   if (!token) return res.status(401).json({ error: 'Authorization token not found' });
 
-  const sessionUser = getSession(token);
+  const sessionUser = await getSession(token);
   if (!sessionUser) return res.status(401).json({ error: 'Session has expired or is invalid' });
 
-  const fullUser = getUserById(sessionUser.userId);
-  const forceReset = checkForceReset(sessionUser.userId);
+  const fullUser = await getUserById(sessionUser.userId);
+  const forceReset = await checkForceReset(sessionUser.userId);
   return res.json({ id: sessionUser.userId, username: sessionUser.username, role: sessionUser.role, plan: sessionUser.plan || 'free', displayName: fullUser?.displayName || null, forcePasswordReset: forceReset });
 }));
 
 // ── GET /api/auth/invite-only ──────────────────────────────────────────────────
-router.get('/invite-only', (req, res) => res.json({ inviteOnly: INVITE_ONLY }));
+router.get('/invite-only', async (req, res) => res.json({ inviteOnly: INVITE_ONLY }));
 
 // ── GET /api/auth/google-client-id ─────────────────────────────────────────────
-router.get('/google-client-id', (req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID || '' }));
+router.get('/google-client-id', async (req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID || '' }));
 
 // ── POST /api/auth/me/redeem-license ──────────────────────────────────────────
 router.post('/me/redeem-license', requireAuth, asyncHandler(async (req, res) => {
@@ -327,15 +327,15 @@ router.post('/me/redeem-license', requireAuth, asyncHandler(async (req, res) => 
     return res.status(400).json({ error: 'License key is required.' });
   }
 
-  const result = redeemLicenseKey(licenseKey.trim(), req.user.id);
+  const result = await redeemLicenseKey(licenseKey.trim(), req.user.id);
   if (!result.ok) {
     return res.status(400).json({ error: result.error });
   }
 
   if (!result.alreadyOwner) {
     // Upgrade the user's plan
-    updateUserPlan(req.user.id, result.plan);
-    logAudit({ userId: req.user.id, actorId: req.user.id, action: 'redeem_license', detail: { plan: result.plan }, ipAddress: getIp(req) });
+    await updateUserPlan(req.user.id, result.plan);
+    await logAudit({ userId: req.user.id, actorId: req.user.id, action: 'redeem_license', detail: { plan: result.plan }, ipAddress: getIp(req) });
     sendPlanChangedEmail({ to: req.user.username, username: req.user.username, plan: result.plan }).catch(() => {});
     log.info({ userId: req.user.id, plan: result.plan }, 'License key redeemed successfully');
   }
@@ -352,21 +352,21 @@ router.post('/me/redeem-license', requireAuth, asyncHandler(async (req, res) => 
 
 // ── GET /api/auth/me/licenses ─────────────────────────────────────────────────
 router.get('/me/licenses', requireAuth, asyncHandler(async (req, res) => {
-  const keys = getLicenseKeysForUser(req.user.id);
+  const keys = await getLicenseKeysForUser(req.user.id);
   return res.json({ licenses: keys });
 }));
 
 // ── POST /api/auth/licenses/create (admin) ────────────────────────────────────
 router.post('/licenses/create', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const { plan = 'pro', note = null, expiresInDays = null, sendToEmail = null } = req.body;
-  const { rawKey, plan: issuedPlan, expiresAt } = createLicenseKey({
+  const { rawKey, plan: issuedPlan, expiresAt } = await createLicenseKey({
     plan, note, expiresInDays: expiresInDays ? parseInt(expiresInDays) : null,
     createdByUserId: req.user.id,
   });
-  logAudit({ userId: req.user.id, actorId: req.user.id, action: 'create_license', detail: { plan, note }, ipAddress: getIp(req) });
+  await logAudit({ userId: req.user.id, actorId: req.user.id, action: 'create_license', detail: { plan, note }, ipAddress: getIp(req) });
 
   if (sendToEmail) {
-    const recipient = findUserByUsername(sendToEmail);
+    const recipient = await findUserByUsername(sendToEmail);
     await sendLicenseKeyEmail({
       to: sendToEmail,
       username: recipient?.username || sendToEmail,
@@ -381,20 +381,20 @@ router.post('/licenses/create', requireAuth, requireRole(['admin']), asyncHandle
 
 // ── GET /api/auth/licenses (admin) ───────────────────────────────────────────
 router.get('/licenses', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  return res.json({ licenses: listAllLicenseKeys() });
+  return res.json({ licenses: await listAllLicenseKeys() });
 }));
 
 // ── GET /api/auth/users/:id/license (admin) ──────────────────────────────────
 router.get('/users/:id/license', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const userId = parseInt(req.params.id);
-  const license = getActiveLicenseKeyForUser(userId);
+  const license = await getActiveLicenseKeyForUser(userId);
   return res.json({ license: license || null });
 }));
 
 // ── POST /api/auth/users/:id/license/generate (admin) ─────────────────────────
 router.post('/users/:id/license/generate', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const userId = parseInt(req.params.id);
-  const targetUser = getUserById(userId);
+  const targetUser = await getUserById(userId);
   if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
   const plan = targetUser.plan;
@@ -402,13 +402,13 @@ router.post('/users/:id/license/generate', requireAuth, requireRole(['admin']), 
     return res.status(400).json({ error: 'Cannot generate a license key for users on the Free plan. Please assign basic/pro/enterprise first.' });
   }
 
-  const { rawKey } = createSignedLicenseKeyForUser({
+  const { rawKey } = await createSignedLicenseKeyForUser({
     plan,
     userId,
     createdByUserId: req.user.id
   });
 
-  logAudit({
+  await logAudit({
     userId: req.user.id,
     actorId: req.user.id,
     action: 'admin_generate_user_license',
@@ -425,11 +425,11 @@ router.put('/me/password', requireAuth, asyncHandler(async (req, res) => {
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
 
-  const valid = verifyPasswordOnly(req.user.id, currentPassword);
+  const valid = await verifyPasswordOnly(req.user.id, currentPassword);
   if (!valid) return res.status(403).json({ error: 'Current password is incorrect' });
 
-  updatePassword(req.user.id, newPassword);
-  logAudit({ userId: req.user.id, actorId: req.user.id, action: 'password_change', ipAddress: getIp(req) });
+  await updatePassword(req.user.id, newPassword);
+  await logAudit({ userId: req.user.id, actorId: req.user.id, action: 'password_change', ipAddress: getIp(req) });
   sendPasswordChangedEmail({ to: req.user.username, username: req.user.username }).catch(() => {});
 
   return res.json({ success: true, message: 'Password updated. All other sessions have been revoked.' });
@@ -438,20 +438,20 @@ router.put('/me/password', requireAuth, asyncHandler(async (req, res) => {
 // ── PUT /api/auth/me/profile ──────────────────────────────────────────────────
 router.put('/me/profile', requireAuth, asyncHandler(async (req, res) => {
   const { displayName } = req.body;
-  updateProfile(req.user.id, { displayName });
-  logAudit({ userId: req.user.id, actorId: req.user.id, action: 'profile_update', ipAddress: getIp(req) });
+  await updateProfile(req.user.id, { displayName });
+  await logAudit({ userId: req.user.id, actorId: req.user.id, action: 'profile_update', ipAddress: getIp(req) });
   return res.json({ success: true });
 }));
 
 // ── GET /api/auth/me/sessions ─────────────────────────────────────────────────
 router.get('/me/sessions', requireAuth, asyncHandler(async (req, res) => {
-  const sessions = getUserSessions(req.user.id);
+  const sessions = await getUserSessions(req.user.id);
   return res.json({ sessions });
 }));
 
 // ── DELETE /api/auth/me/sessions/:token ───────────────────────────────────────
 router.delete('/me/sessions/:token', requireAuth, asyncHandler(async (req, res) => {
-  revokeSession(req.params.token);
+  await revokeSession(req.params.token);
   return res.json({ success: true });
 }));
 
@@ -459,8 +459,8 @@ router.delete('/me/sessions/:token', requireAuth, asyncHandler(async (req, res) 
 router.delete('/me/sessions', requireAuth, asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   const currentToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-  const revoked = revokeAllUserSessionsExcept(req.user.id, currentToken);
-  logAudit({ userId: req.user.id, actorId: req.user.id, action: 'revoke_other_sessions', detail: { revoked }, ipAddress: getIp(req) });
+  const revoked = await revokeAllUserSessionsExcept(req.user.id, currentToken);
+  await logAudit({ userId: req.user.id, actorId: req.user.id, action: 'revoke_other_sessions', detail: { revoked }, ipAddress: getIp(req) });
   return res.json({ success: true, revoked });
 }));
 
@@ -536,10 +536,10 @@ router.post('/google-login', asyncHandler(async (req, res) => {
   }
 
   log.info(`Finding or creating user: ${email}...`);
-  let user = findUserByUsername(email);
+  let user = await findUserByUsername(email);
   if (!user) {
     log.info(`User does not exist, creating new user for: ${email}`);
-    user = createUser(email, crypto.randomBytes(32).toString('hex'));
+    user = await createUser(email, crypto.randomBytes(32).toString('hex'));
     sendWelcomeEmail({ to: user.username, username: user.username, plan: user.plan }).catch((err) => {
       log.error('Failed to send welcome email in background:', err.message);
     });
@@ -548,9 +548,9 @@ router.post('/google-login', asyncHandler(async (req, res) => {
   }
 
   log.info(`Syncing session for user ID: ${user.id}`);
-  touchLastLogin(user.id);
-  const token = createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
-  logAudit({ userId: user.id, actorId: user.id, action: 'google_login', ipAddress: getIp(req) });
+  await touchLastLogin(user.id);
+  const token = await createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
+  await logAudit({ userId: user.id, actorId: user.id, action: 'google_login', ipAddress: getIp(req) });
 
   log.info(`Setting auth cookie for user ID: ${user.id}`);
   res.cookie('boundaryiq_auth_token', token, {
@@ -566,17 +566,17 @@ router.post('/google-login', asyncHandler(async (req, res) => {
 
 // ── GET /api/auth/users ───────────────────────────────────────────────────────
 router.get('/users', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  const users = getAllUsers();
+  const users = await getAllUsers();
   return res.json({ users, total: users.length });
 }));
 
 // ── GET /api/auth/users/:id ───────────────────────────────────────────────────
 router.get('/users/:id', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  const user = getUserById(parseInt(req.params.id));
+  const user = await getUserById(parseInt(req.params.id));
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const stats    = getUserDailyStats(user.id, 30);
-  const sessions = getUserSessions(user.id);
-  const tokens   = getUserTokenStats(user.id);
+  const stats    = await getUserDailyStats(user.id, 30);
+  const sessions = await getUserSessions(user.id);
+  const tokens   = await getUserTokenStats(user.id);
   return res.json({ ...user, recentStats: stats, activeSessions: sessions.length, tokens });
 }));
 
@@ -586,10 +586,10 @@ router.post('/users/:id/role', requireAuth, requireRole(['admin']), asyncHandler
   const { role } = req.body;
   if (!role) return res.status(400).json({ error: 'role is required' });
   if (userId === req.user.id && role !== 'admin') return res.status(400).json({ error: 'You cannot change your own admin role.' });
-  const target = getUserById(userId);
+  const target = await getUserById(userId);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  updateUserRole(userId, role);
-  logAudit({ userId, actorId: req.user.id, action: 'role_change', detail: { from: target.role, to: role }, ipAddress: getIp(req) });
+  await updateUserRole(userId, role);
+  await logAudit({ userId, actorId: req.user.id, action: 'role_change', detail: { from: target.role, to: role }, ipAddress: getIp(req) });
   return res.json({ success: true, userId, role });
 }));
 
@@ -598,10 +598,10 @@ router.post('/users/:id/plan', requireAuth, requireRole(['admin']), asyncHandler
   const userId = parseInt(req.params.id);
   const { plan } = req.body;
   if (!plan) return res.status(400).json({ error: 'plan is required' });
-  const target = getUserById(userId);
+  const target = await getUserById(userId);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  updateUserPlan(userId, plan);
-  logAudit({ userId, actorId: req.user.id, action: 'plan_change', detail: { from: target.plan, to: plan }, ipAddress: getIp(req) });
+  await updateUserPlan(userId, plan);
+  await logAudit({ userId, actorId: req.user.id, action: 'plan_change', detail: { from: target.plan, to: plan }, ipAddress: getIp(req) });
   sendPlanChangedEmail({ to: target.username, username: target.username, plan }).catch(() => {});
   return res.json({ success: true, userId, plan });
 }));
@@ -610,20 +610,20 @@ router.post('/users/:id/plan', requireAuth, requireRole(['admin']), asyncHandler
 router.delete('/users/:id', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const userId = parseInt(req.params.id);
   if (userId === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account from this panel.' });
-  const target = getUserById(userId);
+  const target = await getUserById(userId);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  deleteUser(userId);
-  logAudit({ actorId: req.user.id, action: 'delete_user', target: target.username, ipAddress: getIp(req) });
+  await deleteUser(userId);
+  await logAudit({ actorId: req.user.id, action: 'delete_user', target: target.username, ipAddress: getIp(req) });
   return res.json({ success: true });
 }));
 
 // ── POST /api/auth/users/:id/reset-password ───────────────────────────────────
 router.post('/users/:id/reset-password', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const userId = parseInt(req.params.id);
-  const target = getUserById(userId);
+  const target = await getUserById(userId);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  const tempPw = forceResetPassword(userId);
-  logAudit({ userId, actorId: req.user.id, action: 'force_password_reset', ipAddress: getIp(req) });
+  const tempPw = await forceResetPassword(userId);
+  await logAudit({ userId, actorId: req.user.id, action: 'force_password_reset', ipAddress: getIp(req) });
   if (target.username.includes('@')) {
     sendTempPasswordEmail({ to: target.username, username: target.username, tempPassword: tempPw }).catch(() => {});
   }
@@ -632,53 +632,53 @@ router.post('/users/:id/reset-password', requireAuth, requireRole(['admin']), as
 
 // ── GET /api/auth/users/:id/sessions ─────────────────────────────────────────
 router.get('/users/:id/sessions', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  const sessions = getUserSessions(parseInt(req.params.id));
+  const sessions = await getUserSessions(parseInt(req.params.id));
   return res.json({ sessions });
 }));
 
 // ── DELETE /api/auth/users/:id/sessions ──────────────────────────────────────
 router.delete('/users/:id/sessions', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const userId = parseInt(req.params.id);
-  const revoked = revokeAllUserSessions(userId);
-  logAudit({ userId, actorId: req.user.id, action: 'revoke_sessions', detail: { revoked }, ipAddress: getIp(req) });
+  const revoked = await revokeAllUserSessions(userId);
+  await logAudit({ userId, actorId: req.user.id, action: 'revoke_sessions', detail: { revoked }, ipAddress: getIp(req) });
   return res.json({ success: true, revoked });
 }));
 
 // ── GET /api/auth/users/:id/stats ─────────────────────────────────────────────
 router.get('/users/:id/stats', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  const stats = getUserDailyStats(parseInt(req.params.id), 30);
+  const stats = await getUserDailyStats(parseInt(req.params.id), 30);
   return res.json({ stats });
 }));
 
 // ── GET /api/auth/audit-log ───────────────────────────────────────────────────
 router.get('/audit-log', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const { limit = 100, offset = 0, userId, action } = req.query;
-  const entries = getAuditLog({ limit: parseInt(limit), offset: parseInt(offset), userId: userId ? parseInt(userId) : null, action: action || null });
+  const entries = await getAuditLog({ limit: parseInt(limit), offset: parseInt(offset), userId: userId ? parseInt(userId) : null, action: action || null });
   return res.json({ entries, count: entries.length });
 }));
 
 // ── GET /api/auth/system-stats ────────────────────────────────────────────────
 router.get('/system-stats', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  return res.json(getSystemStats());
+  return res.json(await getSystemStats());
 }));
 
 // ── POST /api/auth/invite ─────────────────────────────────────────────────────
 router.post('/invite', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const { email, note, expiresInHours = 72 } = req.body;
-  const token = createInviteToken({ createdByUserId: req.user.id, email, note, expiresInHours });
+  const token = await createInviteToken({ createdByUserId: req.user.id, email, note, expiresInHours });
   const inviteUrl = `${FRONTEND_URL}/?invite=${token}`;
 
   if (email) {
     sendInviteEmail({ to: email, inviteUrl, inviterUsername: req.user.username, note }).catch(() => {});
   }
 
-  logAudit({ actorId: req.user.id, action: 'create_invite', target: email || 'open', ipAddress: getIp(req) });
+  await logAudit({ actorId: req.user.id, action: 'create_invite', target: email || 'open', ipAddress: getIp(req) });
   return res.json({ success: true, token, inviteUrl, email: email || null });
 }));
 
 // ── GET /api/auth/invite/:token ───────────────────────────────────────────────
 router.get('/invite/:token', asyncHandler(async (req, res) => {
-  const invite = getInviteToken(req.params.token);
+  const invite = await getInviteToken(req.params.token);
   if (!invite)       return res.status(404).json({ valid: false, reason: 'Token not found' });
   if (invite.used)   return res.status(410).json({ valid: false, reason: 'Token already used' });
   if (invite.expired) return res.status(410).json({ valid: false, reason: 'Token expired' });
@@ -687,20 +687,20 @@ router.get('/invite/:token', asyncHandler(async (req, res) => {
 
 // ── GET /api/auth/invites ─────────────────────────────────────────────────────
 router.get('/invites', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  const invites = listInvites();
+  const invites = await listInvites();
   return res.json({ invites });
 }));
 
 // ── DELETE /api/auth/invites/:token ───────────────────────────────────────────
 router.delete('/invites/:token', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  revokeInviteToken(req.params.token);
+  await revokeInviteToken(req.params.token);
   return res.json({ success: true });
 }));
 
 // ── GET /api/auth/orders ──────────────────────────────────────────────────────
 router.get('/orders', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  const orders  = getAllSubscriptions();
-  const revenue = getRevenueStats();
+  const orders  = await getAllSubscriptions();
+  const revenue = await getRevenueStats();
   return res.json({ orders, revenue });
 }));
 
@@ -712,8 +712,8 @@ router.put('/orders/:userId/plan', requireAuth, requireRole(['admin']), asyncHan
     return res.status(400).json({ error: `Invalid plan. Must be one of: ${VALID_PLANS.join(', ')}` });
   }
   const userId = parseInt(req.params.userId);
-  adminSetPlan(userId, plan, req.user.id);
-  const user = getUserById(userId);
+  await adminSetPlan(userId, plan, req.user.id);
+  const user = await getUserById(userId);
   if (user?.Email || user?.username) {
     sendPlanChangedEmail({ to: user.Email || user.username, username: user.username, plan }).catch(() => {});
   }
@@ -723,13 +723,13 @@ router.put('/orders/:userId/plan', requireAuth, requireRole(['admin']), asyncHan
 // ── DELETE /api/auth/orders/:userId ───────────────────────────────────────────
 router.delete('/orders/:userId', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const userId = parseInt(req.params.userId);
-  adminCancelSubscription(userId, req.user.id);
+  await adminCancelSubscription(userId, req.user.id);
   return res.json({ success: true, userId });
 }));
 
 // ── GET /api/auth/admin/plan-settings ─────────────────────────────────────────
 router.get('/admin/plan-settings', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
-  const settings = getAllPlanSettings();
+  const settings = await getAllPlanSettings();
   return res.json({ settings });
 }));
 
@@ -757,7 +757,7 @@ router.put('/admin/plan-settings/:plan', requireAuth, requireRole(['admin']), as
     return res.status(400).json({ error: 'Price must be a positive number.' });
   }
 
-  const updated = updatePlanSettings(plan, {
+  const updated = await updatePlanSettings(plan, {
     name: name.trim(),
     dailyDeedLimit: limitInt,
     price: priceInt,
@@ -765,7 +765,7 @@ router.put('/admin/plan-settings/:plan', requireAuth, requireRole(['admin']), as
     description: description ? description.trim() : '',
   });
 
-  logAudit({
+  await logAudit({
     userId: null,
     actorId: req.user.id,
     action: 'admin_update_plan_settings',
@@ -800,15 +800,15 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 
-  const user = findUserByUsername(trimmedUsername);
+  const user = await findUserByUsername(trimmedUsername);
   if (!user) {
     await new Promise(r => setTimeout(r, 300 + Math.random() * 200)); // timing-safe
     return res.json(successResponse);
   }
 
-  const userFull = getUserById(user.id);
+  const userFull = await getUserById(user.id);
   const email    = userFull?.Email || null;
-  const tempPw   = forceResetPassword(user.id, user.id);
+  const tempPw   = await forceResetPassword(user.id, user.id);
 
   if (email || user.username) {
     sendTempPasswordEmail({ to: email || user.username, username: user.username, tempPassword: tempPw })
@@ -817,7 +817,7 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
     log.warn({ userId: user.id, username: user.username }, 'forgot-password: no email on file — temp PW in audit log');
   }
 
-  logAudit({
+  await logAudit({
     userId: user.id, actorId: user.id, action: 'forgot_password',
     target: `userId=${user.id}`, detail: { status: email ? 'email_sent' : 'no_email_logged' },
   });
