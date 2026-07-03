@@ -197,4 +197,23 @@ describe('Admin Plan Settings Integration Test Suite', () => {
     expect(data.code).toBe('FILE_SIZE_LIMIT_EXCEEDED');
     expect(data.error).toContain('allows files up to 0.5 MB');
   });
+
+  it('should reject batch deed uploads with unsupported file extensions', async () => {
+    const formData = new FormData();
+    const mockFile = new Blob(['alert(1)'], { type: 'application/javascript' });
+    formData.append('images', mockFile, 'malicious.js');
+
+    const res = await fetch(`${baseUrl}/batchdeed/process`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${userToken}`
+      },
+      body: formData
+    });
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.code).toBe('UNSUPPORTED_FILE_FORMAT');
+    expect(data.error).toContain('Unsupported file format');
+  });
 });

@@ -48,7 +48,8 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = uuidv4();
-    cb(null, `${uniqueSuffix}-${file.originalname}`);
+    const safeName = path.basename(file.originalname).replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    cb(null, `${uniqueSuffix}-${safeName}`);
   }
 });
 
@@ -114,6 +115,25 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     if (files.length > 20) {
       if (hasLock) lockService.release('batchdeed-process');
       return res.status(400).json({ error: 'Maximum 20 images per batch.' });
+    }
+
+    // Check file extension limits
+    const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'doc', 'docx', 'txt'];
+    for (const f of files) {
+      const ext = (f.originalname || '').split('.').pop()?.toLowerCase();
+      if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+        if (hasLock) lockService.release('batchdeed-process');
+        // Clean up uploaded files
+        for (const fileToClean of files) {
+          if (fileToClean.path && fs.existsSync(fileToClean.path)) {
+            fs.unlinkSync(fileToClean.path);
+          }
+        }
+        return res.status(400).json({
+          error: `Unsupported file format. Supported formats: ${ALLOWED_EXTENSIONS.join(', ')}.`,
+          code: 'UNSUPPORTED_FILE_FORMAT'
+        });
+      }
     }
 
     // Check file size limits based on billing plan
