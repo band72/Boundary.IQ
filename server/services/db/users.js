@@ -193,22 +193,22 @@ export async function getDailyUsage(userId) {
   return row ? row.DeedSolves : 0;
 }
 
-export async function incrementDailyUsage(userId) {
+export async function incrementDailyUsage(userId, credits = 1) {
   const date = now().slice(0, 10);
   await query(`
-    INSERT INTO UsageTracking (UserId, Date, DeedSolves) VALUES (?, ?, 1)
-    ON CONFLICT(UserId, Date) DO UPDATE SET DeedSolves = UsageTracking.DeedSolves + 1
-  `, [userId, date]);
+    INSERT INTO UsageTracking (UserId, Date, DeedSolves) VALUES (?, ?, ?)
+    ON CONFLICT(UserId, Date) DO UPDATE SET DeedSolves = UsageTracking.DeedSolves + ?
+  `, [userId, date, credits, credits]);
 }
 
-export async function checkDailyLimit(userId, userPlan, userRole) {
+export async function checkDailyLimit(userId, userPlan, userRole, requestedCredits = 1) {
   if (userRole === 'admin') return { allowed: true, used: null, limit: null };
   const res = await query('SELECT DailyDeedLimit FROM PlanSettings WHERE Plan = ?', [userPlan || 'free']);
   const planSetting = res.rows[0];
   const limit = planSetting ? planSetting.DailyDeedLimit : 5;
   if (limit < 0) return { allowed: true, used: null, limit: null };
   const used = await getDailyUsage(userId);
-  return { allowed: used < limit, used, limit };
+  return { allowed: (used + requestedCredits) <= limit, used, limit };
 }
 
 export async function getUserDailyStats(userId, days = 30) {

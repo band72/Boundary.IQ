@@ -585,14 +585,19 @@ async function _seedPlanSettings() {
       ['free', 'Free', 5, 0, JSON.stringify(['5 deed solves/day', 'Traverse Compute', 'Legal Writer', 'Basic Dashboard']), 'Basic free tier for lightweight needs.']
     );
     await query('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)',
-      ['basic', 'Basic', 50, 500, JSON.stringify(['50 deed solves/day', 'Traverse Compute (full)', 'Legal Writer (pro)', 'Batch Deed processing (basic)']), 'Great for small teams or individual surveyors.']
+      ['basic', 'Basic', 25, 500, JSON.stringify(['25 deed solves/day', 'Traverse Compute (full)', 'Legal Writer (pro)', 'Batch Deed processing (basic)']), 'Great for small teams or individual surveyors.']
     );
     await query('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)',
-      ['pro', 'Pro', -1, 1999, JSON.stringify(['Unlimited deed solves', 'Full Batch Deed processing', 'Plat Extraction with AI', 'Full Analytics Dashboard', 'Priority support']), 'Our most popular plan for professional workflows.']
+      ['pro', 'Pro', 50, 1999, JSON.stringify(['50 deed solves/day', 'Full Batch Deed processing', 'Plat Extraction with AI', 'Full Analytics Dashboard', 'Priority support']), 'Our most popular plan for professional workflows.']
     );
     await query('INSERT INTO PlanSettings (Plan, Name, DailyDeedLimit, Price, Features, Description) VALUES (?, ?, ?, ?, ?, ?)',
-      ['enterprise', 'Enterprise', -1, 9900, JSON.stringify(['Everything in Pro', '5 team members', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support']), 'For corporate and larger engineering operations.']
+      ['enterprise', 'Enterprise', 100, 9900, JSON.stringify(['100 deed solves/day', '5 team members', 'Custom AI model configuration', 'Full REST API access', 'Dedicated SLA support']), 'For corporate and larger engineering operations.']
     );
+  } else {
+    // Enforce updated limits on existing installations
+    await query("UPDATE PlanSettings SET DailyDeedLimit = 25, Features = '[\"25 deed solves/day\",\"Traverse Compute (full)\",\"Legal Writer (pro)\",\"Batch Deed processing (basic)\"]' WHERE Plan = 'basic'");
+    await query("UPDATE PlanSettings SET DailyDeedLimit = 50, Features = '[\"50 deed solves/day\",\"Full Batch Deed processing\",\"Plat Extraction with AI\",\"Full Analytics Dashboard\",\"Priority support\"]' WHERE Plan = 'pro'");
+    await query("UPDATE PlanSettings SET DailyDeedLimit = 100, Features = '[\"100 deed solves/day\",\"5 team members\",\"Custom AI model configuration\",\"Full REST API access\",\"Dedicated SLA support\"]' WHERE Plan = 'enterprise'");
   }
 }
 

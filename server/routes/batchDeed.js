@@ -83,7 +83,7 @@ function parsePrecisionRatio(precisionStr) {
 // Batch processing is CPU/memory intensive and running two batches concurrently
 // on the same server risks OOM and LLM timeout collisions. Multi-user queuing
 // would require a proper job queue (e.g. BullMQ) — tracked as a future enhancement.
-router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, res) => {
+router.post('/process', upload.array('images', 20), async (req, res) => {
   let keepAlive = null;
   let hasLock = false;
   let files = [];
@@ -100,8 +100,40 @@ router.post('/process', trackDeedUsage, upload.array('images', 20), async (req, 
     hasLock = true;
 
     files = req.files || [];
-    if (!files || files.length === 0) return res.status(400).json({ error: 'No images provided.' });
-    if (files.length > 20) return res.status(400).json({ error: 'Maximum 20 images per batch.' });
+    if (!files || files.length === 0) {
+      if (hasLock) lockService.release('batchdeed-process');
+      return res.status(400).json({ error: 'No images provided.' });
+    }
+    if (files.length > 20) {
+      if (hasLock) lockService.release('batchdeed-process');
+      return res.status(400).json({ error: 'Maximum 20 images per batch.' });
+    }
+
+    // Check daily credit limits based on number of uploaded files
+    const creditCheck = await db.checkDailyLimit(req.user.id, req.user.plan, req.user.role, files.length);
+    if (!creditCheck.allowed) {
+      if (hasLock) lockService.release('batchdeed-process');
+      // Clean up uploaded files
+      for (const f of files) {
+        if (f.path && fs.existsSync(f.path)) {
+          fs.unlinkSync(f.path);
+        }
+      }
+      return res.status(429).json({
+        error: 'Daily credit limit reached.',
+        code: 'DAILY_LIMIT_REACHED',
+        used: creditCheck.used,
+        limit: creditCheck.limit,
+        requested: files.length,
+        upgradeUrl: '/billing',
+        message: req.user.plan === 'free'
+          ? `This batch requires ${files.length} credits, but you only have ${creditCheck.limit - creditCheck.used} free credits remaining today. Upgrade to Pro for more solves.`
+          : `This batch requires ${files.length} credits, but you only have ${creditCheck.limit - creditCheck.used} credits remaining today under your ${req.user.plan} plan.`,
+      });
+    }
+
+    // Increment usage counter for all files in the batch
+    await db.incrementDailyUsage(req.user.id, files.length);
 
     const pobN = parseFloat(req.query.pobN) || 5000;
     const pobE = parseFloat(req.query.pobE) || 5000;

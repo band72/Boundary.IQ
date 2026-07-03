@@ -139,7 +139,9 @@ export function trackDeedUsage(req, res, next) {
         used: limit.used,
         limit: limit.limit,
         upgradeUrl: '/billing',
-        message: `You've used ${limit.used}/${limit.limit} free deed solves today. Upgrade to Pro for unlimited solves.`,
+        message: req.user.plan === 'free'
+          ? `You've used ${limit.used}/${limit.limit} free deed solves today. Upgrade to Pro for more solves.`
+          : `Daily credit limit reached. You've used ${limit.used}/${limit.limit} solves today under your ${req.user.plan || 'free'} plan.`,
       });
     }
 

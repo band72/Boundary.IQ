@@ -14,6 +14,7 @@ describe('Admin Plan Settings Integration Test Suite', () => {
   let baseUrl;
   let adminToken;
   let userToken;
+  let regularUserId;
 
   beforeAll(async () => {
     // Clean test database
@@ -38,6 +39,7 @@ describe('Admin Plan Settings Integration Test Suite', () => {
     await updateUserRole(adminUser.id, 'admin');
 
     const regularUser = await createUser('settings_user', 'password123', 'user@example.com');
+    regularUserId = regularUser.id;
 
     // Fetch tokens
     const adminRes = await fetch(`${baseUrl}/auth/login`, {
@@ -150,5 +152,26 @@ describe('Admin Plan Settings Integration Test Suite', () => {
     // Verify limit check is now updated to 12
     const limitCheckUpdated = await checkDailyLimit(999, 'free', 'user');
     expect(limitCheckUpdated.limit).toBe(12);
+  });
+
+  it('should verify checkDailyLimit and incrementDailyUsage work with multiple credit requests', async () => {
+    // Initial check: used 0, limit 12, requested 3
+    const check1 = await checkDailyLimit(regularUserId, 'free', 'user', 3);
+    expect(check1.allowed).toBe(true);
+    expect(check1.limit).toBe(12);
+
+    // Increment usage by 3 credits
+    const { incrementDailyUsage, getDailyUsage } = await import('../services/db/users.js');
+    await incrementDailyUsage(regularUserId, 3);
+    const used1 = await getDailyUsage(regularUserId);
+    expect(used1).toBe(3);
+
+    // Check with 8 requested credits: used 3 + requested 8 = 11 <= 12 (Allowed)
+    const check2 = await checkDailyLimit(regularUserId, 'free', 'user', 8);
+    expect(check2.allowed).toBe(true);
+
+    // Check with 10 requested credits: used 3 + requested 10 = 13 > 12 (Blocked)
+    const check3 = await checkDailyLimit(regularUserId, 'free', 'user', 10);
+    expect(check3.allowed).toBe(false);
   });
 });
