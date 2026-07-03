@@ -137,12 +137,12 @@ describe('Plan Limits & Credit Calculations', () => {
 // Category 3: Settings Locks & Role Access Restrictions (20 cases)
 // ─────────────────────────────────────────────────────────────────────────────
 describe('Settings Locks & Role Access Restrictions', () => {
-  const restrictedPanels = [
-    'AI Model Provider',
-    'Agent Processing Configuration',
-    'File Size & Upload Limit',
-    'Output File Configuration',
-    'Interactive Map Configuration'
+  const panels = [
+    { name: 'AI Model Provider', restricted: false },
+    { name: 'Agent Processing Configuration', restricted: true },
+    { name: 'File Size & Upload Limit', restricted: true },
+    { name: 'Output File Configuration', restricted: true },
+    { name: 'Interactive Map Configuration', restricted: true }
   ];
 
   // Generate 20 combination tests
@@ -150,17 +150,16 @@ describe('Settings Locks & Role Access Restrictions', () => {
   
   let testCount = 0;
   roles.forEach(role => {
-    restrictedPanels.forEach(panel => {
+    panels.forEach(panel => {
       testCount++;
       const caseNum = testCount + 40; // 41 to 60
 
-      it(`Case ${caseNum}: Check access to "${panel}" for role "${role}"`, () => {
-        const isEditable = role === 'admin';
-        const expectedLockState = !isEditable;
+      it(`Case ${caseNum}: Check access to "${panel.name}" for role "${role}"`, () => {
+        const expectedLockState = panel.restricted && role !== 'admin';
 
         // Visual display rule validation
         // In SettingsTab, if role is NOT admin, cards must be wrapped in LockedCardWrapper
-        const mustLock = restrictedPanels.includes(panel) && role !== 'admin';
+        const mustLock = panel.restricted && role !== 'admin';
         expect(mustLock).toBe(expectedLockState);
       });
     });

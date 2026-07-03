@@ -880,157 +880,155 @@ export default function UserSettingsTab({
       </div>
 
       {/* ── AI Model Provider ─────────────────────────────────────── */}
-      <LockedCardWrapper label="AI Driver Configuration Locked" isAdmin={isAdmin}>
-        <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid rgba(66,133,244,0.3)', boxShadow: '0 4px 24px rgba(66,133,244,0.1)' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-              <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                🧠 AI Model Provider
-              </div>
-              <button className="btn btn-ghost btn-sm" onClick={fetchModelConfig} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
+      <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid rgba(66,133,244,0.3)', boxShadow: '0 4px 24px rgba(66,133,244,0.1)' }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              🧠 AI Model Provider
             </div>
-          </div>
-
-          {(modelLoading || startingOllama) && <div className="progress-bar-container"><div className="progress-bar-fill" /></div>}
-
-          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-            {/* Active Model Badge */}
-            {modelConfig && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <div style={{
-                  background: providerMeta[modelConfig.activeProvider]?.gradient || 'var(--bg-elevated)',
-                  padding: '0.5rem 1.2rem', borderRadius: '99px',
-                  display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  boxShadow: `0 0 20px ${providerMeta[modelConfig.activeProvider]?.color || '#fff'}33`,
-                }}>
-                  <span style={{ fontSize: '1rem' }}>{providerMeta[modelConfig.activeProvider]?.icon}</span>
-                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.85rem' }}>{modelConfig.activeModel}</span>
-                </div>
-                <span style={{ fontSize: '0.72rem', color: providerMeta[modelConfig.activeProvider]?.color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {providerMeta[modelConfig.activeProvider]?.label} · Active
-                </span>
-              </div>
-            )}
-
-            {/* Ollama status */}
-            {modelConfig && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '0.75rem',
-                padding: '0.6rem 1rem',
-                background: modelConfig.ollama.online ? 'rgba(0,212,168,0.06)' : 'rgba(220,50,50,0.06)',
-                border: `1px solid ${modelConfig.ollama.online ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
-                borderRadius: 'var(--radius-md)', fontSize: '0.78rem', flexWrap: 'wrap',
-              }}>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: modelConfig.ollama.online ? '#00d4a8' : '#dc3232', boxShadow: modelConfig.ollama.online ? '0 0 8px #00d4a8' : '0 0 8px #dc3232', animation: modelConfig.ollama.online ? 'pulse 2s infinite' : 'none' }} />
-                <span style={{ color: modelConfig.ollama.online ? 'var(--success)' : '#dc3232', fontWeight: 600 }}>
-                  Ollama {modelConfig.ollama.online ? 'Online' : 'Offline'}
-                </span>
-                {modelConfig.ollama.online && <span style={{ color: 'var(--text-muted)' }}>· {modelConfig.ollama.modelCount} model(s) · {modelConfig.ollama.url}</span>}
-                {!modelConfig.ollama.online && (
-                  <button onClick={startOllama} disabled={startingOllama} style={{
-                    marginLeft: 'auto', padding: '0.3rem 0.85rem',
-                    background: startingOllama ? 'rgba(0,212,168,0.08)' : 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)',
-                    border: '1px solid rgba(0,212,168,0.5)', borderRadius: '99px', color: '#fff',
-                    fontWeight: 700, fontSize: '0.72rem', cursor: startingOllama ? 'wait' : 'pointer',
-                    boxShadow: startingOllama ? 'none' : '0 0 12px rgba(0,212,168,0.3)',
-                  }}>
-                    {startingOllama ? '⏳ Starting…' : '▶ Start Ollama'}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* API Keys */}
-            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-                🔑 API Keys &amp; Credentials
-              </div>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
-                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Google Gemini API Key</label>
-                  <input type="password" placeholder="AIza…" value={geminiKey}
-                    onChange={e => { setGeminiKey(e.target.value); setKeysMsg(''); }}
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
-                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>OpenAI / Compatible API Key (optional)</label>
-                  <input type="password" placeholder="sk-…" value={openaiKey}
-                    onChange={e => { setOpenaiKey(e.target.value); setKeysMsg(''); }}
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>🔒 Saved securely in your browser and auto-loaded to server on startup.</span>
-                <button onClick={() => saveKeysToBackend(geminiKey, openaiKey)} disabled={saveKeysLoading} className="btn btn-primary" style={{ padding: '0.55rem 1.25rem', fontSize: '0.78rem', borderRadius: 'var(--radius-sm)' }}>
-                  {saveKeysLoading ? '⏳ Saving…' : '💾 Save API Keys'}
-                </button>
-              </div>
-              {keysMsg && (
-                <div style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)', background: keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`, color: keysMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.75rem', fontWeight: 500 }}>
-                  {keysMsg}
-                </div>
-              )}
-            </div>
-
-            {/* Vendor / Model Selector */}
-            {modelConfig && (
-              <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-                  🤖 Vendor &amp; Model Selector
-                </div>
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '180px' }}>
-                    <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Vendor</label>
-                    <select value={selectedVendor} onChange={e => { const v = e.target.value; setSelectedVendor(v); setSelectedModel(modelConfig?.availableModels.find(m => m.provider === v)?.id || ''); }}
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', cursor: 'pointer', height: '38px' }}>
-                      <option value="gemini">☁️ Google Gemini (Cloud)</option>
-                      <option value="ollama">🖥️ Ollama (Local)</option>
-                      <option value="openai">🔌 OpenAI-Compatible</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1.5, minWidth: '200px' }}>
-                    <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Model</label>
-                    <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer', height: '38px' }}>
-                      {modelConfig?.availableModels.filter(m => m.provider === selectedVendor).map(m => (
-                        <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
-                      ))}
-                      {selectedVendor === 'openai' && modelConfig?.availableModels.filter(m => m.provider === 'openai').length === 0 && (
-                        <option value="llama3">Default Llama 3 (compat)</option>
-                      )}
-                    </select>
-                  </div>
-                  <button className="btn btn-primary"
-                    disabled={modelLoading || !selectedModel || (modelConfig?.activeProvider === selectedVendor && modelConfig?.activeModel === selectedModel)}
-                    onClick={() => selectedVendor === 'ollama' && !modelConfig?.ollama?.online ? startOllama() : switchModel(selectedVendor, selectedModel)}
-                    style={{ height: '38px', padding: '0 1.5rem', background: providerMeta[selectedVendor]?.gradient || 'var(--accent)', borderColor: 'transparent', borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: '0.78rem' }}>
-                    {switchingTo ? '⏳ Switching…' : '✓ Switch AI Driver'}
-                  </button>
-                </div>
-
-                {/* API Fallback toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.2rem', background: allowApiFallback ? 'rgba(0,212,168,0.03)' : 'rgba(255,255,255,0.01)', border: `1px solid ${allowApiFallback ? 'rgba(0,212,168,0.25)' : 'var(--border)'}`, borderRadius: 'var(--radius-md)', transition: 'all 0.3s ease' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ fontSize: '1.2rem' }}>🔄</span>
-                    <div>
-                      <div style={{ fontWeight: 600, color: allowApiFallback ? '#e8eeff' : 'var(--text-muted)', fontSize: '0.85rem' }}>Smart API Fallback to Local Ollama</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Automatically fall back from Gemini to local Ollama on quota failures</div>
-                    </div>
-                  </div>
-                  <Toggle checked={allowApiFallback} onChange={e => toggleApiFallback(e.target.checked)} />
-                </div>
-              </div>
-            )}
-
-            {modelMsg && (
-              <div style={{ padding: '0.5rem 0.85rem', borderRadius: 'var(--radius-sm)', background: modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.3)' : 'rgba(220,50,50,0.3)'}`, color: modelMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.78rem', fontWeight: 500 }}>
-                {modelMsg}
-              </div>
-            )}
+            <button className="btn btn-ghost btn-sm" onClick={fetchModelConfig} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
           </div>
         </div>
-      </LockedCardWrapper>
+
+        {(modelLoading || startingOllama) && <div className="progress-bar-container"><div className="progress-bar-fill" /></div>}
+
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* Active Model Badge */}
+          {modelConfig && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              <div style={{
+                background: providerMeta[modelConfig.activeProvider]?.gradient || 'var(--bg-elevated)',
+                padding: '0.5rem 1.2rem', borderRadius: '99px',
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                boxShadow: `0 0 20px ${providerMeta[modelConfig.activeProvider]?.color || '#fff'}33`,
+              }}>
+                <span style={{ fontSize: '1rem' }}>{providerMeta[modelConfig.activeProvider]?.icon}</span>
+                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.85rem' }}>{modelConfig.activeModel}</span>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: providerMeta[modelConfig.activeProvider]?.color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {providerMeta[modelConfig.activeProvider]?.label} · Active
+              </span>
+            </div>
+          )}
+
+          {/* Ollama status */}
+          {modelConfig && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              padding: '0.6rem 1rem',
+              background: modelConfig.ollama.online ? 'rgba(0,212,168,0.06)' : 'rgba(220,50,50,0.06)',
+              border: `1px solid ${modelConfig.ollama.online ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
+              borderRadius: 'var(--radius-md)', fontSize: '0.78rem', flexWrap: 'wrap',
+            }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: modelConfig.ollama.online ? '#00d4a8' : '#dc3232', boxShadow: modelConfig.ollama.online ? '0 0 8px #00d4a8' : '0 0 8px #dc3232', animation: modelConfig.ollama.online ? 'pulse 2s infinite' : 'none' }} />
+              <span style={{ color: modelConfig.ollama.online ? 'var(--success)' : '#dc3232', fontWeight: 600 }}>
+                Ollama {modelConfig.ollama.online ? 'Online' : 'Offline'}
+              </span>
+              {modelConfig.ollama.online && <span style={{ color: 'var(--text-muted)' }}>· {modelConfig.ollama.modelCount} model(s) · {modelConfig.ollama.url}</span>}
+              {!modelConfig.ollama.online && (
+                <button onClick={startOllama} disabled={startingOllama} style={{
+                  marginLeft: 'auto', padding: '0.3rem 0.85rem',
+                  background: startingOllama ? 'rgba(0,212,168,0.08)' : 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)',
+                  border: '1px solid rgba(0,212,168,0.5)', borderRadius: '99px', color: '#fff',
+                  fontWeight: 700, fontSize: '0.72rem', cursor: startingOllama ? 'wait' : 'pointer',
+                  boxShadow: startingOllama ? 'none' : '0 0 12px rgba(0,212,168,0.3)',
+                }}>
+                  {startingOllama ? '⏳ Starting…' : '▶ Start Ollama'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* API Keys */}
+          <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+              🔑 API Keys &amp; Credentials
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Google Gemini API Key</label>
+                <input type="password" placeholder="AIza…" value={geminiKey}
+                  onChange={e => { setGeminiKey(e.target.value); setKeysMsg(''); }}
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>OpenAI / Compatible API Key (optional)</label>
+                <input type="password" placeholder="sk-…" value={openaiKey}
+                  onChange={e => { setOpenaiKey(e.target.value); setKeysMsg(''); }}
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>🔒 Saved securely in your browser and auto-loaded to server on startup.</span>
+              <button onClick={() => saveKeysToBackend(geminiKey, openaiKey)} disabled={saveKeysLoading} className="btn btn-primary" style={{ padding: '0.55rem 1.25rem', fontSize: '0.78rem', borderRadius: 'var(--radius-sm)' }}>
+                {saveKeysLoading ? '⏳ Saving…' : '💾 Save API Keys'}
+              </button>
+            </div>
+            {keysMsg && (
+              <div style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)', background: keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`, color: keysMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.75rem', fontWeight: 500 }}>
+                {keysMsg}
+              </div>
+            )}
+          </div>
+
+          {/* Vendor / Model Selector */}
+          {modelConfig && (
+            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                🤖 Vendor &amp; Model Selector
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '180px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Vendor</label>
+                  <select value={selectedVendor} onChange={e => { const v = e.target.value; setSelectedVendor(v); setSelectedModel(modelConfig?.availableModels.find(m => m.provider === v)?.id || ''); }}
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', cursor: 'pointer', height: '38px' }}>
+                    <option value="gemini">☁️ Google Gemini (Cloud)</option>
+                    <option value="ollama">🖥️ Ollama (Local)</option>
+                    <option value="openai">🔌 OpenAI-Compatible</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1.5, minWidth: '200px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Model</label>
+                  <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer', height: '38px' }}>
+                    {modelConfig?.availableModels.filter(m => m.provider === selectedVendor).map(m => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
+                    ))}
+                    {selectedVendor === 'openai' && modelConfig?.availableModels.filter(m => m.provider === 'openai').length === 0 && (
+                      <option value="llama3">Default Llama 3 (compat)</option>
+                    )}
+                  </select>
+                </div>
+                <button className="btn btn-primary"
+                  disabled={modelLoading || !selectedModel || (modelConfig?.activeProvider === selectedVendor && modelConfig?.activeModel === selectedModel)}
+                  onClick={() => selectedVendor === 'ollama' && !modelConfig?.ollama?.online ? startOllama() : switchModel(selectedVendor, selectedModel)}
+                  style={{ height: '38px', padding: '0 1.5rem', background: providerMeta[selectedVendor]?.gradient || 'var(--accent)', borderColor: 'transparent', borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: '0.78rem' }}>
+                  {switchingTo ? '⏳ Switching…' : '✓ Switch AI Driver'}
+                </button>
+              </div>
+
+              {/* API Fallback toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.2rem', background: allowApiFallback ? 'rgba(0,212,168,0.03)' : 'rgba(255,255,255,0.01)', border: `1px solid ${allowApiFallback ? 'rgba(0,212,168,0.25)' : 'var(--border)'}`, borderRadius: 'var(--radius-md)', transition: 'all 0.3s ease' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1.2rem' }}>🔄</span>
+                  <div>
+                    <div style={{ fontWeight: 600, color: allowApiFallback ? '#e8eeff' : 'var(--text-muted)', fontSize: '0.85rem' }}>Smart API Fallback to Local Ollama</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Automatically fall back from Gemini to local Ollama on quota failures</div>
+                  </div>
+                </div>
+                <Toggle checked={allowApiFallback} onChange={e => toggleApiFallback(e.target.checked)} />
+              </div>
+            </div>
+          )}
+
+          {modelMsg && (
+            <div style={{ padding: '0.5rem 0.85rem', borderRadius: 'var(--radius-sm)', background: modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.3)' : 'rgba(220,50,50,0.3)'}`, color: modelMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.78rem', fontWeight: 500 }}>
+              {modelMsg}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── Agent Processing ──────────────────────────────────────── */}
       <LockedCardWrapper label="Agent Processing Config Locked" isAdmin={isAdmin}>
