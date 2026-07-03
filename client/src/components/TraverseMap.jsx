@@ -561,6 +561,8 @@ function resolveCurvePropertiesClient(c, prevAzimuthDeg) {
   };
 }
 
+const EMPTY_ARRAY = [];
+
 export default function TraverseMap({
   stations,
   adjusted,
@@ -571,7 +573,7 @@ export default function TraverseMap({
   selectedCourseIndex: selectedCourseIndexProp,
   setSelectedCourseIndex: setSelectedCourseIndexProp,
   activeTractIndex = 0,
-  tracts = [],
+  tracts = EMPTY_ARRAY,
   mapPanSensitivity
 }) {
   const [canvasElement, setCanvasElement] = useState(null);
