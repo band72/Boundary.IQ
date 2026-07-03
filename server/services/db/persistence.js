@@ -11,6 +11,12 @@ let lastBackupTime = 0;
 const BACKUP_DEBOUNCE_MS = 10000; // debounce backups to prevent spamming GCS
 
 async function getAccessToken() {
+  // Only attempt to authenticate and sync with GCS if running in Cloud Run,
+  // or if explicitly requested via environment variable.
+  if (!process.env.K_SERVICE && !process.env.ENABLE_GCS_SYNC) {
+    return null;
+  }
+
   try {
     const auth = new GoogleAuth({
       scopes: 'https://www.googleapis.com/auth/devstorage.read_write',

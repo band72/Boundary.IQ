@@ -115,13 +115,13 @@ export async function verifyUser(username, password) {
     await query('UPDATE Users SET PasswordHash = ? WHERE Id = ?', [newHash, row.Id]);
   }
   await touchLastLogin(row.Id);
-  return { id: row.Id, username: row.Username, role: row.Role, plan: row.Plan || 'free' };
+  return { id: row.Id, username: row.Username, role: row.Role, plan: row.Plan || 'free', displayName: row.DisplayName || null };
 }
 
 export async function findUserByUsername(username) {
-  const res = await query('SELECT Id as id, Username as username, Role as role, Plan as plan FROM Users WHERE LOWER(Username) = LOWER(?)', [username]);
+  const res = await query('SELECT Id as id, Username as username, Role as role, Plan as plan, DisplayName as displayName FROM Users WHERE LOWER(Username) = LOWER(?)', [username]);
   const row = res.rows[0];
-  return row ? { id: row.id, username: row.username, role: row.role, plan: row.plan || 'free' } : null;
+  return row ? { id: row.id, username: row.username, role: row.role, plan: row.plan || 'free', displayName: row.displayName || null } : null;
 }
 
 export async function getAllUsers() {

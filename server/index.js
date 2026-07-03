@@ -2,7 +2,7 @@
 // Drop-in replacement for the ASP.NET Core 8 backend.
 // Same API routes, same JSON shapes, same behavior.
 
-import 'dotenv/config';
+import { envPath } from './config.js';
 import * as Sentry from '@sentry/node';
 
 if (process.env.SENTRY_DSN) {
@@ -86,15 +86,14 @@ if (GEMINI_API_KEY) {
 }
 
 // ── Watch .env file for changes (Hot Reload) ──────────────────────────────────
-const envPath = path.resolve(process.cwd(), '.env');
-if (fs.existsSync(envPath)) {
+if (envPath && fs.existsSync(envPath)) {
   let watchTimeout = null;
   fs.watch(envPath, (eventType) => {
     if (eventType === 'change') {
       if (watchTimeout) clearTimeout(watchTimeout);
       watchTimeout = setTimeout(() => {
         logger.info('⚡ .env change detected — reloading system configurations...');
-        const configOutput = dotenv.config({ override: true });
+        const configOutput = dotenv.config({ path: envPath, override: true });
         if (configOutput.error) {
           logger.error({ err: configOutput.error }, '✗ Failed to reload .env');
           return;

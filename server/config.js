@@ -3,6 +3,33 @@
 // of calling process.env directly. This makes misconfiguration visible at startup
 // rather than silently at runtime.
 
+import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Locate the correct .env file by checking process.cwd(), then parent of process.cwd(), then parent of __dirname
+let resolvedEnvPath = path.join(process.cwd(), '.env');
+if (!fs.existsSync(resolvedEnvPath)) {
+  const parentEnv = path.join(path.dirname(process.cwd()), '.env');
+  if (fs.existsSync(parentEnv)) {
+    resolvedEnvPath = parentEnv;
+  } else {
+    const fallbackEnv = path.join(path.dirname(__dirname), '.env');
+    if (fs.existsSync(fallbackEnv)) {
+      resolvedEnvPath = fallbackEnv;
+    }
+  }
+}
+
+dotenv.config({ path: resolvedEnvPath });
+
+export const envPath = resolvedEnvPath;
+
+
 /**
  * Strip surrounding quotes that Windows/Linux .env editors sometimes add.
  * e.g.  GEMINI_API_KEY="abc"  →  "abc"  (quotes are already stripped by dotenv,

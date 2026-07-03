@@ -54,7 +54,11 @@ async function runTests() {
     console.log(`⏳ Server not detected on port ${PORT}. Starting server programmatically...`);
     spawnedProcess = spawn(process.execPath, ['index.js'], {
       stdio: 'inherit',
-      env: { ...process.env, PORT: PORT.toString() }
+      env: {
+        ...process.env,
+        PORT: PORT.toString(),
+        DATABASE_URL: '' // Force SQLite database for integration testing
+      }
     });
 
     // Wait for the port to open

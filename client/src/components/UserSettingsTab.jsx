@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { authFetch } from '../api';
+import { useAuthContext } from '../context/AuthContext';
 
 // Matches the canonical PANEL_DEFS in SettingsTab.jsx and TABS in App.jsx.
 // minRole: 'user' = toggleable by all users | 'admin' = admin-only / in testing
@@ -249,7 +250,8 @@ function LicenseKeySection({ currentPlan, onPlanChanged }) {
 
 // ── My Account section ────────────────────────────────────────────────────────
 function MyAccountSection() {
-  const [displayName, setDisplayName] = useState('');
+  const { user, updateUser } = useAuthContext();
+  const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [profileMsg, setProfileMsg] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
 
@@ -278,10 +280,17 @@ function MyAccountSection() {
 
   useEffect(() => { fetchSessions(); }, []);
 
+  useEffect(() => {
+    if (user?.displayName !== undefined) {
+      setDisplayName(user?.displayName || '');
+    }
+  }, [user]);
+
   const saveProfile = async () => {
     setProfileLoading(true); setProfileMsg('');
     try {
       await authFetch('/auth/me/profile', { method:'PUT', body:JSON.stringify({displayName}) });
+      updateUser({ displayName });
       setProfileMsg('✓ Display name updated.');
     } catch (e) { setProfileMsg(`✗ ${e.message}`); }
     finally { setProfileLoading(false); }

@@ -282,9 +282,18 @@ function AppShell() {
           {/* User Profile Badge */}
           <div className="user-badge" style={{ marginLeft: 'auto' }}>
             <div className="user-avatar">
-              {(user?.username || 'US').substring(0, 2).toUpperCase()}
+              {(() => {
+                if (user?.displayName) {
+                  const parts = user.displayName.trim().split(/\s+/);
+                  if (parts.length >= 2) {
+                    return (parts[0][0] + parts[1][0]).toUpperCase();
+                  }
+                  return user.displayName.trim().substring(0, 2).toUpperCase();
+                }
+                return (user?.username || 'US').substring(0, 2).toUpperCase();
+              })()}
             </div>
-            <span className="user-name" title={user?.username || 'User'}>{user?.username || 'User'}</span>
+            <span className="user-name" title={user?.username || 'User'}>{user?.displayName || user?.username || 'User'}</span>
             <span style={{
               fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase',
               padding: '2px 7px', borderRadius: '99px', flexShrink: 0,
