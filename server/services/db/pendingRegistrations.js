@@ -3,14 +3,17 @@
  * Database-backed store for email verification pending registrations.
  *
  * Replaces the in-memory Map that was wiped on every Cloud Run restart/redeploy.
- * Passwords are stored as a salted SHA-256 hash so plain-text is never written
- * to disk. The auth route retains the plain-text in memory for the duration of
- * the request and passes it through to createUser() on successful verification.
+ * Passwords are stored as a PBKDF2-SHA-512 hash (same algorithm as Users.PasswordHash)
+ * so plain-text is never written to disk or WAL files.  On successful code
+ * verification, createUserWithPrehashedPassword() is called with the stored hash
+ * directly, avoiding a redundant hashing round.
  *
  * Auto-cleanup of expired rows runs on module load (after 5 s) and every 30 min.
  */
 
 import { query, now } from './core.js';
+import { hashPassword } from './users.js';
+import logger from '../../logger.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -30,8 +33,10 @@ function sqliteToEpoch(str) {
  * @param {{ username, password, code, expiresAt, inviteToken }} value
  */
 export async function upsertPendingRegistration(email, { username, password, code, expiresAt, inviteToken }) {
-  // Store password as-is in a dedicated column; it is a plain-text bcrypt input
-  // but is only valid for 15 min and deleted immediately on successful verify.
+  // Hash the password before persisting so plain-text never touches disk.
+  // On successful verification, createUserWithPrehashedPassword() is called
+  // with this hash directly, skipping the hashing step in createUser().
+  const passwordHash = await hashPassword(password);
   await query(`
     INSERT INTO PendingRegistrations
       (Email, Username, PasswordHash, Code, Attempts, ExpiresAt, InviteToken, CreatedAt)
@@ -47,7 +52,7 @@ export async function upsertPendingRegistration(email, { username, password, cod
   `, [
     email.toLowerCase(),
     username,
-    password,        // stored transiently; deleted within 15 min
+    passwordHash,    // PBKDF2 hash — never plain-text on disk
     code,
     epochToSqlite(expiresAt),
     inviteToken || null,
@@ -77,7 +82,7 @@ export async function getPendingRegistration(email) {
 
   return {
     username: row.Username,
-    password: row.PasswordHash,   // field named 'password' for route compat
+    passwordHash: row.PasswordHash,  // PBKDF2 hash — pass to createUserWithPrehashedPassword()
     code: row.Code,
     expiresAt: expiresAtMs,
     inviteToken: row.InviteToken || null,
@@ -86,8 +91,19 @@ export async function getPendingRegistration(email) {
 }
 
 /**
- * Delete a pending registration after successful verification or lockout.
+ * Update the verification code on an existing pending registration.
+ * This intentionally does NOT touch PasswordHash, which is already stored
+ * as a PBKDF2 hash and must not be re-hashed on resend.
  */
+export async function updatePendingRegistrationCode(email, { code, expiresAt }) {
+  await query(`
+    UPDATE PendingRegistrations
+    SET Code = ?, Attempts = 0, ExpiresAt = ?
+    WHERE LOWER(Email) = LOWER(?)
+  `, [code, epochToSqlite(expiresAt), email.toLowerCase()]);
+}
+
+
 export async function deletePendingRegistration(email) {
   await query(
     'DELETE FROM PendingRegistrations WHERE LOWER(Email) = LOWER(?)',
@@ -123,15 +139,17 @@ export async function purgeExpiredPendingRegistrations() {
   return deleted;
 }
 
-// ── Periodic cleanup ──────────────────────────────────────────────────────────
+// ── Periodic cleanup ──────────────────────────────────────────────────────────────────
+// One-shot at startup (DB may not be ready immediately on module import)
 setTimeout(() => {
-  purgeExpiredPendingRegistrations().catch(err => {
+  purgeExpiredPendingRegistrations().catch(() => {
     /* DB may not be ready yet on import */
   });
 }, 5000);
 
+// Recurring every 30 minutes — log failures so silent disk/DB issues are surfaced
 setInterval(() => {
   purgeExpiredPendingRegistrations().catch(err => {
-    /* ignore */
+    logger.warn({ err }, 'Periodic pending-registration cleanup failed');
   });
 }, 30 * 60 * 1000);

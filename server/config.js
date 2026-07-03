@@ -114,6 +114,11 @@ export const DEED_SOLVE_RATE_LIMIT = getInt('DEED_SOLVE_RATE_LIMIT', 10);
 /** Max folder scan requests per user per minute on the /api/folderscan/* endpoints. */
 export const SCAN_RATE_LIMIT = getInt('SCAN_RATE_LIMIT', 5);
 
+// ── Plans ─────────────────────────────────────────────────────────────────────
+/** Canonical list of all valid subscription plan names. Import this instead of
+ *  redefining locally so that every validator stays in sync automatically. */
+export const VALID_PLANS = ['free', 'basic', 'pro', 'enterprise'];
+
 // ── Convenience bundle ────────────────────────────────────────────────────────
 export const cfg = {
   PORT, NODE_ENV, IS_PROD,

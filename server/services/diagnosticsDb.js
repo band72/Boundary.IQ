@@ -33,7 +33,7 @@ export {
 
 export {
   hashPassword, verifyPassword,
-  createUser, verifyUser, findUserByUsername,
+  createUser, createUserWithPrehashedPassword, verifyUser, findUserByUsername,
   getAllUsers, getUserById, updateUserRole, updateUserPlan,
   touchLastLogin, getUserCount, deleteUser, updateProfile, updatePassword,
   forceResetPassword, verifyPasswordOnly, checkForceReset,

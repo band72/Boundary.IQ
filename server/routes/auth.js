@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  createUser, verifyUser, createSession, getSession, deleteSession,
+  createUser, createUserWithPrehashedPassword, verifyUser, createSession, getSession, deleteSession,
   findUserByUsername, getAllUsers, getUserById, updateUserRole, updateUserPlan,
   touchLastLogin,
   deleteUser, updateProfile, updatePassword, forceResetPassword,
@@ -20,11 +20,12 @@ import {
   sendWelcomeEmail, sendPasswordChangedEmail, sendTempPasswordEmail,
   sendPlanChangedEmail, sendInviteEmail, sendVerificationEmail, sendLicenseKeyEmail,
 } from '../services/emailService.js';
-import { GOOGLE_CLIENT_ID, INVITE_ONLY, IS_PROD, FRONTEND_URL } from '../config.js';
+import { GOOGLE_CLIENT_ID, INVITE_ONLY, IS_PROD, FRONTEND_URL, VALID_PLANS } from '../config.js';
 import { createChildLogger } from '../logger.js';
 import {
   upsertPendingRegistration, getPendingRegistration,
   deletePendingRegistration, incrementVerifyAttempts,
+  updatePendingRegistrationCode,
 } from '../services/db/pendingRegistrations.js';
 import {
   createLicenseKey, redeemLicenseKey, getLicenseKeysForUser, listAllLicenseKeys,
@@ -74,11 +75,15 @@ router.post('/register', asyncHandler(async (req, res) => {
   const trimmedUsername = username.trim();
   const lowercaseUsername = trimmedUsername.toLowerCase();
   const bypassHeader = req.headers['x-bypass-verification'] === 'true';
+  // Non-email usernames are treated as test/local-dev users (bypasses email verification).
+  // In production, additional username-based heuristics are disabled to prevent bypasses.
   const isTestUser = bypassHeader ||
-                     !lowercaseUsername.includes('@') || 
-                     lowercaseUsername.includes('tester') || 
-                     lowercaseUsername.includes('test_user') || 
-                     lowercaseUsername.includes('suite_user') ||
+                     !lowercaseUsername.includes('@') ||
+                     (process.env.NODE_ENV !== 'production' && (
+                       lowercaseUsername.includes('tester') ||
+                       lowercaseUsername.includes('test_user') ||
+                       lowercaseUsername.includes('suite_user')
+                     )) ||
                      process.env.NODE_ENV === 'test';
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -181,8 +186,8 @@ router.post('/verify-registration', asyncHandler(async (req, res) => {
     });
   }
 
-  // Success! Handoff to database creation
-  const user = await createUser(pending.username, pending.password);
+  // Success! Handoff to database creation using the pre-hashed password stored at registration.
+  const user = await createUserWithPrehashedPassword(pending.username, pending.passwordHash);
   const token = await createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
 
   if (pending.inviteToken) await redeemInviteToken(pending.inviteToken, user.id);
@@ -215,14 +220,10 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'No pending registration found for this email, or code has expired. Please sign up again.' });
   }
 
-  // Generate new 6-digit verification code
+  // Generate new 6-digit verification code and update only the code/expiry
+  // — the PasswordHash column is left untouched since it's already a PBKDF2 hash.
   const code = Math.floor(100000 + Math.random() * 900000).toString();
-  
-  // Extend expiration by another 15 minutes and reset attempts
-  await pendingRegistrations.set(lowercaseEmail, {
-    username: pending.username,
-    password: pending.password,
-    inviteToken: pending.inviteToken,
+  await updatePendingRegistrationCode(lowercaseEmail, {
     code,
     expiresAt: Date.now() + 15 * 60 * 1000
   });
@@ -251,11 +252,11 @@ router.post('/login', asyncHandler(async (req, res) => {
 
   const trimmedUsername = username.trim();
   const lowercaseUsername = trimmedUsername.toLowerCase();
-  const isTestUser = lowercaseUsername.includes('tester') || 
-                     lowercaseUsername.includes('test_user') || 
-                     lowercaseUsername.includes('suite_user') ||
-                     !lowercaseUsername.includes('@') ||
-                     process.env.NODE_ENV === 'test';
+  // Non-email usernames and test environments bypass email-format requirement.
+  // Username-based heuristics are disabled in production.
+  const isTestUser = lowercaseUsername.includes('@')
+    ? process.env.NODE_ENV === 'test'
+    : true; // non-email usernames are always treated as dev/admin accounts
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!isTestUser && !EMAIL_RE.test(trimmedUsername)) {
@@ -265,7 +266,6 @@ router.post('/login', asyncHandler(async (req, res) => {
   const user = await verifyUser(trimmedUsername, password);
   if (!user) return res.status(401).json({ error: 'Invalid username or password' });
 
-  await touchLastLogin(user.id);
   const token = await createSession(user.id, { ipAddress: getIp(req), userAgent: getUA(req) });
   const forceReset = await checkForceReset(user.id);
   await logAudit({ userId: user.id, actorId: user.id, action: 'login', ipAddress: getIp(req) });
@@ -312,6 +312,27 @@ router.get('/me', asyncHandler(async (req, res) => {
   const fullUser = await getUserById(sessionUser.userId);
   const forceReset = await checkForceReset(sessionUser.userId);
   return res.json({ id: sessionUser.userId, username: sessionUser.username, role: sessionUser.role, plan: sessionUser.plan || 'free', displayName: fullUser?.displayName || null, forcePasswordReset: forceReset });
+}));
+
+// ── GET /api/auth/me/credits ───────────────────────────────────────────────────
+router.get('/me/credits', requireAuth, asyncHandler(async (req, res) => {
+  const { checkDailyLimit } = await import('../services/db/users.js');
+  const creditStatus = await checkDailyLimit(req.user.id, req.user.plan, req.user.role, 0);
+  
+  const fileLimits = {
+    free: '0.5 MB',
+    basic: '1.0 MB',
+    pro: '10 MB',
+    enterprise: '20 MB'
+  };
+
+  return res.json({
+    used: creditStatus.used || 0,
+    limit: creditStatus.limit || 0,
+    allowed: creditStatus.allowed,
+    plan: req.user.plan || 'free',
+    fileSizeLimit: fileLimits[req.user.plan || 'free'] || '0.5 MB'
+  });
 }));
 
 // ── GET /api/auth/invite-only ──────────────────────────────────────────────────
@@ -707,7 +728,6 @@ router.get('/orders', requireAuth, requireRole(['admin']), asyncHandler(async (r
 // ── PUT /api/auth/orders/:userId/plan ─────────────────────────────────────────
 router.put('/orders/:userId/plan', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const { plan } = req.body;
-  const VALID_PLANS = ['free', 'pro', 'enterprise'];
   if (!VALID_PLANS.includes(plan)) {
     return res.status(400).json({ error: `Invalid plan. Must be one of: ${VALID_PLANS.join(', ')}` });
   }
@@ -789,11 +809,11 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
 
   const trimmedUsername = username.trim();
   const lowercaseUsername = trimmedUsername.toLowerCase();
-  const isTestUser = lowercaseUsername.includes('tester') || 
-                     lowercaseUsername.includes('test_user') || 
-                     lowercaseUsername.includes('suite_user') ||
-                     !lowercaseUsername.includes('@') ||
-                     process.env.NODE_ENV === 'test';
+  // Non-email usernames and test environments bypass email-format requirement.
+  // Username-based heuristics are disabled in production.
+  const isTestUser = lowercaseUsername.includes('@')
+    ? process.env.NODE_ENV === 'test'
+    : true; // non-email usernames are always treated as dev/admin accounts
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!isTestUser && !EMAIL_RE.test(trimmedUsername)) {

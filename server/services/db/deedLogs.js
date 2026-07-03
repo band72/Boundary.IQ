@@ -106,15 +106,103 @@ export async function getRecentBatchesWithStats(limit = 30, userId = null) {
   const batches = res.rows;
   if (batches.length === 0) return [];
 
-  return Promise.all(batches.map(async (b) => {
+  // Batch all stats queries using IN(...) to avoid N+1 round trips
+  const batchIds = batches.map(b => b.BatchId);
+  const placeholders = batchIds.map(() => '?').join(',');
+
+  const [countsRes, stagesRes, failedRes, precisionRes] = await Promise.all([
+    query(`
+      SELECT BatchId,
+        COUNT(*)                                                    AS total,
+        SUM(CASE WHEN Status='PASS'    THEN 1 ELSE 0 END)          AS passed,
+        SUM(CASE WHEN Status='FAIL'    THEN 1 ELSE 0 END)          AS failed,
+        SUM(CASE WHEN Status='ERROR'   THEN 1 ELSE 0 END)          AS errors,
+        SUM(CASE WHEN Status='MEANDER' THEN 1 ELSE 0 END)          AS meanders,
+        SUM(CASE WHEN Status='SKIPPED' THEN 1 ELSE 0 END)          AS skipped,
+        AVG(CASE WHEN Status='PASS' AND PrecisionRatio > 0 AND PrecisionRatio < 999999990
+                 THEN PrecisionRatio ELSE NULL END)                AS avgPrecision,
+        MAX(CASE WHEN Status='PASS' AND PrecisionRatio < 999999990
+                 THEN PrecisionRatio ELSE NULL END)                AS bestPrecision,
+        AVG(CASE WHEN Status='FAIL' THEN LinearError  ELSE NULL END) AS avgLinearErr,
+        MAX(CASE WHEN Status='FAIL' THEN LinearError  ELSE NULL END) AS maxLinearErr,
+        AVG(CASE WHEN Status='PASS' THEN TrustScore   ELSE NULL END) AS avgTrustScore
+      FROM DeedLogs WHERE BatchId IN (${placeholders})
+      GROUP BY BatchId
+    `, batchIds),
+    query(`
+      SELECT BatchId, RepairStageUsed AS stage, COUNT(*) AS count,
+             SUM(CASE WHEN Status='PASS' THEN 1 ELSE 0 END) AS passed
+      FROM DeedLogs WHERE BatchId IN (${placeholders})
+      GROUP BY BatchId, RepairStageUsed ORDER BY count DESC
+    `, batchIds),
+    query(`
+      SELECT BatchId, FileName, LinearError, RepairStageUsed
+      FROM DeedLogs WHERE BatchId IN (${placeholders}) AND Status IN ('FAIL','ERROR')
+      ORDER BY LinearError DESC
+    `, batchIds),
+    query(`
+      SELECT BatchId,
+        SUM(CASE WHEN PrecisionRatio >= 50000  AND PrecisionRatio < 999999990 THEN 1 ELSE 0 END) AS excellent,
+        SUM(CASE WHEN PrecisionRatio >= 10000  AND PrecisionRatio < 50000     THEN 1 ELSE 0 END) AS good,
+        SUM(CASE WHEN PrecisionRatio >=  5000  AND PrecisionRatio < 10000     THEN 1 ELSE 0 END) AS fair,
+        SUM(CASE WHEN PrecisionRatio >       0 AND PrecisionRatio < 5000      THEN 1 ELSE 0 END) AS poor
+      FROM DeedLogs WHERE BatchId IN (${placeholders}) AND Status = 'PASS'
+      GROUP BY BatchId
+    `, batchIds),
+  ]);
+
+  // Index results by BatchId for O(1) lookup
+  const countsMap    = Object.fromEntries(countsRes.rows.map(r => [r.BatchId, r]));
+  const precisionMap = Object.fromEntries(precisionRes.rows.map(r => [r.BatchId, r]));
+  const stagesMap    = {};
+  const failedMap    = {};
+  for (const r of stagesRes.rows) {
+    if (!stagesMap[r.BatchId]) stagesMap[r.BatchId] = [];
+    if (stagesMap[r.BatchId].length < 12) {
+      stagesMap[r.BatchId].push({ stage: r.stage || 'Unknown', count: parseInt(r.count || 0), passed: parseInt(r.passed || 0) });
+    }
+  }
+  for (const r of failedRes.rows) {
+    if (!failedMap[r.BatchId]) failedMap[r.BatchId] = [];
+    if (failedMap[r.BatchId].length < 50) {
+      failedMap[r.BatchId].push({ fileName: r.FileName, linearError: r.LinearError, stage: r.RepairStageUsed });
+    }
+  }
+
+  return batches.map(b => {
+    const counts = countsMap[b.BatchId] || {};
+    const prec   = precisionMap[b.BatchId] || {};
     return {
-      batchId: b.BatchId,
-      timestamp: b.Timestamp,
+      batchId:    b.BatchId,
+      timestamp:  b.Timestamp,
       totalFiles: b.TotalFiles,
-      passRate: b.PassRate,
-      stats: await getBatchStats(b.BatchId),
+      passRate:   b.PassRate,
+      stats: {
+        batchId: b.BatchId,
+        counts: {
+          total:    parseInt(counts.total    || 0),
+          passed:   parseInt(counts.passed   || 0),
+          failed:   parseInt(counts.failed   || 0),
+          errors:   parseInt(counts.errors   || 0),
+          meanders: parseInt(counts.meanders || 0),
+          skipped:  parseInt(counts.skipped  || 0),
+        },
+        passRate: counts.total > 0 ? (counts.passed / counts.total) : 0,
+        precision: {
+          avg:       parseFloat(counts.avgPrecision || 0),
+          best:      parseFloat(counts.bestPrecision || 0),
+          excellent: parseInt(prec.excellent || 0),
+          good:      parseInt(prec.good      || 0),
+          fair:      parseInt(prec.fair      || 0),
+          poor:      parseInt(prec.poor      || 0),
+        },
+        closure:       { avgLinearErr: parseFloat(counts.avgLinearErr || 0), maxLinearErr: parseFloat(counts.maxLinearErr || 0) },
+        avgTrustScore: counts.avgTrustScore != null ? parseFloat(counts.avgTrustScore) : null,
+        stages:      stagesMap[b.BatchId] || [],
+        failedFiles: failedMap[b.BatchId] || [],
+      },
     };
-  }));
+  });
 }
 
 // ── Deed Logs ─────────────────────────────────────────────────────────────────
@@ -313,8 +401,11 @@ export async function purgeOldLogs(retentionDays) {
   const delBatches = await query('DELETE FROM BatchRuns WHERE Timestamp < ?', [cutoff]);
   deleted += delBatches.changes;
   if (!getIsPostgres()) {
-    const db = await import('./core.js').then(m => m.getDb());
-    db.exec('VACUUM');
+    // Defer VACUUM so it does not block the HTTP response
+    setImmediate(async () => {
+      const db = await import('./core.js').then(m => m.getDb());
+      try { db.exec('VACUUM'); } catch {}
+    });
   }
   return deleted;
 }
@@ -322,8 +413,10 @@ export async function purgeOldLogs(retentionDays) {
 export async function clearFailedCache() {
   const del = await query("DELETE FROM DeedLogs WHERE Status != 'PASS'");
   if (!getIsPostgres()) {
-    const db = await import('./core.js').then(m => m.getDb());
-    db.exec('VACUUM');
+    setImmediate(async () => {
+      const db = await import('./core.js').then(m => m.getDb());
+      try { db.exec('VACUUM'); } catch {}
+    });
   }
   return del.changes;
 }
@@ -335,8 +428,10 @@ export async function clearAllCache() {
   const delBatches = await query('DELETE FROM BatchRuns');
   deleted += delBatches.changes;
   if (!getIsPostgres()) {
-    const db = await import('./core.js').then(m => m.getDb());
-    db.exec('VACUUM');
+    setImmediate(async () => {
+      const db = await import('./core.js').then(m => m.getDb());
+      try { db.exec('VACUUM'); } catch {}
+    });
   }
   return deleted;
 }
@@ -437,131 +532,117 @@ export async function getDatabaseStats(userId = null) {
     try { fileSizeBytes = fs.statSync(dbPath).size; } catch {}
   }
 
-  let deedLogCount;
-  let currentStatusCounts;
-  let batchRunCount;
-  let range;
+  // Run independent queries in parallel to halve response time
+  const [
+    countResult,
+    runCountResult,
+    rangeResult,
+    heuristicResult,
+    classificationsResult,
+    repairStagesResult,
+    currentStatusResult,
+    errorsResult,
+  ] = await Promise.all([
+    userId
+      ? query('SELECT COUNT(*) as c FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?', [userId])
+      : query('SELECT COUNT(*) as c FROM DeedLogs'),
+    userId
+      ? query('SELECT COUNT(*) as c FROM BatchRuns WHERE UserId = ?', [userId])
+      : query('SELECT COUNT(*) as c FROM BatchRuns'),
+    userId
+      ? query('SELECT MIN(d.Timestamp) as oldest, MAX(d.Timestamp) as newest FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?', [userId])
+      : query('SELECT MIN(Timestamp) as oldest, MAX(Timestamp) as newest FROM DeedLogs'),
+    query('SELECT COUNT(*) as c FROM HeuristicTracking'),
+    getIsPostgres()
+      ? query(`
+          SELECT
+            CASE WHEN d.ExtractionJson IS NOT NULL THEN d.ExtractionJson->>'Classification'
+                 WHEN d.ParcelName LIKE '[%]%' THEN substring(d.ParcelName from 2 for position(']' in d.ParcelName) - 2)
+                 ELSE 'UNKNOWN' END as class,
+            COUNT(*) as count,
+            SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed,
+            SUM(CASE WHEN d.Status = 'FAIL' THEN 1 ELSE 0 END) as failed,
+            SUM(CASE WHEN d.Status = 'MEANDER' THEN 1 ELSE 0 END) as meanders,
+            SUM(CASE WHEN d.Status = 'ERROR' THEN 1 ELSE 0 END) as errors
+          FROM DeedLogs d
+          ${userId ? 'JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?' : ''}
+          GROUP BY class ORDER BY count DESC
+        `, userId ? [userId] : [])
+      : query(`
+          SELECT
+            CASE WHEN d.ExtractionJson IS NOT NULL AND json_valid(d.ExtractionJson) THEN json_extract(d.ExtractionJson, '$.Classification')
+                 WHEN d.ParcelName LIKE '[%]%' THEN substr(d.ParcelName, 2, instr(d.ParcelName, ']') - 2)
+                 ELSE 'UNKNOWN' END as class,
+            COUNT(*) as count,
+            SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed,
+            SUM(CASE WHEN d.Status = 'FAIL' THEN 1 ELSE 0 END) as failed,
+            SUM(CASE WHEN d.Status = 'MEANDER' THEN 1 ELSE 0 END) as meanders,
+            SUM(CASE WHEN d.Status = 'ERROR' THEN 1 ELSE 0 END) as errors
+          FROM DeedLogs d
+          ${userId ? 'JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?' : ''}
+          GROUP BY class ORDER BY count DESC
+        `, userId ? [userId] : []),
+    userId
+      ? query(`
+          SELECT d.RepairStageUsed as stage, COUNT(*) as count, SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed
+          FROM DeedLogs d
+          JOIN BatchRuns b ON d.BatchId = b.BatchId
+          WHERE b.UserId = ? AND d.RepairStageUsed IS NOT NULL AND d.RepairStageUsed != '' GROUP BY d.RepairStageUsed ORDER BY count DESC
+        `, [userId])
+      : query(`
+          SELECT RepairStageUsed as stage, COUNT(*) as count, SUM(CASE WHEN Status = 'PASS' THEN 1 ELSE 0 END) as passed
+          FROM DeedLogs WHERE RepairStageUsed IS NOT NULL AND RepairStageUsed != '' GROUP BY RepairStageUsed ORDER BY count DESC
+        `),
+    userId
+      ? query(`
+          SELECT Status, COUNT(*) as cnt FROM (
+            SELECT FileName, Status FROM DeedLogs d
+            JOIN BatchRuns b ON d.BatchId = b.BatchId
+            WHERE b.UserId = ? AND d.Timestamp = (SELECT MAX(Timestamp) FROM DeedLogs WHERE FileName = d.FileName)
+            GROUP BY FileName, Status
+          ) g GROUP BY Status
+        `, [userId])
+      : query(`
+          SELECT Status, COUNT(*) as cnt FROM (
+            SELECT FileName, Status FROM DeedLogs d
+            WHERE Timestamp = (SELECT MAX(Timestamp) FROM DeedLogs WHERE FileName = d.FileName)
+            GROUP BY FileName, Status
+          ) g GROUP BY Status
+        `),
+    userId
+      ? query(`
+          SELECT
+            SUM(CASE WHEN d.LinearError <= 1.0 THEN 1 ELSE 0 END) as nearClosed,
+            SUM(CASE WHEN d.LinearError > 1.0 AND d.LinearError <= 10.0 THEN 1 ELSE 0 END) as minorError,
+            SUM(CASE WHEN d.LinearError > 10.0 AND d.LinearError <= 100.0 THEN 1 ELSE 0 END) as moderateError,
+            SUM(CASE WHEN d.LinearError > 100.0 THEN 1 ELSE 0 END) as majorError
+          FROM DeedLogs d
+          JOIN BatchRuns b ON d.BatchId = b.BatchId
+          WHERE b.UserId = ? AND d.Status = 'FAIL'
+            AND NOT EXISTS (SELECT 1 FROM DeedLogs p WHERE p.FileName = d.FileName AND p.Status IN ('PASS','MEANDER') AND p.Timestamp >= d.Timestamp)
+        `, [userId])
+      : query(`
+          SELECT
+            SUM(CASE WHEN LinearError <= 1.0 THEN 1 ELSE 0 END) as nearClosed,
+            SUM(CASE WHEN LinearError > 1.0 AND LinearError <= 10.0 THEN 1 ELSE 0 END) as minorError,
+            SUM(CASE WHEN LinearError > 10.0 AND LinearError <= 100.0 THEN 1 ELSE 0 END) as moderateError,
+            SUM(CASE WHEN LinearError > 100.0 THEN 1 ELSE 0 END) as majorError
+          FROM DeedLogs d WHERE Status = 'FAIL'
+            AND NOT EXISTS (SELECT 1 FROM DeedLogs p WHERE p.FileName = d.FileName AND p.Status IN ('PASS','MEANDER') AND p.Timestamp >= d.Timestamp)
+        `),
+  ]);
 
-  if (userId) {
-    const countRes = await query('SELECT COUNT(*) as c FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?', [userId]);
-    deedLogCount = parseInt(countRes.rows[0].c || 0);
+  const deedLogCount  = parseInt(countResult.rows[0].c || 0);
+  const batchRunCount = parseInt(runCountResult.rows[0].c || 0);
+  const range         = rangeResult.rows[0];
+  const heuristicCount = parseInt(heuristicResult.rows[0].c || 0);
 
-    const countsRes = await query(`
-      SELECT Status, COUNT(*) as cnt FROM (
-        SELECT FileName, Status FROM DeedLogs d
-        JOIN BatchRuns b ON d.BatchId = b.BatchId
-        WHERE b.UserId = ? AND d.Timestamp = (SELECT MAX(Timestamp) FROM DeedLogs WHERE FileName = d.FileName)
-        GROUP BY FileName, Status
-      ) g GROUP BY Status
-    `, [userId]);
-    currentStatusCounts = countsRes.rows;
-
-    const runCountRes = await query('SELECT COUNT(*) as c FROM BatchRuns WHERE UserId = ?', [userId]);
-    batchRunCount = parseInt(runCountRes.rows[0].c || 0);
-
-    const rangeRes = await query('SELECT MIN(d.Timestamp) as oldest, MAX(d.Timestamp) as newest FROM DeedLogs d JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?', [userId]);
-    range = rangeRes.rows[0];
-  } else {
-    const countRes = await query('SELECT COUNT(*) as c FROM DeedLogs');
-    deedLogCount = parseInt(countRes.rows[0].c || 0);
-
-    const countsRes = await query(`
-      SELECT Status, COUNT(*) as cnt FROM (
-        SELECT FileName, Status FROM DeedLogs d
-        WHERE Timestamp = (SELECT MAX(Timestamp) FROM DeedLogs WHERE FileName = d.FileName)
-        GROUP BY FileName, Status
-      ) g GROUP BY Status
-    `);
-    currentStatusCounts = countsRes.rows;
-
-    const runCountRes = await query('SELECT COUNT(*) as c FROM BatchRuns');
-    batchRunCount = parseInt(runCountRes.rows[0].c || 0);
-
-    const rangeRes = await query('SELECT MIN(Timestamp) as oldest, MAX(Timestamp) as newest FROM DeedLogs');
-    range = rangeRes.rows[0];
-  }
-
+  const currentStatusCounts = currentStatusResult.rows;
   const _sm = Object.fromEntries(currentStatusCounts.map(r => [r.Status, parseInt(r.cnt || 0)]));
 
-  const heuristicCountRes = await query('SELECT COUNT(*) as c FROM HeuristicTracking');
-  const heuristicCount = parseInt(heuristicCountRes.rows[0].c || 0);
-
-  let classifications;
-  if (getIsPostgres()) {
-    classifications = await query(`
-      SELECT
-        CASE WHEN d.ExtractionJson IS NOT NULL THEN d.ExtractionJson->>'Classification'
-             WHEN d.ParcelName LIKE '[%]%' THEN substring(d.ParcelName from 2 for position(']' in d.ParcelName) - 2)
-             ELSE 'UNKNOWN' END as class,
-        COUNT(*) as count,
-        SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed,
-        SUM(CASE WHEN d.Status = 'FAIL' THEN 1 ELSE 0 END) as failed,
-        SUM(CASE WHEN d.Status = 'MEANDER' THEN 1 ELSE 0 END) as meanders,
-        SUM(CASE WHEN d.Status = 'ERROR' THEN 1 ELSE 0 END) as errors
-      FROM DeedLogs d
-      ${userId ? 'JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?' : ''}
-      GROUP BY class ORDER BY count DESC
-    `, userId ? [userId] : []);
-  } else {
-    classifications = await query(`
-      SELECT
-        CASE WHEN d.ExtractionJson IS NOT NULL AND json_valid(d.ExtractionJson) THEN json_extract(d.ExtractionJson, '$.Classification')
-             WHEN d.ParcelName LIKE '[%]%' THEN substr(d.ParcelName, 2, instr(d.ParcelName, ']') - 2)
-             ELSE 'UNKNOWN' END as class,
-        COUNT(*) as count,
-        SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed,
-        SUM(CASE WHEN d.Status = 'FAIL' THEN 1 ELSE 0 END) as failed,
-        SUM(CASE WHEN d.Status = 'MEANDER' THEN 1 ELSE 0 END) as meanders,
-        SUM(CASE WHEN d.Status = 'ERROR' THEN 1 ELSE 0 END) as errors
-      FROM DeedLogs d
-      ${userId ? 'JOIN BatchRuns b ON d.BatchId = b.BatchId WHERE b.UserId = ?' : ''}
-      GROUP BY class ORDER BY count DESC
-    `, userId ? [userId] : []);
-  }
-  const classificationList = classifications.rows.map(c => ({ class: c.class || 'UNKNOWN', count: parseInt(c.count || 0), passed: parseInt(c.passed || 0), failed: parseInt(c.failed || 0), meanders: parseInt(c.meanders || 0), errors: parseInt(c.errors || 0) }));
-
-  let repairStages;
-  if (userId) {
-    repairStages = await query(`
-      SELECT d.RepairStageUsed as stage, COUNT(*) as count, SUM(CASE WHEN d.Status = 'PASS' THEN 1 ELSE 0 END) as passed
-      FROM DeedLogs d
-      JOIN BatchRuns b ON d.BatchId = b.BatchId
-      WHERE b.UserId = ? AND d.RepairStageUsed IS NOT NULL AND d.RepairStageUsed != '' GROUP BY d.RepairStageUsed ORDER BY count DESC
-    `, [userId]);
-  } else {
-    repairStages = await query(`
-      SELECT RepairStageUsed as stage, COUNT(*) as count, SUM(CASE WHEN Status = 'PASS' THEN 1 ELSE 0 END) as passed
-      FROM DeedLogs WHERE RepairStageUsed IS NOT NULL AND RepairStageUsed != '' GROUP BY RepairStageUsed ORDER BY count DESC
-    `);
-  }
-  const repairStageList = repairStages.rows.map(s => ({ stage: s.stage || 'Unknown', count: parseInt(s.count || 0), passed: parseInt(s.passed || 0) }));
-
-  let errors;
-  if (userId) {
-    const errorsRes = await query(`
-      SELECT
-        SUM(CASE WHEN d.LinearError <= 1.0 THEN 1 ELSE 0 END) as nearClosed,
-        SUM(CASE WHEN d.LinearError > 1.0 AND d.LinearError <= 10.0 THEN 1 ELSE 0 END) as minorError,
-        SUM(CASE WHEN d.LinearError > 10.0 AND d.LinearError <= 100.0 THEN 1 ELSE 0 END) as moderateError,
-        SUM(CASE WHEN d.LinearError > 100.0 THEN 1 ELSE 0 END) as majorError
-      FROM DeedLogs d
-      JOIN BatchRuns b ON d.BatchId = b.BatchId
-      WHERE b.UserId = ? AND d.Status = 'FAIL'
-        AND NOT EXISTS (SELECT 1 FROM DeedLogs p WHERE p.FileName = d.FileName AND p.Status IN ('PASS','MEANDER') AND p.Timestamp >= d.Timestamp)
-    `, [userId]);
-    errors = errorsRes.rows[0];
-  } else {
-    const errorsRes = await query(`
-      SELECT
-        SUM(CASE WHEN LinearError <= 1.0 THEN 1 ELSE 0 END) as nearClosed,
-        SUM(CASE WHEN LinearError > 1.0 AND LinearError <= 10.0 THEN 1 ELSE 0 END) as minorError,
-        SUM(CASE WHEN LinearError > 10.0 AND LinearError <= 100.0 THEN 1 ELSE 0 END) as moderateError,
-        SUM(CASE WHEN LinearError > 100.0 THEN 1 ELSE 0 END) as majorError
-      FROM DeedLogs d WHERE Status = 'FAIL'
-        AND NOT EXISTS (SELECT 1 FROM DeedLogs p WHERE p.FileName = d.FileName AND p.Status IN ('PASS','MEANDER') AND p.Timestamp >= d.Timestamp)
-    `);
-    errors = errorsRes.rows[0];
-  }
+  const classificationList = classificationsResult.rows.map(c => ({ class: c.class || 'UNKNOWN', count: parseInt(c.count || 0), passed: parseInt(c.passed || 0), failed: parseInt(c.failed || 0), meanders: parseInt(c.meanders || 0), errors: parseInt(c.errors || 0) }));
+  const repairStageList    = repairStagesResult.rows.map(s => ({ stage: s.stage || 'Unknown', count: parseInt(s.count || 0), passed: parseInt(s.passed || 0) }));
+  const errors             = errorsResult.rows[0];
 
   return {
     dbPath: getIsPostgres() ? 'postgresql://' : dbPath,

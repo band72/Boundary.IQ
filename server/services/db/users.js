@@ -13,22 +13,32 @@ import { upsertSubscription } from './subscriptions.js';
 const PBKDF2_ITERATIONS = 310_000;
 const PBKDF2_LEGACY_ITERATIONS = 1_000;
 
-export function hashPassword(password) {
+/** Async PBKDF2 helper — does not block the event loop. */
+function pbkdf2Async(password, salt, iterations) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, salt, iterations, 64, 'sha512', (err, key) => {
+      if (err) reject(err);
+      else resolve(key.toString('hex'));
+    });
+  });
+}
+
+export async function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 64, 'sha512').toString('hex');
+  const hash = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS);
   return `${salt}:${hash}`;
 }
 
-export function verifyPassword(password, storedHash) {
+export async function verifyPassword(password, storedHash) {
   if (!storedHash || !storedHash.includes(':')) return { valid: false, needsRehash: false };
   const [salt, originalHash] = storedHash.split(':');
-  const tryVerify = (iterations) =>
-    crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex') === originalHash;
 
-  if (tryVerify(PBKDF2_ITERATIONS)) return { valid: true, needsRehash: false };
-  if (tryVerify(PBKDF2_LEGACY_ITERATIONS)) {
+  if (await pbkdf2Async(password, salt, PBKDF2_ITERATIONS) === originalHash) {
+    return { valid: true, needsRehash: false };
+  }
+  if (await pbkdf2Async(password, salt, PBKDF2_LEGACY_ITERATIONS) === originalHash) {
     console.warn('[Auth] Upgrading legacy 1k-iteration password hash to current strength.');
-    return { valid: true, needsRehash: true, newHash: hashPassword(password) };
+    return { valid: true, needsRehash: true, newHash: await hashPassword(password) };
   }
   return { valid: false, needsRehash: false };
 }
@@ -53,7 +63,39 @@ export async function createUser(username, password, role = null, plan = 'free')
     }
   }
 
-  const passwordHash = hashPassword(password);
+  const passwordHash = await hashPassword(password);
+  const result = await query(
+    'INSERT INTO Users (Username, PasswordHash, Role, Plan, Timestamp) VALUES (?, ?, ?, ?, ?) RETURNING Id',
+    [username, passwordHash, effectiveRole, plan, now()]
+  );
+
+  const insertedId = result.rows[0]?.Id || result.rows[0]?.id;
+  return { id: insertedId, username, role: effectiveRole, plan };
+}
+
+/**
+ * Create a user with a password that has already been hashed by hashPassword().
+ * Used by the email verification flow where the hash was stored before DB insertion.
+ * Skips the hashing step so the pre-computed hash is stored as-is.
+ */
+export async function createUserWithPrehashedPassword(username, passwordHash, role = null, plan = 'free') {
+  const existingRes = await query('SELECT Id FROM Users WHERE LOWER(Username) = LOWER(?)', [username]);
+  if (existingRes.rows[0]) throw new Error('Username already exists');
+
+  const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+  const countRes = await query('SELECT COUNT(*) as c FROM Users');
+  const totalUsers = parseInt(countRes.rows[0].c || 0);
+  let effectiveRole = role;
+  if (!effectiveRole) {
+    if (totalUsers === 0) {
+      effectiveRole = 'admin';
+    } else if (adminEmail && username.toLowerCase() === adminEmail) {
+      effectiveRole = 'admin';
+    } else {
+      effectiveRole = 'user';
+    }
+  }
+
   const result = await query(
     'INSERT INTO Users (Username, PasswordHash, Role, Plan, Timestamp) VALUES (?, ?, ?, ?, ?) RETURNING Id',
     [username, passwordHash, effectiveRole, plan, now()]
@@ -67,7 +109,7 @@ export async function verifyUser(username, password) {
   const res = await query('SELECT * FROM Users WHERE LOWER(Username) = LOWER(?)', [username]);
   const row = res.rows[0];
   if (!row) return null;
-  const { valid, needsRehash, newHash } = verifyPassword(password, row.PasswordHash);
+  const { valid, needsRehash, newHash } = await verifyPassword(password, row.PasswordHash);
   if (!valid) return null;
   if (needsRehash && newHash) {
     await query('UPDATE Users SET PasswordHash = ? WHERE Id = ?', [newHash, row.Id]);
@@ -158,13 +200,13 @@ export async function updateProfile(userId, { displayName } = {}) {
 }
 
 export async function updatePassword(userId, newPassword) {
-  const hash = hashPassword(newPassword);
+  const hash = await hashPassword(newPassword);
   await query('UPDATE Users SET PasswordHash = ?, ForceResetPw = 0 WHERE Id = ?', [hash, userId]);
 }
 
 export async function forceResetPassword(userId) {
   const tempPw = crypto.randomBytes(6).toString('hex'); // 12-char hex
-  const hash = hashPassword(tempPw);
+  const hash = await hashPassword(tempPw);
   await query('UPDATE Users SET PasswordHash = ?, ForceResetPw = 1 WHERE Id = ?', [hash, userId]);
   await query('DELETE FROM Sessions WHERE UserId = ?', [userId]);
   return tempPw;
@@ -174,7 +216,7 @@ export async function verifyPasswordOnly(userId, password) {
   const res = await query('SELECT PasswordHash FROM Users WHERE Id = ?', [userId]);
   const row = res.rows[0];
   if (!row) return false;
-  return verifyPassword(password, row.PasswordHash).valid;
+  return (await verifyPassword(password, row.PasswordHash)).valid;
 }
 
 export async function checkForceReset(userId) {

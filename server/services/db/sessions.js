@@ -51,8 +51,9 @@ export async function getSession(token) {
   return { userId: row.UserId, username: row.Username, role: row.Role, plan: row.Plan || 'free' };
 }
 
+/** Remove a specific session token. Alias kept for backward compatibility. */
 export async function deleteSession(token) {
-  await query('DELETE FROM Sessions WHERE Token = ?', [token]);
+  return revokeSession(token);
 }
 
 export async function purgeExpiredSessions() {

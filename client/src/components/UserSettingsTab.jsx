@@ -408,6 +408,98 @@ const SectionDivider = ({ label }) => (
   </div>
 );
 
+function PlanCreditsCard() {
+  const [credits, setCredits] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCredits = async () => {
+    setLoading(true);
+    try {
+      const res = await authFetch('/auth/me/credits');
+      setCredits(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCredits();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="card" style={{ padding: '1.5rem', color: 'var(--text-muted)' }}>
+        Loading plan limits & credits...
+      </div>
+    );
+  }
+
+  if (!credits) return null;
+
+  const used = credits.used;
+  const limit = credits.limit;
+  const fileSizeLimit = credits.fileSizeLimit;
+
+  const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const isUnlimited = limit === null || limit === 0 || limit < 0;
+
+  return (
+    <div className="card" style={{
+      background: 'linear-gradient(135deg, rgba(20,30,58,0.4) 0%, rgba(9,14,26,0.6) 100%)',
+      border: '1px solid rgba(61,127,255,0.25)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+      backdropFilter: 'blur(12px)',
+      borderRadius: 'var(--radius-lg)'
+    }}>
+      <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          💳 Active Plan Credits & Limits
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={fetchCredits} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
+      </div>
+      <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Daily Deed Solves</span>
+              <span style={{ fontSize: '0.85rem', color: '#fff', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
+                {isUnlimited ? 'Unlimited' : `${used} / ${limit} used`}
+              </span>
+            </div>
+            {!isUnlimited && (
+              <div style={{ height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${percent}%`,
+                  height: '100%',
+                  background: percent > 85 ? 'var(--danger)' : percent > 50 ? '#ffb703' : 'var(--success)',
+                  transition: 'width 0.4s ease'
+                }} />
+              </div>
+            )}
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {isUnlimited ? 'You have unlimited solves under this role/plan.' : `${limit - used} credits remaining today. Resets daily.`}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', background: 'rgba(61,127,255,0.05)', border: '1px solid rgba(61,127,255,0.15)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ fontSize: '1.8rem' }}>📁</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', fontWeight: 750 }}>Max File Size Limit</span>
+              <span style={{ fontSize: '1.15rem', color: 'var(--accent)', fontWeight: 800, fontFamily: 'JetBrains Mono, monospace' }}>
+                {fileSizeLimit}
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UserSettingsTab({
   user,
   hideTraverse: propHideTraverse, setHideTraverse: propSetHideTraverse,
@@ -626,6 +718,9 @@ export default function UserSettingsTab({
         currentPlan={user?.plan || 'free'}
         onPlanChanged={() => setTimeout(() => window.location.reload(), 1200)}
       />
+
+      {/* ── Plan Credits & Limits ───────────────────────────────────── */}
+      <PlanCreditsCard />
 
       {/* ── AI Usage & Statistics ──────────────────────────────────── */}
       <div className="card" style={{ 

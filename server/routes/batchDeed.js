@@ -459,4 +459,25 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
   }
 });
 
+// ── Multer / form-data error handler ────────────────────────────────────────
+// Catches 'Unexpected end of form', MulterError (LIMIT_FILE_SIZE, LIMIT_FILE_COUNT),
+// and other multipart parsing errors so they return structured JSON instead of
+// Express's default HTML error page.
+router.use((err, req, res, next) => {
+  if (err?.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'File exceeds the server-side 51 MB hard limit.', code: 'FILE_TOO_LARGE' });
+  }
+  if (err?.code === 'LIMIT_FILE_COUNT') {
+    return res.status(400).json({ error: 'Maximum 20 files per batch.', code: 'TOO_MANY_FILES' });
+  }
+  if (err?.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({ error: 'Unexpected file field.', code: 'UNEXPECTED_FIELD' });
+  }
+  if (err?.message?.includes('Unexpected end of form') || err?.message?.includes('multipart')) {
+    return res.status(400).json({ error: 'No images provided or malformed multipart request.', code: 'INVALID_FORM' });
+  }
+  // Pass other errors to Express default handler
+  next(err);
+});
+
 export default router;

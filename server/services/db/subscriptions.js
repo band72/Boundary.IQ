@@ -52,7 +52,6 @@ export async function getAllSubscriptions() {
     SELECT
       u.Id          AS userId,
       u.Username    AS username,
-      u.Username    AS email,
       u.Role        AS role,
       u.Timestamp   AS userCreatedAt,
       COALESCE(s.Plan,   u.Plan)   AS plan,
@@ -75,7 +74,11 @@ export async function getAllSubscriptions() {
 }
 
 export async function getRevenueStats() {
-  const PLAN_PRICE = { free: 0, basic: 5, pro: 19.99, enterprise: 99 };
+  // Read plan prices from the admin-editable PlanSettings table rather than
+  // a hardcoded JS object, so any price changes are reflected immediately.
+  const priceRes = await query('SELECT Plan, Price FROM PlanSettings');
+  const PLAN_PRICE = Object.fromEntries(priceRes.rows.map(r => [r.Plan || r.plan, r.Price ?? r.price ?? 0]));
+
   const res = await query(`
     SELECT COALESCE(s.Plan, u.Plan, 'free') AS plan, COUNT(*) AS cnt
     FROM Users u
@@ -89,7 +92,7 @@ export async function getRevenueStats() {
   rows.forEach(r => {
     const plan = r.plan || 'free';
     const cnt = parseInt(r.cnt || 0);
-    const price = PLAN_PRICE[plan] || 0;
+    const price = PLAN_PRICE[plan] ?? 0;
     mrr += price * cnt;
     breakdown[plan] = (breakdown[plan] || 0) + cnt;
   });
