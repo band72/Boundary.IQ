@@ -21,6 +21,13 @@ const log = createChildLogger('batchDeed');
 const router = Router();
 router.use(requireAuth);
 
+const PLAN_MAX_FILE_SIZE = {
+  free: 0.5 * 1024 * 1024,
+  basic: 1.0 * 1024 * 1024,
+  pro: 10.0 * 1024 * 1024,
+  enterprise: 20.0 * 1024 * 1024
+};
+
 const uploadsDir = process.cwd().endsWith('server')
   ? path.join(process.cwd(), 'uploads')
   : path.join(process.cwd(), 'server', 'uploads');
@@ -107,6 +114,26 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     if (files.length > 20) {
       if (hasLock) lockService.release('batchdeed-process');
       return res.status(400).json({ error: 'Maximum 20 images per batch.' });
+    }
+
+    // Check file size limits based on billing plan
+    const userPlan = req.user.plan || 'free';
+    const maxSizeBytes = PLAN_MAX_FILE_SIZE[userPlan] || PLAN_MAX_FILE_SIZE.free;
+    for (const f of files) {
+      if (f.size > maxSizeBytes) {
+        if (hasLock) lockService.release('batchdeed-process');
+        // Clean up uploaded files
+        for (const fileToClean of files) {
+          if (fileToClean.path && fs.existsSync(fileToClean.path)) {
+            fs.unlinkSync(fileToClean.path);
+          }
+        }
+        const planLimitStr = userPlan === 'free' ? '0.5 MB' : userPlan === 'basic' ? '1.0 MB' : userPlan === 'pro' ? '10 MB' : '20 MB';
+        return res.status(400).json({
+          error: `File size limit exceeded. Your plan (${userPlan}) allows files up to ${planLimitStr}.`,
+          code: 'FILE_SIZE_LIMIT_EXCEEDED'
+        });
+      }
     }
 
     // Check daily credit limits based on number of uploaded files

@@ -6,6 +6,7 @@ import { switchDbPath, getDb } from '../services/db/core.js';
 import { createUser, updateUserRole, checkDailyLimit } from '../services/db/users.js';
 import authRouter from '../routes/auth.js';
 import billingRouter from '../routes/billing.js';
+import batchDeedRouter from '../routes/batchDeed.js';
 
 describe('Admin Plan Settings Integration Test Suite', () => {
   const TEST_DB_PATH = path.resolve('tests/plan_settings_test.db');
@@ -29,6 +30,7 @@ describe('Admin Plan Settings Integration Test Suite', () => {
     app.use(express.json());
     app.use('/api/auth', authRouter);
     app.use('/api/billing', billingRouter);
+    app.use('/api/batchdeed', batchDeedRouter);
 
     server = app.listen(0);
     const port = server.address().port;
@@ -173,5 +175,26 @@ describe('Admin Plan Settings Integration Test Suite', () => {
     // Check with 10 requested credits: used 3 + requested 10 = 13 > 12 (Blocked)
     const check3 = await checkDailyLimit(regularUserId, 'free', 'user', 10);
     expect(check3.allowed).toBe(false);
+  });
+
+  it('should restrict batch deed file upload sizes based on user plan', async () => {
+    // Create a mock large file: 0.6 MB (600,000 bytes)
+    const formData = new FormData();
+    const largeBlob = new Blob([new Uint8Array(600000)], { type: 'image/png' });
+    formData.append('images', largeBlob, 'large_deed.png');
+
+    // Free user has a 0.5 MB limit, so this should fail!
+    const res = await fetch(`${baseUrl}/batchdeed/process`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${userToken}`
+      },
+      body: formData
+    });
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.code).toBe('FILE_SIZE_LIMIT_EXCEEDED');
+    expect(data.error).toContain('allows files up to 0.5 MB');
   });
 });
