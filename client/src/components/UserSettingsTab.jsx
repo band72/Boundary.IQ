@@ -408,6 +408,42 @@ const SectionDivider = ({ label }) => (
   </div>
 );
 
+function LockedCardWrapper({ children, label, isAdmin }) {
+  if (isAdmin) return children;
+
+  return (
+    <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 'var(--radius-lg)' }}>
+      {/* Visual lock overlay */}
+      <div style={{
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(9, 14, 26, 0.75)',
+        backdropFilter: 'blur(3px)',
+        zIndex: 10,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.6rem',
+        padding: '1.5rem',
+        textAlign: 'center',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: 'var(--radius-lg)'
+      }}>
+        <div style={{ fontSize: '1.8rem', textShadow: '0 0 10px rgba(255,255,255,0.2)' }}>🔒</div>
+        <div style={{ fontWeight: 800, color: '#fff', fontSize: '0.9rem', letterSpacing: '-0.01em' }}>{label || 'Settings Locked'}</div>
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', maxWidth: '280px', lineHeight: '1.4' }}>
+          This setting is locked and managed exclusively by your system administrator.
+        </div>
+      </div>
+      {/* Disabled contents */}
+      <div style={{ opacity: 0.3, pointerEvents: 'none', filter: 'grayscale(20%)' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function PlanCreditsCard() {
   const [credits, setCredits] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -444,6 +480,7 @@ function PlanCreditsCard() {
 
   const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const isUnlimited = limit === null || limit === 0 || limit < 0;
+  const remaining = isUnlimited ? 'Unlimited' : (limit - used);
 
   return (
     <div className="card" style={{
@@ -479,8 +516,9 @@ function PlanCreditsCard() {
                 }} />
               </div>
             )}
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {isUnlimited ? 'You have unlimited solves under this role/plan.' : `${limit - used} credits remaining today. Resets daily.`}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              <span>Remaining Credits: <strong style={{ color: isUnlimited ? '#00d4a8' : '#fff' }}>{remaining}</strong></span>
+              <span>Resets daily</span>
             </div>
           </div>
 
@@ -495,6 +533,52 @@ function PlanCreditsCard() {
           </div>
 
         </div>
+
+        {/* Credit Rules and Subscription Level Limits Information */}
+        <div style={{
+          marginTop: '0.5rem',
+          padding: '0.85rem 1rem',
+          borderRadius: 'var(--radius-md)',
+          background: 'rgba(255, 255, 255, 0.02)',
+          border: '1px solid var(--border)',
+          fontSize: '0.75rem',
+          color: 'var(--text-secondary)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem'
+        }}>
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', color: '#ffb703', fontWeight: 600 }}>
+            <span>💡</span>
+            <span>Batch Deed Cost Policy</span>
+          </div>
+          <div style={{ lineHeight: '1.4' }}>
+            Each file processed within a Batch Deed run consumes exactly <strong>1 credit</strong>.
+          </div>
+          <div style={{ height: '1px', background: 'var(--border)', margin: '0.25rem 0' }} />
+          <div style={{ fontWeight: 600, color: '#fff', marginBottom: '0.15rem' }}>File Size Limits by Subscription Tier:</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', textAlign: 'center' }}>
+            {[
+              { tier: 'Free', limit: '0.5 MB' },
+              { tier: 'Basic', limit: '1.0 MB' },
+              { tier: 'Pro', limit: '10 MB' },
+              { tier: 'Enterprise', limit: '20 MB' }
+            ].map(t => {
+              const activePlan = (credits.plan || 'free').toLowerCase();
+              const isCurrent = t.tier.toLowerCase() === activePlan;
+              return (
+                <div key={t.tier} style={{
+                  background: isCurrent ? 'rgba(61,127,255,0.15)' : 'rgba(0,0,0,0.15)',
+                  border: isCurrent ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: '4px',
+                  padding: '0.35rem 0.25rem'
+                }}>
+                  <div style={{ fontWeight: 700, color: isCurrent ? 'var(--accent)' : '#fff', fontSize: '0.7rem' }}>{t.tier}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>{t.limit}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -506,7 +590,8 @@ export default function UserSettingsTab({
   hidePlat: propHidePlat,         setHidePlat: propSetHidePlat,
   hideWriter: propHideWriter,     setHideWriter: propSetHideWriter,
 }) {
-    // Local fallbacks
+  const isAdmin = user?.role === 'admin';
+  // Local fallbacks
   const [localHideTraverse, localSetHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
   const [localHidePlat,     localSetHidePlat]     = useLocalStorage('boundaryiq_hide_plat', false);
   const [localHideWriter,   localSetHideWriter]   = useLocalStorage('boundaryiq_hide_writer', false);
@@ -795,272 +880,282 @@ export default function UserSettingsTab({
       </div>
 
       {/* ── AI Model Provider ─────────────────────────────────────── */}
-      <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid rgba(66,133,244,0.3)', boxShadow: '0 4px 24px rgba(66,133,244,0.1)' }}>
-        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              🧠 AI Model Provider
-            </div>
-            <button className="btn btn-ghost btn-sm" onClick={fetchModelConfig} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
-          </div>
-        </div>
-
-        {(modelLoading || startingOllama) && <div className="progress-bar-container"><div className="progress-bar-fill" /></div>}
-
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-          {/* Active Model Badge */}
-          {modelConfig && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <div style={{
-                background: providerMeta[modelConfig.activeProvider]?.gradient || 'var(--bg-elevated)',
-                padding: '0.5rem 1.2rem', borderRadius: '99px',
-                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                boxShadow: `0 0 20px ${providerMeta[modelConfig.activeProvider]?.color || '#fff'}33`,
-              }}>
-                <span style={{ fontSize: '1rem' }}>{providerMeta[modelConfig.activeProvider]?.icon}</span>
-                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.85rem' }}>{modelConfig.activeModel}</span>
+      <LockedCardWrapper label="AI Driver Configuration Locked" isAdmin={isAdmin}>
+        <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid rgba(66,133,244,0.3)', boxShadow: '0 4px 24px rgba(66,133,244,0.1)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                🧠 AI Model Provider
               </div>
-              <span style={{ fontSize: '0.72rem', color: providerMeta[modelConfig.activeProvider]?.color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                {providerMeta[modelConfig.activeProvider]?.label} · Active
-              </span>
+              <button className="btn btn-ghost btn-sm" onClick={fetchModelConfig} style={{ fontSize: '0.72rem' }}>↻ Refresh</button>
             </div>
-          )}
+          </div>
 
-          {/* Ollama status */}
-          {modelConfig && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem',
-              padding: '0.6rem 1rem',
-              background: modelConfig.ollama.online ? 'rgba(0,212,168,0.06)' : 'rgba(220,50,50,0.06)',
-              border: `1px solid ${modelConfig.ollama.online ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
-              borderRadius: 'var(--radius-md)', fontSize: '0.78rem', flexWrap: 'wrap',
-            }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: modelConfig.ollama.online ? '#00d4a8' : '#dc3232', boxShadow: modelConfig.ollama.online ? '0 0 8px #00d4a8' : '0 0 8px #dc3232', animation: modelConfig.ollama.online ? 'pulse 2s infinite' : 'none' }} />
-              <span style={{ color: modelConfig.ollama.online ? 'var(--success)' : '#dc3232', fontWeight: 600 }}>
-                Ollama {modelConfig.ollama.online ? 'Online' : 'Offline'}
-              </span>
-              {modelConfig.ollama.online && <span style={{ color: 'var(--text-muted)' }}>· {modelConfig.ollama.modelCount} model(s) · {modelConfig.ollama.url}</span>}
-              {!modelConfig.ollama.online && (
-                <button onClick={startOllama} disabled={startingOllama} style={{
-                  marginLeft: 'auto', padding: '0.3rem 0.85rem',
-                  background: startingOllama ? 'rgba(0,212,168,0.08)' : 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)',
-                  border: '1px solid rgba(0,212,168,0.5)', borderRadius: '99px', color: '#fff',
-                  fontWeight: 700, fontSize: '0.72rem', cursor: startingOllama ? 'wait' : 'pointer',
-                  boxShadow: startingOllama ? 'none' : '0 0 12px rgba(0,212,168,0.3)',
+          {(modelLoading || startingOllama) && <div className="progress-bar-container"><div className="progress-bar-fill" /></div>}
+
+          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+            {/* Active Model Badge */}
+            {modelConfig && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{
+                  background: providerMeta[modelConfig.activeProvider]?.gradient || 'var(--bg-elevated)',
+                  padding: '0.5rem 1.2rem', borderRadius: '99px',
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  boxShadow: `0 0 20px ${providerMeta[modelConfig.activeProvider]?.color || '#fff'}33`,
                 }}>
-                  {startingOllama ? '⏳ Starting…' : '▶ Start Ollama'}
+                  <span style={{ fontSize: '1rem' }}>{providerMeta[modelConfig.activeProvider]?.icon}</span>
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.85rem' }}>{modelConfig.activeModel}</span>
+                </div>
+                <span style={{ fontSize: '0.72rem', color: providerMeta[modelConfig.activeProvider]?.color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {providerMeta[modelConfig.activeProvider]?.label} · Active
+                </span>
+              </div>
+            )}
+
+            {/* Ollama status */}
+            {modelConfig && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                padding: '0.6rem 1rem',
+                background: modelConfig.ollama.online ? 'rgba(0,212,168,0.06)' : 'rgba(220,50,50,0.06)',
+                border: `1px solid ${modelConfig.ollama.online ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`,
+                borderRadius: 'var(--radius-md)', fontSize: '0.78rem', flexWrap: 'wrap',
+              }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: modelConfig.ollama.online ? '#00d4a8' : '#dc3232', boxShadow: modelConfig.ollama.online ? '0 0 8px #00d4a8' : '0 0 8px #dc3232', animation: modelConfig.ollama.online ? 'pulse 2s infinite' : 'none' }} />
+                <span style={{ color: modelConfig.ollama.online ? 'var(--success)' : '#dc3232', fontWeight: 600 }}>
+                  Ollama {modelConfig.ollama.online ? 'Online' : 'Offline'}
+                </span>
+                {modelConfig.ollama.online && <span style={{ color: 'var(--text-muted)' }}>· {modelConfig.ollama.modelCount} model(s) · {modelConfig.ollama.url}</span>}
+                {!modelConfig.ollama.online && (
+                  <button onClick={startOllama} disabled={startingOllama} style={{
+                    marginLeft: 'auto', padding: '0.3rem 0.85rem',
+                    background: startingOllama ? 'rgba(0,212,168,0.08)' : 'linear-gradient(135deg, #00d4a8 0%, #00b4d8 100%)',
+                    border: '1px solid rgba(0,212,168,0.5)', borderRadius: '99px', color: '#fff',
+                    fontWeight: 700, fontSize: '0.72rem', cursor: startingOllama ? 'wait' : 'pointer',
+                    boxShadow: startingOllama ? 'none' : '0 0 12px rgba(0,212,168,0.3)',
+                  }}>
+                    {startingOllama ? '⏳ Starting…' : '▶ Start Ollama'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* API Keys */}
+            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                🔑 API Keys &amp; Credentials
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Google Gemini API Key</label>
+                  <input type="password" placeholder="AIza…" value={geminiKey}
+                    onChange={e => { setGeminiKey(e.target.value); setKeysMsg(''); }}
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>OpenAI / Compatible API Key (optional)</label>
+                  <input type="password" placeholder="sk-…" value={openaiKey}
+                    onChange={e => { setOpenaiKey(e.target.value); setKeysMsg(''); }}
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>🔒 Saved securely in your browser and auto-loaded to server on startup.</span>
+                <button onClick={() => saveKeysToBackend(geminiKey, openaiKey)} disabled={saveKeysLoading} className="btn btn-primary" style={{ padding: '0.55rem 1.25rem', fontSize: '0.78rem', borderRadius: 'var(--radius-sm)' }}>
+                  {saveKeysLoading ? '⏳ Saving…' : '💾 Save API Keys'}
                 </button>
+              </div>
+              {keysMsg && (
+                <div style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)', background: keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`, color: keysMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.75rem', fontWeight: 500 }}>
+                  {keysMsg}
+                </div>
               )}
             </div>
-          )}
 
-          {/* API Keys */}
-          <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-              🔑 API Keys &amp; Credentials
-            </div>
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
-                <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Google Gemini API Key</label>
-                <input type="password" placeholder="AIza…" value={geminiKey}
-                  onChange={e => { setGeminiKey(e.target.value); setKeysMsg(''); }}
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
+            {/* Vendor / Model Selector */}
+            {modelConfig && (
+              <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                  🤖 Vendor &amp; Model Selector
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '180px' }}>
+                    <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Vendor</label>
+                    <select value={selectedVendor} onChange={e => { const v = e.target.value; setSelectedVendor(v); setSelectedModel(modelConfig?.availableModels.find(m => m.provider === v)?.id || ''); }}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', cursor: 'pointer', height: '38px' }}>
+                      <option value="gemini">☁️ Google Gemini (Cloud)</option>
+                      <option value="ollama">🖥️ Ollama (Local)</option>
+                      <option value="openai">🔌 OpenAI-Compatible</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1.5, minWidth: '200px' }}>
+                    <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Model</label>
+                    <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer', height: '38px' }}>
+                      {modelConfig?.availableModels.filter(m => m.provider === selectedVendor).map(m => (
+                        <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
+                      ))}
+                      {selectedVendor === 'openai' && modelConfig?.availableModels.filter(m => m.provider === 'openai').length === 0 && (
+                        <option value="llama3">Default Llama 3 (compat)</option>
+                      )}
+                    </select>
+                  </div>
+                  <button className="btn btn-primary"
+                    disabled={modelLoading || !selectedModel || (modelConfig?.activeProvider === selectedVendor && modelConfig?.activeModel === selectedModel)}
+                    onClick={() => selectedVendor === 'ollama' && !modelConfig?.ollama?.online ? startOllama() : switchModel(selectedVendor, selectedModel)}
+                    style={{ height: '38px', padding: '0 1.5rem', background: providerMeta[selectedVendor]?.gradient || 'var(--accent)', borderColor: 'transparent', borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: '0.78rem' }}>
+                    {switchingTo ? '⏳ Switching…' : '✓ Switch AI Driver'}
+                  </button>
+                </div>
+
+                {/* API Fallback toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.2rem', background: allowApiFallback ? 'rgba(0,212,168,0.03)' : 'rgba(255,255,255,0.01)', border: `1px solid ${allowApiFallback ? 'rgba(0,212,168,0.25)' : 'var(--border)'}`, borderRadius: 'var(--radius-md)', transition: 'all 0.3s ease' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '1.2rem' }}>🔄</span>
+                    <div>
+                      <div style={{ fontWeight: 600, color: allowApiFallback ? '#e8eeff' : 'var(--text-muted)', fontSize: '0.85rem' }}>Smart API Fallback to Local Ollama</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Automatically fall back from Gemini to local Ollama on quota failures</div>
+                    </div>
+                  </div>
+                  <Toggle checked={allowApiFallback} onChange={e => toggleApiFallback(e.target.checked)} />
+                </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
-                <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>OpenAI / Compatible API Key (optional)</label>
-                <input type="password" placeholder="sk-…" value={openaiKey}
-                  onChange={e => { setOpenaiKey(e.target.value); setKeysMsg(''); }}
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }} />
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>🔒 Saved securely in your browser and auto-loaded to server on startup.</span>
-              <button onClick={() => saveKeysToBackend(geminiKey, openaiKey)} disabled={saveKeysLoading} className="btn btn-primary" style={{ padding: '0.55rem 1.25rem', fontSize: '0.78rem', borderRadius: 'var(--radius-sm)' }}>
-                {saveKeysLoading ? '⏳ Saving…' : '💾 Save API Keys'}
-              </button>
-            </div>
-            {keysMsg && (
-              <div style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-sm)', background: keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${keysMsg.startsWith('✓') ? 'rgba(0,212,168,0.25)' : 'rgba(220,50,50,0.25)'}`, color: keysMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.75rem', fontWeight: 500 }}>
-                {keysMsg}
+            )}
+
+            {modelMsg && (
+              <div style={{ padding: '0.5rem 0.85rem', borderRadius: 'var(--radius-sm)', background: modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.3)' : 'rgba(220,50,50,0.3)'}`, color: modelMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.78rem', fontWeight: 500 }}>
+                {modelMsg}
               </div>
             )}
           </div>
-
-          {/* Vendor / Model Selector */}
-          {modelConfig && (
-            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-                🤖 Vendor &amp; Model Selector
-              </div>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, minWidth: '180px' }}>
-                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Vendor</label>
-                  <select value={selectedVendor} onChange={e => { const v = e.target.value; setSelectedVendor(v); setSelectedModel(modelConfig?.availableModels.find(m => m.provider === v)?.id || ''); }}
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', cursor: 'pointer', height: '38px' }}>
-                    <option value="gemini">☁️ Google Gemini (Cloud)</option>
-                    <option value="ollama">🖥️ Ollama (Local)</option>
-                    <option value="openai">🔌 OpenAI-Compatible</option>
-                  </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1.5, minWidth: '200px' }}>
-                  <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Model</label>
-                  <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer', height: '38px' }}>
-                    {modelConfig?.availableModels.filter(m => m.provider === selectedVendor).map(m => (
-                      <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
-                    ))}
-                    {selectedVendor === 'openai' && modelConfig?.availableModels.filter(m => m.provider === 'openai').length === 0 && (
-                      <option value="llama3">Default Llama 3 (compat)</option>
-                    )}
-                  </select>
-                </div>
-                <button className="btn btn-primary"
-                  disabled={modelLoading || !selectedModel || (modelConfig?.activeProvider === selectedVendor && modelConfig?.activeModel === selectedModel)}
-                  onClick={() => selectedVendor === 'ollama' && !modelConfig?.ollama?.online ? startOllama() : switchModel(selectedVendor, selectedModel)}
-                  style={{ height: '38px', padding: '0 1.5rem', background: providerMeta[selectedVendor]?.gradient || 'var(--accent)', borderColor: 'transparent', borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: '0.78rem' }}>
-                  {switchingTo ? '⏳ Switching…' : '✓ Switch AI Driver'}
-                </button>
-              </div>
-
-              {/* API Fallback toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.2rem', background: allowApiFallback ? 'rgba(0,212,168,0.03)' : 'rgba(255,255,255,0.01)', border: `1px solid ${allowApiFallback ? 'rgba(0,212,168,0.25)' : 'var(--border)'}`, borderRadius: 'var(--radius-md)', transition: 'all 0.3s ease' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ fontSize: '1.2rem' }}>🔄</span>
-                  <div>
-                    <div style={{ fontWeight: 600, color: allowApiFallback ? '#e8eeff' : 'var(--text-muted)', fontSize: '0.85rem' }}>Smart API Fallback to Local Ollama</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Automatically fall back from Gemini to local Ollama on quota failures</div>
-                  </div>
-                </div>
-                <Toggle checked={allowApiFallback} onChange={e => toggleApiFallback(e.target.checked)} />
-              </div>
-            </div>
-          )}
-
-          {modelMsg && (
-            <div style={{ padding: '0.5rem 0.85rem', borderRadius: 'var(--radius-sm)', background: modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.08)' : 'rgba(220,50,50,0.1)', border: `1px solid ${modelMsg.startsWith('✓') ? 'rgba(0,212,168,0.3)' : 'rgba(220,50,50,0.3)'}`, color: modelMsg.startsWith('✓') ? 'var(--success)' : '#dc3232', fontSize: '0.78rem', fontWeight: 500 }}>
-              {modelMsg}
-            </div>
-          )}
         </div>
-      </div>
+      </LockedCardWrapper>
 
       {/* ── Agent Processing ──────────────────────────────────────── */}
-      <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
-        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            🤖 Agent Processing Configuration
-          </div>
-        </div>
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
-          {/* Concurrent Agents */}
-          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Concurrent Agents</label>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.3)', color: 'var(--success)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>
-                {concurrentAgents} {concurrentAgents === 1 ? 'Agent' : 'Agents'}
-              </div>
+      <LockedCardWrapper label="Agent Processing Config Locked" isAdmin={isAdmin}>
+        <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              🤖 Agent Processing Configuration
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <input type="range" min="1" max="20" value={concurrentAgents} onChange={e => setConcurrentAgents(parseInt(e.target.value))} style={{ flex: 1, accentColor: 'var(--success)', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
-              <input type="number" min="1" max="20" value={concurrentAgents} onChange={e => { let v = parseInt(e.target.value); if (isNaN(v)) v = 5; setConcurrentAgents(Math.min(20, Math.max(1, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
-            </div>
-            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              Maximum number of concurrent vision & geometry agents. Higher values speed up batch processing but may hit API rate limits.
-            </p>
           </div>
+          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-          <SectionDivider label="Turbo Mode" />
-
-          {/* Parallel Batches */}
-          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Parallel Batch Streams</label>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', background: parallelBatches > 1 ? 'rgba(255,170,0,0.12)' : 'rgba(0,212,168,0.1)', border: `1px solid ${parallelBatches > 1 ? 'rgba(255,170,0,0.4)' : 'rgba(0,212,168,0.3)'}`, color: parallelBatches > 1 ? '#c97a00' : 'var(--success)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>
-                {parallelBatches === 1 ? '1 Stream (Safe)' : `${parallelBatches} Streams ⚡`}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <input type="range" min="1" max="8" value={parallelBatches} onChange={e => setParallelBatches(parseInt(e.target.value))} style={{ flex: 1, accentColor: '#c97a00', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
-              <input type="number" min="1" max="8" value={parallelBatches} onChange={e => { let v = parseInt(e.target.value); if (isNaN(v)) v = 1; setParallelBatches(Math.min(8, Math.max(1, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
-            </div>
-            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              Combined throughput: <strong style={{ color: '#c97a00' }}>{parallelBatches} × {concurrentAgents} = {parallelBatches * concurrentAgents}</strong> simultaneous requests. Paid API tier recommended above 1 stream.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── File Size ─────────────────────────────────────────────── */}
-      <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
-        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📁 File Size &amp; Upload Limit</div>
-        </div>
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Max Upload &amp; Scan File Size</label>
-            <div style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(61,127,255,0.1)', border: '1px solid rgba(61,127,255,0.3)', color: 'var(--accent)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>{maxFileSize} MB</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <input type="range" min="5" max="100" value={maxFileSize} onChange={e => setMaxFileSize(parseInt(e.target.value))} style={{ flex: 1, accentColor: 'var(--accent)', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
-            <input type="number" min="5" max="100" value={maxFileSize} onChange={e => { let v = parseInt(e.target.value); if (isNaN(v)) v = 51; setMaxFileSize(Math.min(100, Math.max(5, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
-          </div>
-          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>Files exceeding this size are filtered out during folder scans to optimize memory usage.</p>
-        </div>
-      </div>
-
-      {/* ── Output Configuration ───────────────────────────────────── */}
-      <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: `1px solid ${autoOutput ? 'rgba(0,212,168,0.35)' : 'var(--border)'}`, boxShadow: autoOutput ? '0 4px 24px rgba(0,212,168,0.08)' : '0 4px 24px rgba(0,0,0,0.15)', transition: 'border-color 0.3s, box-shadow 0.3s' }}>
-        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📤 Output File Configuration</div>
-        </div>
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {[
-            { checked: autoOutput,           set: setAutoOutput,           label: 'Auto-Generate Output Files',    desc: 'Automatically create a timestamped output subfolder for each batch run inside the source directory.' },
-            { checked: shortFileNames,        set: setShortFileNames,        label: 'Use Short File Names',          desc: 'Save outputs with standardized names (Map, OCR, Summary, Cogo, Script, DXF) inside a per-deed folder.' },
-            { checked: showConceptualDetail,  set: setShowConceptualDetail,  label: 'Add Conceptual Details to Maps', desc: 'Overlay neighboring lots, street name, utility easements, and inline course dimensions on check plots.' },
-            { checked: frontendOcr,           set: setFrontendOcr,           label: 'Perform OCR on Frontend',       desc: 'Run OCR directly in the browser (images/PDFs) before uploading. Only plain text is uploaded, reducing server load.' },
-          ].map(({ checked, set, label, desc }, i) => (
-            <div key={i}>
-              {i > 0 && <div style={{ height: '1px', background: 'var(--border)', margin: '0.25rem 0 1rem 0' }} />}
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-                <div style={{ flexShrink: 0, marginTop: '2px' }}><Toggle checked={checked} onChange={e => set(e.target.checked)} /></div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.35rem' }}>{label}</div>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>{desc}</p>
+            {/* Concurrent Agents */}
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Concurrent Agents</label>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.3)', color: 'var(--success)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>
+                  {concurrentAgents} {concurrentAgents === 1 ? 'Agent' : 'Agents'}
                 </div>
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <input type="range" min="1" max="20" value={concurrentAgents} onChange={e => setConcurrentAgents(parseInt(e.target.value))} style={{ flex: 1, accentColor: 'var(--success)', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
+                <input type="number" min="1" max="20" value={concurrentAgents} onChange={e => { let v = parseInt(e.target.value); if (isNaN(v)) v = 5; setConcurrentAgents(Math.min(20, Math.max(1, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                Maximum number of concurrent vision & geometry agents. Higher values speed up batch processing but may hit API rate limits.
+              </p>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* ── Interactive Map Settings ─────────────────────────────────── */}
-      <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
-        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            🗺️ Interactive Map Configuration
+            <SectionDivider label="Turbo Mode" />
+
+            {/* Parallel Batches */}
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Parallel Batch Streams</label>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', background: parallelBatches > 1 ? 'rgba(255,170,0,0.12)' : 'rgba(0,212,168,0.1)', border: `1px solid ${parallelBatches > 1 ? 'rgba(255,170,0,0.4)' : 'rgba(0,212,168,0.3)'}`, color: parallelBatches > 1 ? '#c97a00' : 'var(--success)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>
+                  {parallelBatches === 1 ? '1 Stream (Safe)' : `${parallelBatches} Streams ⚡`}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <input type="range" min="1" max="8" value={parallelBatches} onChange={e => setParallelBatches(parseInt(e.target.value))} style={{ flex: 1, accentColor: '#c97a00', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
+                <input type="number" min="1" max="8" value={parallelBatches} onChange={e => { let v = parseInt(e.target.value); if (isNaN(v)) v = 1; setParallelBatches(Math.min(8, Math.max(1, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                Combined throughput: <strong style={{ color: '#c97a00' }}>{parallelBatches} × {concurrentAgents} = {parallelBatches * concurrentAgents}</strong> simultaneous requests. Paid API tier recommended above 1 stream.
+              </p>
+            </div>
           </div>
         </div>
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      </LockedCardWrapper>
+
+      {/* ── File Size ─────────────────────────────────────────────── */}
+      <LockedCardWrapper label="File Size limit settings Locked" isAdmin={isAdmin}>
+        <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📁 File Size &amp; Upload Limit</div>
+          </div>
+          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Map Pan Sensitivity</label>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.3)', color: 'var(--success)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>
-                {mapPanSensitivity.toFixed(2)}
-              </div>
+              <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Max Upload &amp; Scan File Size</label>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(61,127,255,0.1)', border: '1px solid rgba(61,127,255,0.3)', color: 'var(--accent)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>{maxFileSize} MB</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <input type="range" min="0.1" max="2.0" step="0.05" value={mapPanSensitivity} onChange={e => updateMapPanSensitivity(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--success)', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
-              <input type="number" min="0.1" max="2.0" step="0.05" value={mapPanSensitivity} onChange={e => { let v = parseFloat(e.target.value); if (isNaN(v)) v = 0.55; updateMapPanSensitivity(Math.min(2.0, Math.max(0.1, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
+              <input type="range" min="5" max="100" value={maxFileSize} onChange={e => setMaxFileSize(parseInt(e.target.value))} style={{ flex: 1, accentColor: 'var(--accent)', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
+              <input type="number" min="5" max="100" value={maxFileSize} onChange={e => { let v = parseInt(e.target.value); if (isNaN(v)) v = 51; setMaxFileSize(Math.min(100, Math.max(5, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
             </div>
-            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              Adjust pan sensitivity multiplier when dragging the survey check plot map. Default is 0.55.
-            </p>
+            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>Files exceeding this size are filtered out during folder scans to optimize memory usage.</p>
           </div>
         </div>
-      </div>
+      </LockedCardWrapper>
+
+      {/* ── Output Configuration ───────────────────────────────────── */}
+      <LockedCardWrapper label="Output File Config Locked" isAdmin={isAdmin}>
+        <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: `1px solid ${autoOutput ? 'rgba(0,212,168,0.35)' : 'var(--border)'}`, boxShadow: autoOutput ? '0 4px 24px rgba(0,212,168,0.08)' : '0 4px 24px rgba(0,0,0,0.15)', transition: 'border-color 0.3s, box-shadow 0.3s' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📤 Output File Configuration</div>
+          </div>
+          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {[
+              { checked: autoOutput,           set: setAutoOutput,           label: 'Auto-Generate Output Files',    desc: 'Automatically create a timestamped output subfolder for each batch run inside the source directory.' },
+              { checked: shortFileNames,        set: setShortFileNames,        label: 'Use Short File Names',          desc: 'Save outputs with standardized names (Map, OCR, Summary, Cogo, Script, DXF) inside a per-deed folder.' },
+              { checked: showConceptualDetail,  set: setShowConceptualDetail,  label: 'Add Conceptual Details to Maps', desc: 'Overlay neighboring lots, street name, utility easements, and inline course dimensions on check plots.' },
+              { checked: frontendOcr,           set: setFrontendOcr,           label: 'Perform OCR on Frontend',       desc: 'Run OCR directly in the browser (images/PDFs) before uploading. Only plain text is uploaded, reducing server load.' },
+            ].map(({ checked, set, label, desc }, i) => (
+              <div key={i}>
+                {i > 0 && <div style={{ height: '1px', background: 'var(--border)', margin: '0.25rem 0 1rem 0' }} />}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                  <div style={{ flexShrink: 0, marginTop: '2px' }}><Toggle checked={checked} onChange={e => set(e.target.checked)} /></div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.35rem' }}>{label}</div>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>{desc}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </LockedCardWrapper>
+
+      {/* ── Interactive Map Settings ─────────────────────────────────── */}
+      <LockedCardWrapper label="Map Settings Locked" isAdmin={isAdmin}>
+        <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+            <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              🗺️ Interactive Map Configuration
+            </div>
+          </div>
+          <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label" style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Map Pan Sensitivity</label>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(0,212,168,0.1)', border: '1px solid rgba(0,212,168,0.3)', color: 'var(--success)', padding: '0.2rem 0.6rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: 600 }}>
+                  {mapPanSensitivity.toFixed(2)}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <input type="range" min="0.1" max="2.0" step="0.05" value={mapPanSensitivity} onChange={e => updateMapPanSensitivity(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--success)', height: '6px', borderRadius: '3px', cursor: 'pointer' }} />
+                <input type="number" min="0.1" max="2.0" step="0.05" value={mapPanSensitivity} onChange={e => { let v = parseFloat(e.target.value); if (isNaN(v)) v = 0.55; updateMapPanSensitivity(Math.min(2.0, Math.max(0.1, v))); }} style={{ width: '70px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', borderColor: 'var(--border)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', padding: '0.4rem' }} />
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                Adjust pan sensitivity multiplier when dragging the survey check plot map. Default is 0.55.
+              </p>
+            </div>
+          </div>
+        </div>
+      </LockedCardWrapper>
 
       {/* ── Sidebar Customization ─────────────────────────────────── */}
       <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
