@@ -26,7 +26,15 @@ router.post('/message', upload.single('image'), asyncHandler(async (req, res) =>
   let { message, history } = req.body;
   const imageFile = req.file;
   
-  history = history ? JSON.parse(history) : [];
+  if (typeof history === 'string') {
+    try {
+      history = JSON.parse(history);
+    } catch (err) {
+      history = [];
+    }
+  } else if (!Array.isArray(history)) {
+    history = [];
+  }
 
   // 1. Get AI conversational response
   const aiResponse = await aiChat(message, history, imageFile?.path || null);
