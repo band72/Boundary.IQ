@@ -21,6 +21,8 @@ export default function SettingsTab({
   setHidePlat: propSetHidePlat,
   hideWriter: propHideWriter,
   setHideWriter: propSetHideWriter,
+  theme,
+  setTheme,
 }) {
   // Safe fallbacks to support both standalone and prop-driven usage
   const [localHideTraverse, localSetHideTraverse] = useLocalStorage('boundaryiq_hide_traverse', false);
@@ -979,6 +981,34 @@ export default function SettingsTab({
             </div>
             <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               Adjust global default pan sensitivity multiplier when dragging the survey check plot map. Default is 0.55.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Theme Customization ─────────────────────────────────── */}
+      <div className="card" style={{
+        background: 'rgba(9, 14, 26, 0.4)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid var(--border)',
+        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15)',
+        marginTop: '1.25rem'
+      }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            🎨 Aesthetics &amp; Themes
+          </div>
+        </div>
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Theme Template</label>
+            <select value={theme || 'blue'} onChange={e => setTheme(e.target.value)}
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', cursor: 'pointer', height: '38px', maxWidth: '300px' }}>
+              <option value="blue">🔵 Original (Vibrant Blue &amp; Cyan)</option>
+              <option value="amber">🟡 CAD Amber (Classic Surveying)</option>
+            </select>
+            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: '0.25rem' }}>
+              Choose a design template for the BoundaryIQ platform color palette. Changes apply instantly.
             </p>
           </div>
         </div>

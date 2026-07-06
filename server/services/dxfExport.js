@@ -1,8 +1,217 @@
-// ─── DXF Export Service ─────────────────────────────────────────────────────
-// Surveyor-grade DXF generator from traverse stations.
-// NCS-compliant layers, dynamic scaling, perpendicular labeling, and chord-aligned text.
+import fs from 'fs';
+import path from 'path';
 
-import Drawing from 'dxf-writer';
+class Drawing {
+  static ACI = {
+    RED: 1,
+    YELLOW: 2,
+    GREEN: 3,
+    CYAN: 4,
+    BLUE: 5,
+    MAGENTA: 6,
+    WHITE: 7
+  };
+
+  constructor() {
+    this.layers = {};
+    this.activeLayer = '0';
+    this.entities = [];
+    this.addLayer('0', 7);
+  }
+
+  addLayer(name, color, lineType = 'CONTINUOUS') {
+    let colorVal = 7;
+    if (typeof color === 'number') {
+      colorVal = color;
+    } else if (color && typeof color === 'string') {
+      colorVal = Drawing.ACI[color.toUpperCase()] || 7;
+    } else if (color && color.value !== undefined) {
+      colorVal = color.value;
+    }
+    
+    this.layers[name] = {
+      color: colorVal,
+      lineType: String(lineType || 'CONTINUOUS').toUpperCase() === 'DASHED' ? 'DASHED' : 'CONTINUOUS'
+    };
+    return this;
+  }
+
+  setActiveLayer(name) {
+    this.activeLayer = name;
+    if (!this.layers[name]) {
+      this.addLayer(name, 7);
+    }
+    return this;
+  }
+
+  drawCircle(x, y, radius) {
+    this.entities.push({
+      type: 'CIRCLE',
+      layer: this.activeLayer,
+      x: parseFloat(x) || 0,
+      y: parseFloat(y) || 0,
+      r: parseFloat(radius) || 1
+    });
+    return this;
+  }
+
+  drawText(x, y, height, rotation, text) {
+    this.entities.push({
+      type: 'TEXT',
+      layer: this.activeLayer,
+      x: parseFloat(x) || 0,
+      y: parseFloat(y) || 0,
+      height: parseFloat(height) || 1,
+      rotation: parseFloat(rotation) || 0,
+      text: String(text || '')
+    });
+    return this;
+  }
+
+  drawLine(x1, y1, x2, y2) {
+    this.entities.push({
+      type: 'LINE',
+      layer: this.activeLayer,
+      x1: parseFloat(x1) || 0,
+      y1: parseFloat(y1) || 0,
+      x2: parseFloat(x2) || 0,
+      y2: parseFloat(y2) || 0
+    });
+    return this;
+  }
+
+  drawPolyline(points, closed = false) {
+    this.entities.push({
+      type: 'POLYLINE',
+      layer: this.activeLayer,
+      points: points.map(pt => ({ x: parseFloat(pt[0]) || 0, y: parseFloat(pt[1]) || 0 })),
+      closed: !!closed
+    });
+    return this;
+  }
+
+  toDxfString() {
+    const lines = [];
+
+    // ── HEADER SECTION ──────────────────────────────────────────────────────────
+    lines.push('  0', 'SECTION');
+    lines.push('  2', 'HEADER');
+    lines.push('  9', '$ACADVER');
+    lines.push('  1', 'AC1009'); // AutoCAD R12 (most compatible)
+    lines.push('  9', '$INSUNITS');
+    lines.push(' 70', '2'); // 2 = feet
+    lines.push('  0', 'ENDSEC');
+
+    // ── TABLES SECTION ──────────────────────────────────────────────────────────
+    lines.push('  0', 'SECTION');
+    lines.push('  2', 'TABLES');
+    
+    // LAYER TABLE
+    lines.push('  0', 'TABLE');
+    lines.push('  2', 'LAYER');
+    lines.push(' 70', String(Object.keys(this.layers).length));
+    
+    for (const [name, lyr] of Object.entries(this.layers)) {
+      lines.push('  0', 'LAYER');
+      lines.push('  2', name.toUpperCase());
+      lines.push(' 70', '0');
+      lines.push(' 62', String(lyr.color));
+      lines.push('  6', lyr.lineType);
+    }
+    
+    lines.push('  0', 'ENDTAB');
+    
+    // LTYPE TABLE
+    lines.push('  0', 'TABLE');
+    lines.push('  2', 'LTYPE');
+    lines.push(' 70', '2');
+    
+    // Continuous
+    lines.push('  0', 'LTYPE');
+    lines.push('  2', 'CONTINUOUS');
+    lines.push(' 70', '64');
+    lines.push('  3', 'Solid line');
+    lines.push(' 72', '65');
+    lines.push(' 73', '0');
+    lines.push(' 40', '0.0');
+    
+    // Dashed
+    lines.push('  0', 'LTYPE');
+    lines.push('  2', 'DASHED');
+    lines.push(' 70', '64');
+    lines.push('  3', 'Dashed __ __ __ __ __ __ __ __ __ __ __ __ __ _');
+    lines.push(' 72', '65');
+    lines.push(' 73', '2');
+    lines.push(' 40', '0.75');
+    lines.push(' 49', '0.5');
+    lines.push(' 49', '-0.25');
+    
+    lines.push('  0', 'ENDTAB');
+    lines.push('  0', 'ENDSEC');
+
+    // ── BLOCKS SECTION (empty but required for older AutoCAD compatibility) ───────
+    lines.push('  0', 'SECTION');
+    lines.push('  2', 'BLOCKS');
+    lines.push('  0', 'ENDSEC');
+
+    // ── ENTITIES SECTION ────────────────────────────────────────────────────────
+    lines.push('  0', 'SECTION');
+    lines.push('  2', 'ENTITIES');
+
+    for (const ent of this.entities) {
+      if (ent.type === 'CIRCLE') {
+        lines.push('  0', 'CIRCLE');
+        lines.push('  8', ent.layer.toUpperCase());
+        lines.push(' 10', ent.x.toFixed(3));
+        lines.push(' 20', ent.y.toFixed(3));
+        lines.push(' 30', '0.000');
+        lines.push(' 40', ent.r.toFixed(3));
+      } else if (ent.type === 'TEXT') {
+        lines.push('  0', 'TEXT');
+        lines.push('  8', ent.layer.toUpperCase());
+        lines.push(' 10', ent.x.toFixed(3));
+        lines.push(' 20', ent.y.toFixed(3));
+        lines.push(' 30', '0.000');
+        lines.push(' 40', ent.height.toFixed(3));
+        lines.push('  1', ent.text);
+        if (Math.abs(ent.rotation) > 0.0001) {
+          lines.push(' 50', ent.rotation.toFixed(3));
+        }
+      } else if (ent.type === 'LINE') {
+        lines.push('  0', 'LINE');
+        lines.push('  8', ent.layer.toUpperCase());
+        lines.push(' 10', ent.x1.toFixed(3));
+        lines.push(' 20', ent.y1.toFixed(3));
+        lines.push(' 30', '0.000');
+        lines.push(' 11', ent.x2.toFixed(3));
+        lines.push(' 21', ent.y2.toFixed(3));
+        lines.push(' 31', '0.000');
+      } else if (ent.type === 'POLYLINE') {
+        lines.push('  0', 'POLYLINE');
+        lines.push('  8', ent.layer.toUpperCase());
+        lines.push(' 66', '1');
+        lines.push(' 70', ent.closed ? '1' : '0');
+        lines.push(' 10', '0.000');
+        lines.push(' 20', '0.000');
+        lines.push(' 30', '0.000');
+
+        for (const pt of ent.points) {
+          lines.push('  0', 'VERTEX');
+          lines.push('  8', ent.layer.toUpperCase());
+          lines.push(' 10', pt.x.toFixed(3));
+          lines.push(' 20', pt.y.toFixed(3));
+          lines.push(' 30', '0.000');
+        }
+        lines.push('  0', 'SEQEND');
+      }
+    }
+
+    lines.push('  0', 'ENDSEC');
+    lines.push('  0', 'EOF');
+
+    return lines.join('\n');
+  }
+}
 
 // NCS Layer Names
 const LAYER_BOUNDARY = 'C-PROP-LINE';     // Red, continuous
@@ -11,6 +220,25 @@ const LAYER_POINTS   = 'C-PROP-NODE';     // Green, continuous
 const LAYER_ANNOT    = 'C-PROP-MISC';     // White, continuous
 const LAYER_ERROR    = 'C-PROP-ERR-LINE'; // Red, dashed (for misclosure gap)
 const LAYER_BUST     = 'C-PROP-BUST';     // Magenta, dashed (Fix #1 — OCR bust candidate)
+
+export function safeText(str) {
+  if (typeof str !== 'string') {
+    if (str === null || str === undefined) return '';
+    return String(str);
+  }
+  return str
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/°/g, '%%d')
+    .replace(/Δ/g, 'Delta=')
+    .replace(/◄/g, '<-')
+    .replace(/—/g, '-')
+    .replace(/[^\x20-\x7E]/g, '');
+}
+
+export function getSafeCoord(val) {
+  const num = parseFloat(val);
+  return (Number.isNaN(num) || !Number.isFinite(num)) ? 0 : num;
+}
 
 /**
  * Generate a DXF string from traverse results.
@@ -24,8 +252,8 @@ const LAYER_BUST     = 'C-PROP-BUST';     // Magenta, dashed (Fix #1 — OCR bus
 export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex = null) {
   // Prefer adjusted stations; fall back to raw
   const pts = (adjusted?.length >= 2)
-    ? adjusted.map(r => ({ x: r.easting, y: r.northing }))
-    : (stations?.length >= 2 ? stations.map(r => ({ x: r.easting, y: r.northing })) : null);
+    ? adjusted.map(r => ({ x: getSafeCoord(r.easting), y: getSafeCoord(r.northing) }))
+    : (stations?.length >= 2 ? stations.map(r => ({ x: getSafeCoord(r.easting), y: getSafeCoord(r.northing) })) : null);
 
   if (!pts || pts.length < 2)
     throw new Error('Need at least 2 stations to generate DXF.');
@@ -80,7 +308,7 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
     d.setActiveLayer(LAYER_POINTS);
     d.drawCircle(p1.x, p1.y, nodeRadius);
     // Offset corner point text slightly
-    d.drawText(p1.x + nodeRadius * 1.5, p1.y + nodeRadius * 1.5, textScale * 0.9, 0, cornerLbl);
+    d.drawText(p1.x + nodeRadius * 1.5, p1.y + nodeRadius * 1.5, textScale * 0.9, 0, safeText(cornerLbl));
 
     if ((course.type || '').toLowerCase() !== 'curve') {
       // ── Line segment
@@ -105,17 +333,17 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
       while (angDeg < -90) angDeg += 180;
 
       d.setActiveLayer(LAYER_TEXT);
-      d.drawText(midX, midY - (textScale * 0.4), textScale, angDeg, lbl);
+      d.drawText(midX, midY - (textScale * 0.4), textScale, angDeg, safeText(lbl));
 
       // Fix #1: Extra bust label on a second offset line for visibility
       if (isBustCourse) {
         d.setActiveLayer(LAYER_BUST);
-        d.drawText(midX, midY + (textScale * 0.5), textScale * 0.9, angDeg, 'OCR BUST CANDIDATE');
+        d.drawText(midX, midY + (textScale * 0.5), textScale * 0.9, angDeg, safeText('OCR BUST CANDIDATE'));
       }
     } else {
       // ── Arc segment
       curveCount++;
-      const r = course.radius || 0;
+      const r = getSafeCoord(course.radius);
       let solved = false;
 
       if (r > 0.001) {
@@ -175,7 +403,7 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
           while (chordAngDeg < -90) chordAngDeg += 180;
 
           d.setActiveLayer(LAYER_TEXT);
-          d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, curveLbl);
+          d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, safeText(curveLbl));
           solved = true;
         } catch { /* fall through to chord fallback */ }
       }
@@ -193,7 +421,7 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
         while (chordAngDeg < -90) chordAngDeg += 180;
 
         d.setActiveLayer(LAYER_TEXT);
-        d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, `C${curveCount} [CHORD-APPROX]`);
+        d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, safeText(`C${curveCount} [CHORD-APPROX]`));
       }
     }
   }
@@ -215,7 +443,7 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
     const errPerpY = errDx / errLen * offsetDistance;
 
     d.setActiveLayer(LAYER_TEXT);
-    d.drawText(errMidX + errPerpX, errMidY + errPerpY, textScale * 0.85, 0, `MISCLOSURE GAP: ${closeGap.toFixed(4)}'`);
+    d.drawText(errMidX + errPerpX, errMidY + errPerpY, textScale * 0.85, 0, safeText(`MISCLOSURE GAP: ${closeGap.toFixed(4)}'`));
 
     // Fix #6: Arrowhead at the closure endpoint showing direction of travel to close
     const arrowTip = { x: firstPt.x, y: firstPt.y };
@@ -245,20 +473,20 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
   // Arrowheads
   d.drawLine(naX, naY + naLen, naX - (textScale * 1.2), naY + (textScale * 3.5));
   d.drawLine(naX, naY + naLen, naX + (textScale * 1.2), naY + (textScale * 3.5));
-  d.drawText(naX - (textScale * 0.6), naY + naLen + (textScale * 1.5), textScale * 2.0, 0, 'N');
+  d.drawText(naX - (textScale * 0.6), naY + naLen + (textScale * 1.5), textScale * 2.0, 0, safeText('N'));
 
   // Scale bar
   let sbLen = Math.round(maxRange / 4 / 10) * 10;
-  if (sbLen < 10) sbLen = 10;
+  if (Number.isNaN(sbLen) || !Number.isFinite(sbLen) || sbLen < 10) sbLen = 10;
   const sbX = minX;
   const sbY = minY - rangeY * 0.08 - (textScale * 5);
   d.drawLine(sbX, sbY, sbX + sbLen, sbY);
   d.drawLine(sbX, sbY, sbX, sbY + textScale * 1.2);
   d.drawLine(sbX + sbLen / 2, sbY, sbX + sbLen / 2, sbY + textScale * 1.2);
   d.drawLine(sbX + sbLen, sbY, sbX + sbLen, sbY + textScale * 1.2);
-  d.drawText(sbX, sbY - (textScale * 1.8), textScale * 0.85, 0, '0');
-  d.drawText(sbX + sbLen / 2, sbY - (textScale * 1.8), textScale * 0.85, 0, `${sbLen / 2}`);
-  d.drawText(sbX + sbLen, sbY - (textScale * 1.8), textScale * 0.85, 0, `${sbLen} ${meta.units || 'Feet'}`);
+  d.drawText(sbX, sbY - (textScale * 1.8), textScale * 0.85, 0, safeText('0'));
+  d.drawText(sbX + sbLen / 2, sbY - (textScale * 1.8), textScale * 0.85, 0, safeText(`${sbLen / 2}`));
+  d.drawText(sbX + sbLen, sbY - (textScale * 1.8), textScale * 0.85, 0, safeText(`${sbLen} ${meta.units || 'Feet'}`));
 
   // NCS Surveyor Title block
   const tbX = maxX + rangeX * 0.08 + (textScale * 1.5);
@@ -266,21 +494,21 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
   const ts = textScale * 1.1;
   const titleLines = [
     'BOUNDARY.IQ PLATFORM',
-    `PARCEL: ${meta.parcel || 'SUBJECT PARCEL'}`,
-    `COUNTY: ${meta.county || '—'}`,
-    `STATE:  ${meta.state || '—'}`,
-    `AREA:   ${(meta.areaAcres || 0).toFixed(4)} AC`,
-    `PERIM:  ${(meta.perimeter || 0).toFixed(2)} FT`,
-    `BASIS:  ${meta.basisOfBearings || 'DEED OF RECORD'}`,
+    `PARCEL: ${safeText(meta.parcel || 'SUBJECT PARCEL')}`,
+    `COUNTY: ${safeText(meta.county || '-')}`,
+    `STATE:  ${safeText(meta.state || '-')}`,
+    `AREA:   ${(getSafeCoord(meta.areaAcres) || 0).toFixed(4)} AC`,
+    `PERIM:  ${(getSafeCoord(meta.perimeter) || 0).toFixed(2)} FT`,
+    `BASIS:  ${safeText(meta.basisOfBearings || 'DEED OF RECORD')}`,
     `DATE:   ${new Date().toISOString().slice(0, 10)}`,
     'MATH COMPILATION ONLY.',
     'NO FIELD SURVEY PERFORMED.',
   ];
   if (bustCourseIndex != null) {
-    titleLines.push(`WARN: COURSE ${bustCourseIndex + 1} FLAGGED — OCR BUST CANDIDATE`);
+    titleLines.push(`WARN: COURSE ${bustCourseIndex + 1} FLAGGED - OCR BUST CANDIDATE`);
   }
   for (let ti = 0; ti < titleLines.length; ti++) {
-    d.drawText(tbX, tbY + ti * ts * 1.6, ts, 0, titleLines[ti]);
+    d.drawText(tbX, tbY + ti * ts * 1.6, ts, 0, safeText(titleLines[ti]));
   }
 
   return d.toDxfString();
@@ -307,14 +535,14 @@ export function generateCombinedDxf(parcels) {
 
   for (const parcel of parcels) {
     const stations = parcel.adjustedStations || parcel.stations || [];
-    const pts = stations.map(s => ({ x: s.easting, y: s.northing }));
+    const pts = stations.map(s => ({ x: getSafeCoord(s.easting), y: getSafeCoord(s.northing) }));
     for (const p of pts) {
       if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
       if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
       hasValidPt = true;
     }
-    totalPerimeter += parcel.perimeter || 0;
-    totalArea += parcel.areaAcres || 0;
+    totalPerimeter += getSafeCoord(parcel.perimeter) || 0;
+    totalArea += getSafeCoord(parcel.areaAcres) || 0;
   }
 
   if (!hasValidPt)
@@ -362,7 +590,7 @@ export function generateCombinedDxf(parcels) {
     d.addLayer(layerError, Drawing.ACI.RED, 'DASHED');
 
     const stations = parcel.adjustedStations || parcel.stations || [];
-    const pts = stations.map(s => ({ x: s.easting, y: s.northing }));
+    const pts = stations.map(s => ({ x: getSafeCoord(s.easting), y: getSafeCoord(s.northing) }));
     const courses = parcel.courses || [];
 
     if (pts.length < 2) return;
@@ -385,7 +613,7 @@ export function generateCombinedDxf(parcels) {
       const cornerLbl = i === 0 ? `POB-${safeName}` : `PT-${i + 1}-${safeName}`;
       d.setActiveLayer(layerPoints);
       d.drawCircle(p1.x, p1.y, nodeRadius);
-      d.drawText(p1.x + nodeRadius * 1.5, p1.y + nodeRadius * 1.5, textScale * 0.8, 0, cornerLbl);
+      d.drawText(p1.x + nodeRadius * 1.5, p1.y + nodeRadius * 1.5, textScale * 0.8, 0, safeText(cornerLbl));
 
       if ((course.type || '').toLowerCase() !== 'curve') {
         // Draw line
@@ -408,11 +636,11 @@ export function generateCombinedDxf(parcels) {
         while (angDeg < -90) angDeg += 180;
 
         d.setActiveLayer(layerText);
-        d.drawText(midX, midY - (textScale * 0.4), textScale, angDeg, lbl);
+        d.drawText(midX, midY - (textScale * 0.4), textScale, angDeg, safeText(lbl));
       } else {
         // Draw curve
         curveCount++;
-        const r = course.radius || 0;
+        const r = getSafeCoord(course.radius);
         let solved = false;
 
         if (r > 0.001) {
@@ -470,7 +698,7 @@ export function generateCombinedDxf(parcels) {
             while (chordAngDeg < -90) chordAngDeg += 180;
 
             d.setActiveLayer(layerText);
-            d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, curveLbl);
+            d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, safeText(curveLbl));
             solved = true;
           } catch { /* fallback to chord */ }
         }
@@ -488,7 +716,7 @@ export function generateCombinedDxf(parcels) {
           while (chordAngDeg < -90) chordAngDeg += 180;
 
           d.setActiveLayer(layerText);
-          d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, `C${curveCount} [CHORD-APPROX]`);
+          d.drawText(midX, midY - (textScale * 0.4), textScale * 0.9, chordAngDeg, safeText(`C${curveCount} [CHORD-APPROX]`));
         }
       }
     }
@@ -510,7 +738,7 @@ export function generateCombinedDxf(parcels) {
       const errPerpY = errDx / errLen * offsetDistance;
 
       d.setActiveLayer(layerText);
-      d.drawText(errMidX + errPerpX, errMidY + errPerpY, textScale * 0.75, 0, `${safeName} GAP: ${closeGap.toFixed(4)}'`);
+      d.drawText(errMidX + errPerpX, errMidY + errPerpY, textScale * 0.75, 0, safeText(`${safeName} GAP: ${closeGap.toFixed(4)}'`));
     }
 
     // Closing POB node circle
@@ -526,20 +754,20 @@ export function generateCombinedDxf(parcels) {
   d.drawLine(naX, naY - naLen, naX, naY + naLen);
   d.drawLine(naX, naY + naLen, naX - (textScale * 1.2), naY + (textScale * 3.5));
   d.drawLine(naX, naY + naLen, naX + (textScale * 1.2), naY + (textScale * 3.5));
-  d.drawText(naX - (textScale * 0.6), naY + naLen + (textScale * 1.5), textScale * 2.0, 0, 'N');
+  d.drawText(naX - (textScale * 0.6), naY + naLen + (textScale * 1.5), textScale * 2.0, 0, safeText('N'));
 
   // Scale bar
   let sbLen = Math.round(maxRange / 4 / 10) * 10;
-  if (sbLen < 10) sbLen = 10;
+  if (Number.isNaN(sbLen) || !Number.isFinite(sbLen) || sbLen < 10) sbLen = 10;
   const sbX = minX;
   const sbY = minY - rangeY * 0.08 - (textScale * 5);
   d.drawLine(sbX, sbY, sbX + sbLen, sbY);
   d.drawLine(sbX, sbY, sbX, sbY + textScale * 1.2);
   d.drawLine(sbX + sbLen / 2, sbY, sbX + sbLen / 2, sbY + textScale * 1.2);
   d.drawLine(sbX + sbLen, sbY, sbX + sbLen, sbY + textScale * 1.2);
-  d.drawText(sbX, sbY - (textScale * 1.8), textScale * 0.85, 0, '0');
-  d.drawText(sbX + sbLen / 2, sbY - (textScale * 1.8), textScale * 0.85, 0, `${sbLen / 2}`);
-  d.drawText(sbX + sbLen, sbY - (textScale * 1.8), textScale * 0.85, 0, `${sbLen} Feet`);
+  d.drawText(sbX, sbY - (textScale * 1.8), textScale * 0.85, 0, safeText('0'));
+  d.drawText(sbX + sbLen / 2, sbY - (textScale * 1.8), textScale * 0.85, 0, safeText(`${sbLen / 2}`));
+  d.drawText(sbX + sbLen, sbY - (textScale * 1.8), textScale * 0.85, 0, safeText(`${sbLen} Feet`));
 
   // Combined Surveyor Title block
   const tbX = maxX + rangeX * 0.08 + (textScale * 1.5);
@@ -549,15 +777,79 @@ export function generateCombinedDxf(parcels) {
     'BOUNDARY.IQ PLATFORM',
     'SPATIALLY ALIGNED BLUEPRINT',
     `TOTAL PARCELS: ${parcels.length}`,
-    `TOTAL AREA:    ${totalArea.toFixed(4)} AC`,
-    `REF MONUMENT:  ${parcels[0].referencePointName || 'SHARED LOCAL REF'}`,
+    `TOTAL AREA:    ${(getSafeCoord(totalArea) || 0).toFixed(4)} AC`,
+    `REF MONUMENT:  ${safeText(parcels[0].referencePointName || 'SHARED LOCAL REF')}`,
     `DATE:          ${new Date().toISOString().slice(0, 10)}`,
     'MATH COMPILATION ONLY.',
     'NO FIELD SURVEY PERFORMED.',
   ];
   for (let ti = 0; ti < titleLines.length; ti++) {
-    d.drawText(tbX, tbY + ti * ts * 1.6, ts, 0, titleLines[ti]);
+    d.drawText(tbX, tbY + ti * ts * 1.6, ts, 0, safeText(titleLines[ti]));
   }
 
   return d.toDxfString();
+}
+
+/**
+ * Helper to auto-save .dxf, _COGO.txt, and _Points.csv files alongside the source file.
+ */
+export function saveToSourceDir(dxfString, sourceFilePath, stations, courses, meta, hasSelfIntersection, linearError) {
+  if (!sourceFilePath) return null;
+  try {
+    const resolvedPath = path.resolve(sourceFilePath);
+    const sourceDir = path.dirname(resolvedPath);
+    if (!fs.existsSync(sourceDir)) {
+      return null;
+    }
+    const baseName = path.parse(resolvedPath).name;
+
+    // 1. Write DXF
+    const dxfPath = path.join(sourceDir, `${baseName}__B_dxf.dxf`);
+    fs.writeFileSync(dxfPath, dxfString, 'utf8');
+
+    // 2. Write COGO Script
+    const cogoLines = [
+      "// ================================================================",
+      `// COGO SCRIPT — ${meta.parcel || baseName}`,
+      `// Boundary verified: SelfIntersect=${hasSelfIntersection}, LinearError=${linearError !== null ? linearError.toFixed(4) : '0.000'} ft`,
+      "// Generated by BoundaryIQ AI Agent",
+      "// ================================================================",
+      "",
+      "// BEGIN BOUNDARY TRAVERSE",
+      "// Point of Beginning: Northing=5000.000, Easting=5000.000",
+      "",
+    ];
+
+    courses.forEach((c, i) => {
+      if ((c.type || '').toLowerCase() === 'line') {
+        cogoLines.push(`// Course ${i + 1} — Line`);
+        cogoLines.push(`LINE bearing="${c.bearing || ''}" distance=${c.distance || 0}`);
+      } else {
+        cogoLines.push(`// Course ${i + 1} — Curve (${c.curveDirection || 'Right'})`);
+        cogoLines.push(`CURVE radius=${c.radius || 0} arcLength=${c.arcLength || 0} delta="${c.delta || ''}" direction="${c.curveDirection || 'Right'}" chordBearing="${c.chordBearing || ''}" chordDist=${c.chordDistance || 0}`);
+      }
+      cogoLines.push("");
+    });
+    cogoLines.push("// END BOUNDARY TRAVERSE");
+    cogoLines.push("// Return to Point of Beginning");
+
+    const cogoPath = path.join(sourceDir, `${baseName}_COGO.txt`);
+    fs.writeFileSync(cogoPath, cogoLines.join("\n"), "utf8");
+
+    // 3. Write points list
+    if (stations && stations.length > 0) {
+      const ptLines = ["PT,Northing,Easting"];
+      stations.forEach((s, i) => {
+        ptLines.push(`${i},${s.northing.toFixed(3)},${s.easting.toFixed(3)}`);
+      });
+      const ptsPath = path.join(sourceDir, `${baseName}_Points.csv`);
+      fs.writeFileSync(ptsPath, ptLines.join("\n"), "utf8");
+    }
+
+    console.log(`[OUTPUT MIRROR] Auto-saved files to source directory: ${sourceDir}`);
+    return { dxfPath, cogoPath };
+  } catch (err) {
+    console.error('[OUTPUT MIRROR] Failed to save to source directory:', err.message);
+    return null;
+  }
 }

@@ -63,6 +63,7 @@ import deedRouter from './routes/deed.js';
 import authRouter from './routes/auth.js';
 import billingRouter from './routes/billing.js';
 import exportRouter from './routes/export.js';
+import legalRouter from './routes/legal.js';
 
 const app = express();
 app.set('trust proxy', 1); // Trust the first proxy (e.g. Cloud Run load balancer)
@@ -213,6 +214,7 @@ app.use('/api/deed', deedRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/export', exportRouter);
+app.use('/api/legal',  legalRouter);
 
 // Serve static client assets in production
 if (IS_PROD) {

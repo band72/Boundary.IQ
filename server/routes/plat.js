@@ -3,6 +3,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as gemini from '../services/geminiVision.js';
 import * as traverseSvc from '../services/Scripting/traverse.js';
+import { disambiguateQuadrants } from '../services/Scripting/quadrantDisambiguator.js';
 import { requireAuth } from '../middleware/auth.js';
 import { userSettingsStore } from '../services/db/context.js';
 const router = Router();
@@ -57,6 +58,21 @@ router.post('/extract-and-compute', upload.single('image'), async (req, res) => 
 
     const extracted = await gemini.extractBoundary(req.file.buffer, mime);
 
+    // ── Quadrant Disambiguation ────────────────────────────────────────────────
+    // Automatically detect and correct N/S E/W bearing flips before traversing.
+    let disambig = { correctedCount: 0, corrections: [], courses: extracted.courses };
+    if (extracted.courses.length > 0 && !extracted.isOpenEnded) {
+      try {
+        disambig = disambiguateQuadrants(extracted.courses, pobN, pobE);
+        if (disambig.correctedCount > 0) {
+          console.log(`[DISAMBIG] Auto-corrected ${disambig.correctedCount} bearing quadrant(s) in ${req.file.originalname}`);
+          extracted.courses = disambig.courses;
+        }
+      } catch (de) {
+        console.warn('[DISAMBIG] Quadrant disambiguator error (non-fatal):', de.message);
+      }
+    }
+
     let traverse = null, traverseError = null;
     if (extracted.courses.length > 0) {
       try {
@@ -71,7 +87,34 @@ router.post('/extract-and-compute', upload.single('image'), async (req, res) => 
       }
     }
 
-    res.json({ extraction: extracted, traverse, traverseError });
+    // ── QC Gate ────────────────────────────────────────────────────────────────
+    // Always attach QC results so client can display status immediately.
+    const QC_CLOSURE_MAX_FT = 5.0;
+    const linearError  = traverse?.closure?.linearError  ?? null;
+    const hasSelfIntersection = traverse?.hasSelfIntersection ?? false;
+    const closureWarning      = linearError !== null && linearError > QC_CLOSURE_MAX_FT;
+
+    const qc = {
+      hasSelfIntersection,
+      closureWarning,
+      linearError,
+      // Identify which courses are most likely candidates for the intersect bust
+      suspectCourseIndex: hasSelfIntersection
+        ? (traverse?.bustCourseIndex ?? null)
+        : null,
+    };
+
+    if (hasSelfIntersection) {
+      console.warn(`[QC GATE] Self-intersecting boundary detected — file: ${req.file.originalname}`);
+    }
+    if (closureWarning) {
+      console.warn(`[QC GATE] Closure error ${linearError?.toFixed(3)} ft exceeds 5.0 ft threshold — file: ${req.file.originalname}`);
+    }
+
+    res.json({ extraction: extracted, traverse, traverseError, qc, disambig: {
+      correctedCount: disambig.correctedCount,
+      corrections: disambig.corrections,
+    }});
   } catch (ex) {
     console.error('Extract-and-compute failed:', ex);
     res.status(500).json({ error: ex.message });

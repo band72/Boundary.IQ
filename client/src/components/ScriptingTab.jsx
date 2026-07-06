@@ -3010,39 +3010,106 @@ export default function ScriptingTab() {
 
   const handleExportDXF = () => {
     let dxf = [];
-    dxf.push("  0", "SECTION", "  2", "HEADER", "  0", "ENDSEC");
-    dxf.push("  0", "SECTION", "  2", "TABLES", "  0", "TABLE", "  2", "LAYER");
-    dxf.push("  0", "LAYER", "  2", "POINTS", " 70", "0", " 62", "2", "  6", "CONTINUOUS");
-    dxf.push("  0", "LAYER", "  2", "FIGURES", " 70", "0", " 62", "4", "  6", "CONTINUOUS");
-    dxf.push("  0", "LAYER", "  2", "OFFSETS", " 70", "0", " 62", "3", "  6", "HIDDEN");
-    dxf.push("  0", "ENDTAB", "  0", "ENDSEC");
-    dxf.push("  0", "SECTION", "  2", "ENTITIES");
+    
+    const safeText = (str) => {
+      if (typeof str !== 'string') return str ? String(str) : '';
+      return str
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/°/g, '%%d')
+        .replace(/Δ/g, 'Delta=')
+        .replace(/◄/g, '<-')
+        .replace(/—/g, '-')
+        .replace(/[^\x20-\x7E]/g, '');
+    };
+
+    // Header section
+    dxf.push("0", "SECTION", "2", "HEADER", "0", "ENDSEC");
+    
+    // Tables section
+    dxf.push("0", "SECTION", "2", "TABLES");
+    dxf.push("0", "TABLE", "2", "LAYER", "70", "3");
+    dxf.push("0", "LAYER", "2", "POINTS", "70", "0", "62", "2", "6", "CONTINUOUS");
+    dxf.push("0", "LAYER", "2", "FIGURES", "70", "0", "62", "4", "6", "CONTINUOUS");
+    dxf.push("0", "LAYER", "2", "OFFSETS", "70", "0", "62", "3", "6", "HIDDEN");
+    dxf.push("0", "ENDTAB");
+    dxf.push("0", "ENDSEC");
+    
+    // Entities section
+    dxf.push("0", "SECTION", "2", "ENTITIES");
     
     parsedPoints.forEach(p => {
-      dxf.push("  0", "POINT", "  8", "POINTS", " 10", p.easting.toFixed(4), " 20", p.northing.toFixed(4), " 30", p.elevation.toFixed(4));
-      dxf.push("  0", "TEXT", "  8", "POINTS", " 10", (p.easting + 1.2).toFixed(4), " 20", (p.northing + 1.2).toFixed(4), " 30", p.elevation.toFixed(4), " 40", "1.2", "  1", `${p.id}: ${p.rawDescription}`, " 50", "0.0");
+      const eastingVal = (p.easting != null && !isNaN(p.easting)) ? p.easting : 0;
+      const northingVal = (p.northing != null && !isNaN(p.northing)) ? p.northing : 0;
+      const elevationVal = (p.elevation != null && !isNaN(p.elevation)) ? p.elevation : 0;
+      
+      dxf.push(
+        "0", "POINT", 
+        "8", "POINTS", 
+        "10", eastingVal.toFixed(4), 
+        "20", northingVal.toFixed(4), 
+        "30", elevationVal.toFixed(4)
+      );
+      
+      const textVal = safeText(`${p.id}: ${p.rawDescription || ''}`);
+      dxf.push(
+        "0", "TEXT", 
+        "8", "POINTS", 
+        "10", (eastingVal + 1.2).toFixed(4), 
+        "20", (northingVal + 1.2).toFixed(4), 
+        "30", elevationVal.toFixed(4), 
+        "40", "1.2", 
+        "1", textVal, 
+        "50", "0.0"
+      );
     });
 
     figures.forEach(fig => {
       if (fig.isCircle && fig.circleCenter) {
-        dxf.push("  0", "CIRCLE", "  8", "FIGURES", " 10", fig.circleCenter.easting.toFixed(4), " 20", fig.circleCenter.northing.toFixed(4), " 30", "0.0", " 40", fig.circleRadius.toFixed(4));
+        const cx = (fig.circleCenter.easting != null && !isNaN(fig.circleCenter.easting)) ? fig.circleCenter.easting : 0;
+        const cy = (fig.circleCenter.northing != null && !isNaN(fig.circleCenter.northing)) ? fig.circleCenter.northing : 0;
+        const cr = (fig.circleRadius != null && !isNaN(fig.circleRadius)) ? fig.circleRadius : 0;
+        
+        dxf.push(
+          "0", "CIRCLE", 
+          "8", "FIGURES", 
+          "10", cx.toFixed(4), 
+          "20", cy.toFixed(4), 
+          "30", "0.0", 
+          "40", cr.toFixed(4)
+        );
         return;
       }
       if (fig.vertices && fig.vertices.length >= 2) {
-        dxf.push("  0", "LWPOLYLINE", "  8", "FIGURES", " 90", fig.vertices.length.toString(), " 70", fig.isClosed ? "1" : "0", " 43", "0.0");
+        dxf.push(
+          "0", "LWPOLYLINE", 
+          "8", "FIGURES", 
+          "90", fig.vertices.length.toString(), 
+          "70", fig.isClosed ? "1" : "0", 
+          "43", "0.0"
+        );
         fig.vertices.forEach(v => {
-          dxf.push(" 10", v.easting.toFixed(4), " 20", v.northing.toFixed(4));
+          const vx = (v.easting != null && !isNaN(v.easting)) ? v.easting : 0;
+          const vy = (v.northing != null && !isNaN(v.northing)) ? v.northing : 0;
+          dxf.push("10", vx.toFixed(4), "20", vy.toFixed(4));
         });
       }
       if (fig.offsetVertices && fig.offsetVertices.length >= 2) {
-        dxf.push("  0", "LWPOLYLINE", "  8", "OFFSETS", " 90", fig.offsetVertices.length.toString(), " 70", fig.isClosed ? "1" : "0", " 43", "0.0");
+        dxf.push(
+          "0", "LWPOLYLINE", 
+          "8", "OFFSETS", 
+          "90", fig.offsetVertices.length.toString(), 
+          "70", fig.isClosed ? "1" : "0", 
+          "43", "0.0"
+        );
         fig.offsetVertices.forEach(v => {
-          dxf.push(" 10", v.easting.toFixed(4), " 20", v.northing.toFixed(4));
+          const vx = (v.easting != null && !isNaN(v.easting)) ? v.easting : 0;
+          const vy = (v.northing != null && !isNaN(v.northing)) ? v.northing : 0;
+          dxf.push("10", vx.toFixed(4), "20", vy.toFixed(4));
         });
       }
     });
 
-    dxf.push("  0", "ENDSEC", "  0", "EOF");
+    dxf.push("0", "ENDSEC", "0", "EOF");
     downloadFile(dxf.join('\n'), 'linework_export.dxf', 'application/dxf');
     showToast('DXF Linework exported successfully!');
   };

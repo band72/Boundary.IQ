@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../hooks/useToast';
 import TraverseMap from './TraverseMap';
+import DxfPreview from './DxfPreview';
 import PrintBlueprint from './PrintBlueprint';
 import ExportModal from './ExportModal';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -54,6 +55,31 @@ function computeLinearError(courseList, pobN, pobE) {
   }
   const errN = pobN - n, errE = pobE - e;
   return Math.sqrt(errN * errN + errE * errE);
+}
+
+/** Compute how consistent a curve's given chord distance is with its radius+delta.
+ *  Returns { consistent: bool, expectedChord: number|null, delta: number }
+ */
+function computeCurveConsistency(r, deltaStr, chDist) {
+  const radius = parseFloat(r);
+  const chord  = parseFloat(chDist);
+  if (isNaN(radius) || radius <= 0 || isNaN(chord) || chord <= 0) return null;
+  // Parse delta: could be decimal degrees or DMS like 93°12'00"
+  let deltaRad = null;
+  if (deltaStr) {
+    const dm = String(deltaStr).match(/(\d+)[°\-\s](\d+)['\-\s](\d+(?:\.\d+)?)["\s]*/);
+    if (dm) {
+      const deg = +dm[1] + +dm[2] / 60 + +dm[3] / 3600;
+      deltaRad = deg * Math.PI / 180;
+    } else {
+      const d = parseFloat(deltaStr);
+      if (!isNaN(d)) deltaRad = d * Math.PI / 180;
+    }
+  }
+  if (deltaRad === null || deltaRad <= 0) return null;
+  const expectedChord = 2 * radius * Math.sin(deltaRad / 2);
+  const diff = Math.abs(chord - expectedChord);
+  return { consistent: diff < 0.15, expectedChord, diff };
 }
 
 function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
@@ -145,7 +171,16 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
           ) : (
             <>
               <div className="form-group">
-                <label className="form-label">Curve Direction</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  Curve Direction
+                  {(() => {
+                    const cc = computeCurveConsistency(radius, delta, chordDistance);
+                    if (!cc) return null;
+                    return cc.consistent
+                      ? <span title={`Chord ${cc.expectedChord.toFixed(3)} ft matches entered ${parseFloat(chordDistance).toFixed(3)} ft`} style={{ padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 700, background: 'rgba(40,200,100,0.18)', color: '#28c864', border: '1px solid rgba(40,200,100,0.4)' }}>✓ Consistent</span>
+                      : <span title={`Expected chord ≈ ${cc.expectedChord.toFixed(3)} ft but entered ${parseFloat(chordDistance).toFixed(3)} ft (Δ=${cc.diff.toFixed(3)} ft) — verify direction`} style={{ padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 700, background: 'rgba(255,180,0,0.18)', color: '#ffb400', border: '1px solid rgba(255,180,0,0.4)' }}>⚠ Check Direction</span>;
+                  })()}
+                </label>
                 <select value={curveDirection} onChange={e => setCurveDirection(e.target.value)} style={{ width: '100%', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
                   <option value="Left">Left</option>
                   <option value="Right">Right</option>
@@ -406,6 +441,71 @@ export default function TraverseTab() {
     }
   };
 
+  const handleCombineTractsDxf = async () => {
+    if (!result || !result.tracts || result.tracts.length === 0) return;
+    try {
+      const parcels = result.tracts.map((tract, idx) => {
+        const tr = tract.traverse || {};
+        const stations = (tr.stations || []).map(s => ({
+          northing: s.northing,
+          easting: s.easting,
+          depDN: s.depDN || 0,
+          depDE: s.depDE || 0
+        }));
+        const adjusted = (tr.adjustedStations || []).map(s => ({
+          northing: s.northing,
+          easting: s.easting
+        }));
+        const courses = (tract.courses || tract.segments || []).map(c => ({
+          type: c.type || 'Line',
+          bearing: c.bearing || null,
+          distance: c.distance || null,
+          delta: c.delta || null,
+          radius: c.radius || null,
+          arcLength: c.arcLength || null,
+          curveDirection: c.curveDirection || null,
+          chordBearing: c.chordBearing || null,
+          chordDistance: c.chordDistance || null
+        }));
+
+        return {
+          fileName: tract.name || `Tract_${idx + 1}`,
+          parcelName: tract.name || `Tract_${idx + 1}`,
+          stations,
+          adjusted,
+          courses,
+          county: result.extraction?.county || null,
+          state: result.extraction?.state || null,
+          areaAcres: tr.areaAcres || 0,
+          perimeter: tr.perimeter || 0,
+          pobNorthing: tract.pob?.northing ?? null,
+          pobEasting: tract.pob?.easting ?? null
+        };
+      });
+
+      const res = await fetch(`${API.base}/api/dxf/combine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...API.authHeaders?.() },
+        body: JSON.stringify({ parcels }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Combined DXF export failed');
+      }
+
+      const blob = await res.blob();
+      const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob),
+        download: `combined_tracts_${result.fileName || 'boundary'}.dxf`,
+      });
+      a.click();
+      showToast?.('✅ Combined DXF downloaded successfully!', 'success');
+    } catch (e) {
+      showToast?.(`✗ Error: ${e.message}`, 'error');
+    }
+  };
+
   const applyFixedCourses = () => {
     if (!fixDeedResult) return;
     
@@ -505,6 +605,20 @@ export default function TraverseTab() {
                 );
               })}
             </div>
+            <button
+              id="combine-tracts-dxf-btn"
+              className="btn btn-sm btn-ghost"
+              style={{
+                marginLeft: 'auto',
+                fontWeight: 600,
+                border: '1px solid var(--accent)',
+                color: 'var(--accent)',
+                background: 'rgba(61, 127, 255, 0.05)'
+              }}
+              onClick={handleCombineTractsDxf}
+            >
+              📦 Combine All Tracts DXF
+            </button>
           </div>
         </div>
       )}
@@ -542,7 +656,7 @@ export default function TraverseTab() {
           {/* ── Fix Deed Text (Feature 2: enhanced with live preview) ─────── */}
           <div className="card" style={{ borderColor: fixDeedOpen ? 'var(--accent)' : undefined }}>
             <div className="card-header" style={{ cursor: 'pointer' }} onClick={() => setFixDeedOpen(o => !o)}>
-              <div className="card-title">🔧 Deed Text Parser</div>
+              <div className="card-title">📄 ALTA / Deed Text Parser</div>
               <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
                 {deedPreviewStr && fixDeedOpen && (
                   <span style={{
@@ -593,7 +707,7 @@ export default function TraverseTab() {
                   </span>
                 </label>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Paste raw deed text — auto-corrects errors &amp; loads courses
+                  Paste raw ALTA / deed text — extracts courses &amp; loads them automatically
                 </span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{fixDeedOpen ? '▲' : '▼'}</span>
               </div>
@@ -625,6 +739,42 @@ export default function TraverseTab() {
                   )}
                   <button className="btn btn-ghost btn-sm" onClick={() => { setFixDeedText(''); setFixDeedResult(null); setFixDeedError(''); }}>
                     Clear
+                  </button>
+                  <button
+                    id="alta-quick-extract-btn"
+                    className="btn btn-ghost btn-sm"
+                    onClick={async () => {
+                      if (!fixDeedText.trim()) return;
+                      setFixDeedLoading(true); setFixDeedError(''); setFixDeedResult(null);
+                      try {
+                        const res = await fetch(`${API.base}/api/legal/parse`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', ...API.authHeaders?.() },
+                          body: JSON.stringify({ text: fixDeedText.trim(), pobN: parseFloat(pob.northing) || 5000, pobE: parseFloat(pob.easting) || 5000, units }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'ALTA parse failed');
+                        if (data.courses?.length) {
+                          setCourses(data.courses.map(c => ({
+                            ...BLANK_COURSE,
+                            ...c,
+                            distance: c.distance != null ? String(c.distance) : '',
+                            radius: c.radius != null ? String(c.radius) : '',
+                            arcLength: c.arcLength != null ? String(c.arcLength) : '',
+                            chordDistance: c.chordDistance != null ? String(c.chordDistance) : '',
+                          })));
+                          showToast?.('✅ ALTA courses loaded', 'success');
+                        } else {
+                          setFixDeedError('No courses extracted — check the legal description text.');
+                        }
+                      } catch (ex) { setFixDeedError(ex.message); }
+                      finally { setFixDeedLoading(false); }
+                    }}
+                    disabled={fixDeedLoading || !fixDeedText.trim()}
+                    title="Directly extract and load ALTA title commitment courses (no repair chain)"
+                    style={{ fontSize: '0.72rem' }}
+                  >
+                    📋 ALTA Quick Extract
                   </button>
                   <button
                     className="btn btn-primary btn-sm"
@@ -1068,6 +1218,37 @@ export default function TraverseTab() {
                     <div className="value neutral">{result.areaAcres.toFixed(4)} ac</div>
                   </div>
                 </div>
+                {/* ── QC Badges ── */}
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', padding: '0.5rem 1rem 0.75rem', borderTop: '1px solid var(--border)' }}>
+                  {result.hasSelfIntersection
+                    ? (
+                      <span id="qc-self-intersect-badge" title="Boundary lines cross each other — check bearing quadrants" style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                        padding: '0.25rem 0.65rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700,
+                        background: 'rgba(255,60,60,0.18)', color: '#ff4c4c', border: '1px solid rgba(255,60,60,0.4)',
+                      }}>
+                        ⛔ SELF-INTERSECTING — Check Bearing Quadrants
+                      </span>
+                    ) : (
+                      <span id="qc-no-intersect-badge" style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                        padding: '0.25rem 0.65rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600,
+                        background: 'rgba(40,200,100,0.15)', color: '#28c864', border: '1px solid rgba(40,200,100,0.35)',
+                      }}>
+                        ✅ No Self-Intersections
+                      </span>
+                    )
+                  }
+                  {result.closure.linearError > 5.0 && (
+                    <span id="qc-closure-warning-badge" title={`Linear error ${result.closure.linearError.toFixed(3)} ft exceeds 5.0 ft QC threshold`} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                      padding: '0.25rem 0.65rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600,
+                      background: 'rgba(255,180,0,0.15)', color: '#ffb400', border: '1px solid rgba(255,180,0,0.4)',
+                    }}>
+                      ⚠ Closure &gt; 5 ft — Review Courses
+                    </span>
+                  )}
+                </div>
                 {showAdjusted && result.adjustedStations?.length > 0 && result.stations?.length > 0 && (
                   <details style={{ padding: '0 1rem 0.75rem' }}>
                     <summary style={{ fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', marginBottom: '0.5rem' }}>
@@ -1112,6 +1293,24 @@ export default function TraverseTab() {
                     </div>
                   </details>
                 )}
+              </div>
+
+              {/* ── SVG Boundary Preview ── */}
+              <div className="card" id="svg-preview-card">
+                <div className="card-header">
+                  <div className="card-title">🗺 Boundary Preview</div>
+                  <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>In-browser sketch — no CAD required</span>
+                </div>
+                <div style={{ padding: '0.75rem 1rem 1rem' }}>
+                  <DxfPreview
+                    stations={showAdjusted && result.adjustedStations?.length >= 2 ? result.adjustedStations : result.stations}
+                    courses={courses}
+                    hasSelfIntersection={result.hasSelfIntersection ?? false}
+                    width={560}
+                    height={380}
+                    style={{ maxWidth: '100%' }}
+                  />
+                </div>
               </div>
 
               {/* Typo Assist */}

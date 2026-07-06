@@ -1,6 +1,6 @@
 // ─── DXF Route ──────────────────────────────────────────────────────────────
 import { Router } from 'express';
-import { generateDxf, generateCombinedDxf } from '../services/dxfExport.js';
+import { generateDxf, generateCombinedDxf, saveToSourceDir } from '../services/dxfExport.js';
 import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
@@ -42,9 +42,50 @@ router.post('/generate', (req, res) => {
       basisOfBearings: body.basisOfBearings ?? body.BasisOfBearings ?? null,
     };
 
+    // ── QC Gate ────────────────────────────────────────────────────────────────
+    // Block DXF output when boundary fails QC, unless override header is set.
+    const overrideQC = (req.headers['x-override-qc'] === 'true') || (body.overrideQc === true);
+    const QC_CLOSURE_MAX_FT = 5.0;
+    const linearError = body.linearError ?? body.closure?.linearError ?? null;
+    const hasSelfIntersection = body.hasSelfIntersection ?? false;
+
+    if (!overrideQC) {
+      if (hasSelfIntersection) {
+        return res.status(422).json({
+          error: 'QC FAILED: Self-intersecting boundary detected. Fix bearing quadrants before generating DXF.',
+          qcFail: 'selfIntersection',
+          hasSelfIntersection: true,
+        });
+      }
+      if (linearError !== null && linearError > QC_CLOSURE_MAX_FT) {
+        return res.status(422).json({
+          error: `QC FAILED: Closure error ${linearError.toFixed(3)} ft exceeds ${QC_CLOSURE_MAX_FT} ft threshold. Review courses or add X-Override-QC: true header to force.`,
+          qcFail: 'closureError',
+          linearError,
+        });
+      }
+    }
+
     // Fix #1: Pass bustCourseIndex so the DXF generator can highlight the suspect course
     const bustCourseIndex = body.bustCourseIndex ?? body.BustCourseIndex ?? null;
     const dxfString = generateDxf(stations, adjusted, courses, meta, bustCourseIndex != null ? parseInt(bustCourseIndex) : null);
+
+    // ── Output Mirror Saving ──
+    if (body.sourcePath) {
+      try {
+        saveToSourceDir(
+          dxfString,
+          body.sourcePath,
+          stations,
+          courses,
+          meta,
+          hasSelfIntersection,
+          linearError
+        );
+      } catch (saveErr) {
+        console.warn('[DXF] Failed to save output mirror to source path:', saveErr.message);
+      }
+    }
 
     let safeFileName = 'boundary_sketch.dxf';
     if (meta.parcel) safeFileName = meta.parcel.replace(/ /g, '_').replace(/\//g, '-') + '.dxf';

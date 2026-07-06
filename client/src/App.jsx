@@ -171,6 +171,11 @@ function AppShell() {
   const [tab, setTab]                   = useState('writer');
   const [helpOpen, setHelpOpen]         = useState(false);
   const [healthStatus, setHealthStatus] = useState(null); // null | 'ok' | 'error'
+  const [theme, setTheme]               = useLocalStorage('boundaryiq_theme', 'blue');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   const isAdmin = user?.role === 'admin';
 
@@ -460,6 +465,7 @@ function AppShell() {
                       hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
                       hidePlat={hidePlat}         setHidePlat={setHidePlat}
                       hideWriter={hideWriter}     setHideWriter={setHideWriter}
+                      theme={theme}               setTheme={setTheme}
                     />
                   ) : (
                     <UserSettingsTab
@@ -467,6 +473,7 @@ function AppShell() {
                       hideTraverse={hideTraverse} setHideTraverse={setHideTraverse}
                       hidePlat={hidePlat}         setHidePlat={setHidePlat}
                       hideWriter={hideWriter}     setHideWriter={setHideWriter}
+                      theme={theme}               setTheme={setTheme}
                     />
                   )
                 )}

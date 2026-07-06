@@ -598,6 +598,7 @@ export default function UserSettingsTab({
   hideTraverse: propHideTraverse, setHideTraverse: propSetHideTraverse,
   hidePlat: propHidePlat,         setHidePlat: propSetHidePlat,
   hideWriter: propHideWriter,     setHideWriter: propSetHideWriter,
+  theme,                          setTheme,
 }) {
   const isAdmin = user?.role === 'admin';
   // Local fallbacks
@@ -1163,6 +1164,28 @@ export default function UserSettingsTab({
           </div>
         </div>
       </LockedCardWrapper>
+
+      {/* ── Theme Customization ─────────────────────────────────── */}
+      <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+          <div className="card-title" style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            🎨 Aesthetics &amp; Themes
+          </div>
+        </div>
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Select Theme Template</label>
+            <select value={theme || 'blue'} onChange={e => setTheme(e.target.value)}
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.55rem 0.85rem', color: 'var(--text-primary)', fontSize: '0.8rem', cursor: 'pointer', height: '38px', maxWidth: '300px' }}>
+              <option value="blue">🔵 Original (Vibrant Blue &amp; Cyan)</option>
+              <option value="amber">🟡 CAD Amber (Classic Surveying)</option>
+            </select>
+            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: '0.25rem' }}>
+              Choose a design template for the BoundaryIQ platform color palette. Changes apply instantly.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* ── Sidebar Customization ─────────────────────────────────── */}
       <div className="card" style={{ background: 'rgba(9,14,26,0.4)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>

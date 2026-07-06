@@ -37,7 +37,7 @@ export function createOutputFolder(sourceFolder) {
  * Write output files for a single processed deed result.
  * Returns the combined PDF path if one was written, else null.
  */
-export async function writeResultFiles(outputFolder, sourceFileName, result, writeResult, shortFileNames = false, showConceptualDetail = false, leaderStyle = 'arc', labelContentMode = 'auto') {
+export async function writeResultFiles(outputFolder, sourceFileName, result, writeResult, shortFileNames = false, showConceptualDetail = false, leaderStyle = 'arc', labelContentMode = 'auto', sourceFilePath = null) {
   const baseName = path.parse(sourceFileName).name;
   let targetFolder = outputFolder;
   if (shortFileNames) {
@@ -350,6 +350,23 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
         fs.writeFileSync(path.join(targetFolder, dxfFile), dxfStr, 'utf-8');
         fs.writeFileSync(path.join(targetFolder, corrDxfFile), dxfStr, 'utf-8');
         console.log(`Output: wrote DXF — ${path.basename(dxfFile)}`);
+
+        // If sourceFilePath is supplied, mirror-save to source folder
+        if (sourceFilePath) {
+          try {
+            dxf.saveToSourceDir(
+              dxfStr,
+              sourceFilePath,
+              stations,
+              courses,
+              meta,
+              result.traverse?.hasSelfIntersection ?? false,
+              result.traverse?.closure?.linearError ?? null
+            );
+          } catch (mErr) {
+            console.warn('[OUTPUT] Mirror saving failed:', mErr.message);
+          }
+        }
       } catch (dxfEx) {
         console.warn(`Output: DXF generation failed for ${sourceFileName}:`, dxfEx.message);
       }
