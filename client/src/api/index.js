@@ -44,9 +44,12 @@ export async function authFetch(path, opts = {}) {
   const token = localStorage.getItem(AUTH_STORAGE_KEY);
 
   const headers = {
-    'Content-Type': 'application/json',
     ...opts.headers,
   };
+
+  if (!(opts.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -147,6 +150,27 @@ export const api = {
   settings: {
     get:    ()       => authFetch('/settings'),
     update: (data)   => authFetch('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  },
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+  chat: {
+    sendMessage: (message, history = [], file = null) => {
+      if (file) {
+        const formData = new FormData();
+        formData.append('message', message);
+        formData.append('history', JSON.stringify(history));
+        formData.append('image', file);
+        return authFetch('/chat/message', {
+          method: 'POST',
+          body: formData
+        });
+      } else {
+        return authFetch('/chat/message', {
+          method: 'POST',
+          body: JSON.stringify({ message, history })
+        });
+      }
+    }
   },
 
   // ── Billing ───────────────────────────────────────────────────────────────

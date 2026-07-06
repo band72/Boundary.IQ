@@ -4,6 +4,7 @@ const TraverseTab  = lazy(() => import('./components/TraverseTab'));
 const PlatTab      = lazy(() => import('./components/PlatTab'));
 const WriterTab    = lazy(() => import('./components/WriterTab'));
 const BatchDeedTab = lazy(() => import('./components/BatchDeedTab'));
+const ChatTab      = lazy(() => import('./components/ChatTab'));
 const DashboardTab = lazy(() => import('./components/DashboardTab'));
 const SettingsTab  = lazy(() => import('./components/SettingsTab'));
 const UserSettingsTab = lazy(() => import('./components/UserSettingsTab'));
@@ -136,6 +137,7 @@ const TABS = [
   { id: 'plat',      icon: '🛰',  label: 'Plat Extraction',  minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'writer',    icon: '✍️',  label: 'Deed Writer',      minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'batch',     icon: '📦',  label: 'Batch Deed',       minRole: 'user',  minPlan: 'free', status: 'live'    },
+  { id: 'chat',      icon: '💬',  label: 'AI Chat',          minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'scripting', icon: '📝',  label: 'Linework Scripting', minRole: 'user', minPlan: 'free', status: 'live'   },
   { id: 'dashboard', icon: '📊',  label: 'Dashboard',        minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'settings',  icon: '⚙️',  label: 'Settings',         minRole: 'user',  minPlan: 'free', status: 'live'    },
@@ -449,6 +451,7 @@ function AppShell() {
                     ? <BatchDeedTab />
                     : <TestingWall feature="Batch Deed Processing" icon="📦" />
                 )}
+                {tab === 'chat'      && <ChatTab />}
                 {tab === 'scripting' && (
                   hasAccess(user, TABS.find(t => t.id === 'scripting'))
                     ? <ScriptingTab />

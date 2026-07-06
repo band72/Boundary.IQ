@@ -64,6 +64,7 @@ import authRouter from './routes/auth.js';
 import billingRouter from './routes/billing.js';
 import exportRouter from './routes/export.js';
 import legalRouter from './routes/legal.js';
+import chatRouter from './routes/chat.js';
 
 const app = express();
 app.set('trust proxy', 1); // Trust the first proxy (e.g. Cloud Run load balancer)
@@ -215,6 +216,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/legal',  legalRouter);
+app.use('/api/chat',   chatRouter);
 
 // Serve static client assets in production
 if (IS_PROD) {
