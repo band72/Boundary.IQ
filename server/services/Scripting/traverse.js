@@ -192,8 +192,8 @@ export function compute(req) {
   // Initialize prevAzimuthDeg and computedCenters from commencement segments if available
   if (req.commencementSegments && req.commencementSegments.length > 0) {
     let tempAz = null;
-    let POC_N = 5000;
-    let POC_E = 5000;
+    const POC_N = 5000;
+    const POC_E = 5000;
     let currN = POC_N;
     let currE = POC_E;
     
@@ -449,7 +449,7 @@ function computeCurve(c, perim, uf, prevAzimuthDeg, startN, startE, computedCent
   }
   if (chBrg !== null) c.chordBearing = chBrg;
 
-  let deltaDeg = dDeg;
+  const deltaDeg = dDeg;
 
   // Arc length: prefer given, else compute from R × Δ
   let arcLen = l;

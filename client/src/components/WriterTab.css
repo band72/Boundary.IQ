@@ -1,0 +1,212 @@
+/* client/src/components/WriterTab.css */
+
+.writer-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.writer-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+}
+
+.writer-header-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.writer-mode-selector {
+  display: flex;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.writer-mode-btn {
+  padding: 0.35rem 0.9rem;
+  border: none;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.writer-mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.writer-course-headers {
+  display: grid;
+  grid-template-columns: 28px 150px 1fr 120px 48px 32px;
+  gap: 0.5rem;
+  padding: 0 0.5rem 0.4rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.writer-course-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.writer-course-empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.writer-course-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.writer-course-item.selected {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+}
+
+.writer-course-item:hover:not(.selected) {
+  border-color: var(--accent2);
+}
+
+.writer-course-row {
+  display: grid;
+  grid-template-columns: 28px 150px 1fr 120px 48px 32px;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.writer-course-num {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.writer-course-delete-btn {
+  background: rgba(255, 77, 109, 0.15);
+  border: 1px solid rgba(255, 77, 109, 0.3);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
+  height: 100%;
+  transition: all 0.15s;
+}
+
+.writer-course-delete-btn:hover {
+  background: rgba(255, 77, 109, 0.25);
+  border-color: rgba(255, 77, 109, 0.5);
+}
+
+.writer-reorder-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+}
+
+.writer-reorder-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.writer-reorder-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.writer-reorder-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.writer-sub-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 33px;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  padding-top: 0.4rem;
+}
+
+.writer-sub-item-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-right: 0.25rem;
+}
+
+.writer-bearing-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.writer-bearing-input-wrapper input {
+  padding-right: 1.5rem;
+  width: 100%;
+}
+
+.writer-bearing-validation-icon {
+  position: absolute;
+  right: 0.5rem;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.writer-bearing-validation-icon.valid {
+  color: var(--success, #2ec4b6);
+}
+
+.writer-bearing-validation-icon.invalid {
+  color: var(--danger, #ff4d6d);
+}
+
+.writer-custom-desc-input {
+  flex-grow: 1;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.4rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}

@@ -132,10 +132,15 @@ export function getDocType(filePath, fileName) {
     try {
       const txt = raw.toUpperCase();
 
-      // Filename-level skip takes priority — even if content contains THENCE
+      // Filename-level skip check (bypassed if content explicitly contains boundary keywords)
       const upperFileName = fileName.toUpperCase();
+      const hasTraverseContent = txt.includes('THENCE') || txt.includes('BEGINNING AT');
       for (const skip of SKIP_KEYWORDS) {
         if (upperFileName.includes(skip.toUpperCase())) {
+          if (hasTraverseContent) {
+            log.info({ file: fileName, skip }, 'Bypassing filename skip keyword because document content contains traversable courses');
+            continue;
+          }
           log.debug({ file: fileName, skip }, 'SKIP — filename matches skip keyword');
           return 'SKIP';
         }

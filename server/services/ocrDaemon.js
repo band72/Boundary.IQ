@@ -53,7 +53,7 @@ const MAX_PAGES  = parseInt(process.env.OCR_DAEMON_MAX_PAGES || '10', 10);
 let _proc    = null;   // child_process.ChildProcess
 let _ready   = false;  // true once the daemon printed {"status":"ready"}
 let _buffer  = '';     // incomplete line buffer for stdout
-let _pending = new Map(); // jobId → { resolve, reject, timer }
+const _pending = new Map(); // jobId → { resolve, reject, timer }
 let _startPromise = null; // in-flight boot promise
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

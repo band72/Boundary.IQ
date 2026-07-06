@@ -106,7 +106,7 @@ export function pruneLongText(text) {
     if (match && (earliestIdx === -1 || match.index < earliestIdx)) earliestIdx = match.index;
   }
 
-  let startIdx = earliestIdx !== -1 ? Math.max(0, earliestIdx - 1200) : 0;
+  const startIdx = earliestIdx !== -1 ? Math.max(0, earliestIdx - 1200) : 0;
 
   let endIdx = text.length;
   const searchAreaStart = earliestIdx !== -1 ? earliestIdx : 0;

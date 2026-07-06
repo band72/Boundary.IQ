@@ -62,7 +62,7 @@ const MAX_FILE_SIZE = 51 * 1024 * 1024;
 const PER_DEED_TIMEOUT_MS = 3 * 60 * 1000; // 3 min max per deed — prevents a single hung file from stalling the batch
 
 function normalizeMime(file) {
-  let mime = (file.mimetype || '').toLowerCase();
+  const mime = (file.mimetype || '').toLowerCase();
   if (mime.includes('jpeg') || mime.includes('jpg')) return 'image/jpeg';
   if (mime.includes('png')) return 'image/png';
   if (mime.includes('webp')) return 'image/webp';
@@ -226,7 +226,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     }, 15000);
 
     // Process with concurrency limiter
-    let active = 0;
+    const active = 0;
     const queue = files.map((file, index) => async () => {
       const fileName = file.originalname;
       log.info({ fileName, index }, 'Batch item started');

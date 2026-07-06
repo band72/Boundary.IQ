@@ -9,6 +9,41 @@ import { API } from '../config';
 import { previewDeedText, deedPreviewSummary } from '../utils/deedParser.js';
 
 const BLANK_COURSE = { type: 'Line', bearing: '', distance: '', curveDirection: 'Right', delta: '', radius: '', arcLength: '', chordBearing: '', chordDistance: '' };
+
+function validateBearing(bearing) {
+  if (!bearing) return false;
+  const clean = bearing.trim();
+  if (/^(N|S|E|W|NORTH|SOUTH|EAST|WEST)$/i.test(clean)) return true;
+  const regex = /^[NSns]\s*\d+([\s°\-\d'"’.\u2032\u2033\u2034\u02B9\u02BA\uF0B0\uF0B2\uFEFF\u00BA\u02DA]*)\s*[EWew]?$/;
+  return regex.test(clean);
+}
+
+function checkBearingWarning(bearing) {
+  if (!bearing) return null;
+  const clean = bearing.trim().toUpperCase();
+  
+  if (/^[MHPF]/.test(clean) || /[MHPF]$/.test(clean)) {
+    return 'Fuzzy OCR characters detected (e.g., M/H/P/F). Will be auto-corrected in backend.';
+  }
+  
+  const dmsMatch = clean.match(/^[NS]\s*(\d+(?:\.\d+)?)/);
+  if (dmsMatch) {
+    const deg = parseFloat(dmsMatch[1]);
+    if (deg === 0 || deg === 90) {
+      return `Cardinal directions (0° or 90°) should not have quadrant letters.`;
+    }
+  }
+
+  if (/^[NSns]\s*\d{5,6}(?:\.\d+)?\s*[EWew]?$/i.test(clean)) {
+    return 'Smashed digits detected. Will be parsed as DMS.';
+  }
+
+  if (/^[NSns]\s*\d+\.\d{4,}\s*[EWew]?$/i.test(clean)) {
+    return 'Packed DMS format detected. Ensure digits represent DD.MMSS.';
+  }
+
+  return null;
+}
 const EXAMPLE_COURSES = [
   { type: 'Line', bearing: "N89-50-00E", distance: '669.80' },
   { type: 'Line', bearing: "S00-35-00E", distance: '669.80' },
@@ -94,6 +129,49 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
   const [chordBearing, setChordBearing] = useState('');
   const [chordDistance, setChordDistance] = useState('');
 
+  const handleAutoCalculateCurve = () => {
+    const r = parseFloat(radius);
+    if (isNaN(r) || r <= 0) return;
+
+    let dDeg = null;
+    if (delta) {
+      const dm = String(delta).match(/(\d+)[°\-\s](\d+)['\-\s](\d+(?:\.\d+)?)["\s]*/);
+      if (dm) {
+        dDeg = +dm[1] + +dm[2] / 60 + +dm[3] / 3600;
+      } else {
+        const d = parseFloat(delta);
+        if (!isNaN(d)) dDeg = d;
+      }
+    }
+
+    const arc = parseFloat(arcLength);
+    const chord = parseFloat(chordDistance);
+
+    if (dDeg && !isNaN(dDeg)) {
+      const deltaRad = (dDeg * Math.PI) / 180;
+      if (isNaN(arc) || arc <= 0) {
+        setArcLength((r * deltaRad).toFixed(2));
+      }
+      if (isNaN(chord) || chord <= 0) {
+        setChordDistance((2 * r * Math.sin(deltaRad / 2)).toFixed(2));
+      }
+    } else if (arc && arc > 0) {
+      const deltaRad = arc / r;
+      const deg = (deltaRad * 180) / Math.PI;
+      setDelta(deg.toFixed(4));
+      if (isNaN(chord) || chord <= 0) {
+        setChordDistance((2 * r * Math.sin(deltaRad / 2)).toFixed(2));
+      }
+    } else if (chord && chord > 0 && chord <= 2 * r) {
+      const deltaRad = 2 * Math.asin(chord / (2 * r));
+      const deg = (deltaRad * 180) / Math.PI;
+      setDelta(deg.toFixed(4));
+      if (isNaN(arc) || arc <= 0) {
+        setArcLength((r * deltaRad).toFixed(2));
+      }
+    }
+  };
+
   useEffect(() => {
     if (course) {
       setType(course.type || 'Line');
@@ -149,7 +227,17 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
           {type === 'Line' || type === 'Squiggle' ? (
             <>
               <div className="form-group">
-                <label className="form-label">Bearing</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Bearing</span>
+                  {bearing && (() => {
+                    const warning = checkBearingWarning(bearing);
+                    const isValid = validateBearing(bearing) || warning;
+                    if (warning) return <span title={warning} style={{ color: '#ffb400', fontSize: '0.75rem', fontWeight: 600 }}>⚠️ warning</span>;
+                    return isValid
+                      ? <span style={{ color: 'var(--success, #2ec4b6)', fontSize: '0.75rem', fontWeight: 600 }}>✓ valid</span>
+                      : <span style={{ color: 'var(--danger, #ff4d6d)', fontSize: '0.75rem', fontWeight: 600 }}>✗ invalid</span>;
+                  })()}
+                </label>
                 <input
                   type="text"
                   value={bearing}
@@ -178,7 +266,7 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
                     if (!cc) return null;
                     return cc.consistent
                       ? <span title={`Chord ${cc.expectedChord.toFixed(3)} ft matches entered ${parseFloat(chordDistance).toFixed(3)} ft`} style={{ padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 700, background: 'rgba(40,200,100,0.18)', color: '#28c864', border: '1px solid rgba(40,200,100,0.4)' }}>✓ Consistent</span>
-                      : <span title={`Expected chord ≈ ${cc.expectedChord.toFixed(3)} ft but entered ${parseFloat(chordDistance).toFixed(3)} ft (Δ=${cc.diff.toFixed(3)} ft) — verify direction`} style={{ padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 700, background: 'rgba(255,180,0,0.18)', color: '#ffb400', border: '1px solid rgba(255,180,0,0.4)' }}>⚠ Check Direction</span>;
+                      : <span title={`Expected chord ≈ ${cc.expectedChord.toFixed(3)} ft but entered ${parseFloat(chordDistance).toFixed(3)} ft (Δ=${cc.diff.toFixed(3)} ft) — verify direction`} style={{ padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 700, background: 'rgba(255,180,0,0.18)', color: '#ffb400', border: '1px solid rgba(255,180,0,0.4)' }}>⚠️ Check Direction</span>;
                   })()}
                 </label>
                 <select value={curveDirection} onChange={e => setCurveDirection(e.target.value)} style={{ width: '100%', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
@@ -214,7 +302,17 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Chord Bearing</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Chord Bearing</span>
+                  {chordBearing && (() => {
+                    const warning = checkBearingWarning(chordBearing);
+                    const isValid = validateBearing(chordBearing) || warning;
+                    if (warning) return <span title={warning} style={{ color: '#ffb400', fontSize: '0.75rem', fontWeight: 600 }}>⚠️ warning</span>;
+                    return isValid
+                      ? <span style={{ color: 'var(--success, #2ec4b6)', fontSize: '0.75rem', fontWeight: 600 }}>✓ valid</span>
+                      : <span style={{ color: 'var(--danger, #ff4d6d)', fontSize: '0.75rem', fontWeight: 600 }}>✗ invalid</span>;
+                  })()}
+                </label>
                 <input
                   type="text"
                   value={chordBearing}
@@ -232,6 +330,14 @@ function CourseDrawer({ index, courses, onSave, onDelete, onClose }) {
                   placeholder="Chord Distance"
                 />
               </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleAutoCalculateCurve}
+                style={{ width: '100%', marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', fontWeight: 600 }}
+              >
+                ⚡ Auto-Calculate Curve Parameters
+              </button>
             </>
           )}
         </div>
@@ -280,6 +386,7 @@ export default function TraverseTab() {
 
   // ── Feature 1: Bowditch Adjustment Toggle ─────────────────────────────────
   const [showAdjusted, setShowAdjusted] = useState(true);
+  const [adjustmentMethod, setAdjustmentMethod] = useLocalStorage('boundaryiq_adjustment_method', 'Compass');
 
   // ── Feature 3: Georeferencing ─────────────────────────────────────────────
   const [georef, setGeoref] = useLocalStorage('boundaryiq_georef', {
@@ -320,14 +427,16 @@ export default function TraverseTab() {
   const removeCourse = i => setCourses(c => c.filter((_, idx) => idx !== i));
   const updateCourse = (i, field, val) => setCourses(c => c.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
-  const compute = async (overrideCourses) => {
+  const compute = async (overrideCourses, overrideAdjustmentMethod) => {
     setLoading(true); setError('');
     try {
       const targetCourses = Array.isArray(overrideCourses) ? overrideCourses : courses;
+      const targetMethod = overrideAdjustmentMethod !== undefined ? overrideAdjustmentMethod : adjustmentMethod;
       const body = {
         pointOfBeginning: { northing: parseFloat(pob.northing), easting: parseFloat(pob.easting) },
         units,
         isOpenEnded,
+        adjustmentMethod: targetMethod,
         courses: targetCourses.map(c => {
           const isLineOrSquiggle = c.type === 'Line' || c.type === 'Squiggle';
           return {
@@ -1082,16 +1191,76 @@ export default function TraverseTab() {
                   </select>
                   {c.type === 'Line' || c.type === 'Squiggle' ? (
                     <>
-                      <input type="text" placeholder='N45°30′00″E' value={c.bearing}
-                        onChange={e => updateCourse(i, 'bearing', e.target.value)} />
+                      <div className="traverse-bearing-input-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <input
+                          type="text"
+                          placeholder='N45°30′00″E'
+                          value={c.bearing}
+                          onChange={e => updateCourse(i, 'bearing', e.target.value)}
+                          style={{ paddingRight: '1.5rem', width: '100%', fontFamily: 'JetBrains Mono, monospace' }}
+                        />
+                        {c.bearing && (() => {
+                          const warning = checkBearingWarning(c.bearing);
+                          const isValid = validateBearing(c.bearing) || warning;
+                          if (warning) {
+                            return (
+                              <span
+                                className="bearing-validation-icon warning"
+                                title={warning}
+                                style={{ position: 'absolute', right: '0.5rem', fontSize: '0.75rem', pointerEvents: 'none', color: '#ffb400' }}
+                              >
+                                ⚠️
+                              </span>
+                            );
+                          }
+                          return (
+                            <span
+                              className={`bearing-validation-icon ${isValid ? 'valid' : 'invalid'}`}
+                              style={{ position: 'absolute', right: '0.5rem', fontSize: '0.75rem', pointerEvents: 'none', color: isValid ? 'var(--success, #2ec4b6)' : 'var(--danger, #ff4d6d)' }}
+                            >
+                              {isValid ? '✓' : '✗'}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <input type="number" placeholder="Distance" value={c.distance}
                         onChange={e => updateCourse(i, 'distance', e.target.value)} />
                     </>
                   ) : (
                     <>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
-                        <input type="text" placeholder="Chord Bearing" value={c.chordBearing}
-                           onChange={e => updateCourse(i, 'chordBearing', e.target.value)} />
+                        <div className="traverse-bearing-input-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
+                          <input
+                            type="text"
+                            placeholder="Chord Bearing"
+                            value={c.chordBearing}
+                            onChange={e => updateCourse(i, 'chordBearing', e.target.value)}
+                            style={{ paddingRight: '1.5rem', width: '100%', fontFamily: 'JetBrains Mono, monospace' }}
+                          />
+                          {c.chordBearing && (() => {
+                            const warning = checkBearingWarning(c.chordBearing);
+                            const isValid = validateBearing(c.chordBearing) || warning;
+                            if (warning) {
+                              return (
+                                <span
+                                  className="bearing-validation-icon warning"
+                                  title={warning}
+                                  style={{ position: 'absolute', right: '0.5rem', fontSize: '0.75rem', pointerEvents: 'none', color: '#ffb400' }}
+                                >
+                                  ⚠️
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                className={`bearing-validation-icon ${isValid ? 'valid' : 'invalid'}`}
+                                style={{ position: 'absolute', right: '0.5rem', fontSize: '0.75rem', pointerEvents: 'none', color: isValid ? 'var(--success, #2ec4b6)' : 'var(--danger, #ff4d6d)' }}
+                              >
+                                {isValid ? '✓' : '✗'}
+                              </span>
+                            );
+                          })()}
+                        </div>
                         <input type="number" placeholder="Delta (DMS)" value={c.delta}
                           onChange={e => updateCourse(i, 'delta', e.target.value)} />
                         <input type="number" placeholder="Radius" value={c.radius}
@@ -1176,15 +1345,42 @@ export default function TraverseTab() {
                   <div className="card-title">📊 Closure Report</div>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                     {result.adjustedStations?.length > 0 && (
-                      <button
-                        id="bowditch-toggle-btn"
-                        className={`btn btn-sm ${showAdjusted ? 'btn-primary' : 'btn-ghost'}`}
-                        onClick={() => setShowAdjusted(v => !v)}
-                        title={showAdjusted ? 'Showing Compass-Rule adjusted traverse' : 'Showing raw unadjusted traverse'}
-                        style={{ fontSize: '0.72rem', fontWeight: 600 }}
-                      >
-                        {showAdjusted ? '🧭 Bowditch ON' : '🧭 Bowditch OFF'}
-                      </button>
+                      <div className="flex-row" style={{ gap: '0.4rem', alignItems: 'center' }}>
+                        <button
+                          id="bowditch-toggle-btn"
+                          className={`btn btn-sm ${showAdjusted ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setShowAdjusted(v => !v)}
+                          title={showAdjusted ? 'Showing adjusted traverse' : 'Showing raw unadjusted traverse'}
+                          style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.35rem 0.6rem' }}
+                        >
+                          {showAdjusted ? '🧭 Adjustment ON' : '🧭 Adjustment OFF'}
+                        </button>
+                        {showAdjusted && (
+                          <select
+                            id="adjustment-method-select"
+                            value={adjustmentMethod}
+                            onChange={(e) => {
+                              const newMethod = e.target.value;
+                              setAdjustmentMethod(newMethod);
+                              setTimeout(() => compute(courses, newMethod), 0);
+                            }}
+                            style={{
+                              fontSize: '0.72rem',
+                              padding: '0.25rem 0.5rem',
+                              background: 'var(--bg-elevated)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 'var(--radius-sm)',
+                              color: 'var(--text-primary)',
+                              cursor: 'pointer',
+                              height: '28px',
+                              lineHeight: '28px',
+                            }}
+                          >
+                            <option value="Compass">Compass (Bowditch)</option>
+                            <option value="Crandall">Crandall</option>
+                          </select>
+                        )}
+                      </div>
                     )}
                     {isPassing && (
                       <button

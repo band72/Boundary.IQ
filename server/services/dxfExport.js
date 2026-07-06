@@ -377,8 +377,8 @@ export function generateDxf(stations, adjusted, courses, meta, bustCourseIndex =
           const heavyWidth = textScale * 0.12;
           const arcPoints = [];
           const numSteps = Math.max(16, Math.min(100, Math.ceil((r * Math.abs(endAng - startAng) * Math.PI / 180) / (textScale * 0.4))));
-          let startRad = startAng * Math.PI / 180;
-          let endRad = endAng * Math.PI / 180;
+          const startRad = startAng * Math.PI / 180;
+          const endRad = endAng * Math.PI / 180;
           let diffRad = endRad - startRad;
           if (diffRad < 0) diffRad += 2 * Math.PI;
           for (let step = 0; step <= numSteps; step++) {
@@ -748,8 +748,8 @@ export function generateCombinedDxf(parcels) {
             d.setActiveLayer(layerBoundary);
             const arcPoints = [];
             const numSteps = Math.max(16, Math.min(100, Math.ceil((r * Math.abs(endAng - startAng) * Math.PI / 180) / (textScale * 0.4))));
-            let startRad = startAng * Math.PI / 180;
-            let endRad = endAng * Math.PI / 180;
+            const startRad = startAng * Math.PI / 180;
+            const endRad = endAng * Math.PI / 180;
             let diffRad = endRad - startRad;
             if (diffRad < 0) diffRad += 2 * Math.PI;
             for (let step = 0; step <= numSteps; step++) {

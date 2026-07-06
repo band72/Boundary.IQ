@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { toGeoJson, toKml } from '../utils/exportEngine.js';
+import { toGeoJson, toKml, toLandXml } from '../utils/exportEngine.js';
 
 /**
  * ExportModal — GeoJSON / KML export dialog
@@ -18,6 +18,7 @@ export default function ExportModal({ stations, courses, meta, geoRef, onClose }
   const getContent = useCallback(() => {
     try {
       if (activeTab === 'geojson') return toGeoJson(stations, courses, meta, geoRef);
+      if (activeTab === 'landxml') return toLandXml(stations, courses, meta);
       return toKml(stations, courses, meta, geoRef);
     } catch (e) {
       return `/* Error generating ${activeTab.toUpperCase()}: ${e.message} */`;
@@ -25,9 +26,9 @@ export default function ExportModal({ stations, courses, meta, geoRef, onClose }
   }, [activeTab, stations, courses, meta, geoRef]);
 
   const content = getContent();
-  const ext     = activeTab === 'geojson' ? 'geojson' : 'kml';
-  const mime    = activeTab === 'geojson' ? 'application/geo+json' : 'application/vnd.google-earth.kml+xml';
-  const label   = activeTab === 'geojson' ? 'GeoJSON' : 'KML';
+  const ext     = activeTab === 'geojson' ? 'geojson' : (activeTab === 'landxml' ? 'xml' : 'kml');
+  const mime    = activeTab === 'geojson' ? 'application/geo+json' : (activeTab === 'landxml' ? 'application/xml' : 'application/vnd.google-earth.kml+xml');
+  const label   = activeTab === 'geojson' ? 'GeoJSON' : (activeTab === 'landxml' ? 'LandXML' : 'KML');
   const parcelSlug = (meta?.parcel || 'parcel').replace(/\s+/g, '_').replace(/[^a-z0-9_-]/gi, '').toLowerCase();
 
   const handleCopy = async () => {
@@ -121,7 +122,7 @@ export default function ExportModal({ stations, courses, meta, geoRef, onClose }
           flexShrink: 0,
           padding: '0 1.25rem',
         }}>
-          {['geojson', 'kml'].map(tab => (
+          {['geojson', 'kml', 'landxml'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -135,7 +136,7 @@ export default function ExportModal({ stations, courses, meta, geoRef, onClose }
                 transition: 'color 0.15s, border-color 0.15s',
               }}
             >
-              {tab === 'geojson' ? 'GeoJSON' : 'KML'}
+              {tab === 'geojson' ? 'GeoJSON' : tab === 'landxml' ? 'LandXML' : 'KML'}
             </button>
           ))}
         </div>

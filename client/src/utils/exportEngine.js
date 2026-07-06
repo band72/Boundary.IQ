@@ -178,3 +178,106 @@ export function toKml(stations, courses, meta = {}, geoRef = null) {
   </Document>
 </kml>`;
 }
+
+/**
+ * Generate a LandXML string from traverse points, courses, and metadata.
+ *
+ * @param {Array<{northing:number,easting:number}>} stations
+ * @param {Array<object>} courses
+ * @param {object} meta
+ * @returns {string} LandXML XML string
+ */
+export function toLandXml(stations, courses, meta = {}) {
+  const pts = stations;
+  if (!pts || pts.length < 2) {
+    throw new Error('At least 2 stations are required to generate LandXML.');
+  }
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const timeStr = new Date().toTimeString().slice(0, 8);
+  const unitName = (meta.units || 'Feet').toLowerCase() === 'meters' ? 'metric' : 'imperial';
+  const linearUnit = unitName === 'metric' ? 'meter' : 'foot';
+  const areaUnit = unitName === 'metric' ? 'squareMeter' : 'squareFoot';
+
+  let xml = `<?xml version="1.0" encoding="utf-8"?>\n`;
+  xml += `<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" version="1.2" date="${dateStr}" time="${timeStr}">\n`;
+  xml += `  <Project name="${meta.parcel ? meta.parcel.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Subject_Parcel'}"/>\n`;
+  xml += `  <Units>\n`;
+  if (unitName === 'metric') {
+    xml += `    <Metric areaUnit="${areaUnit}" linearUnit="${linearUnit}" volumeUnit="cubicMeter" temperatureUnit="celsius" pressureUnit="milliBar"/>\n`;
+  } else {
+    xml += `    <Imperial areaUnit="${areaUnit}" linearUnit="${linearUnit}" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inHG"/>\n`;
+  }
+  xml += `  </Units>\n`;
+
+  // CgPoints
+  xml += `  <CgPoints>\n`;
+  pts.forEach((p, idx) => {
+    xml += `    <CgPoint pntNo="${idx + 1}" desc="${idx === 0 ? 'POB' : `PT_${idx + 1}`}">${p.northing.toFixed(4)} ${p.easting.toFixed(4)}</CgPoint>\n`;
+  });
+  xml += `  </CgPoints>\n`;
+
+  // Parcel
+  const parcelName = meta.parcel ? meta.parcel.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Parcel_1';
+  const area = meta.areaAcres ? meta.areaAcres * 43560.0 : 0;
+  xml += `  <Parcels>\n`;
+  xml += `    <Parcel name="${parcelName}" area="${area.toFixed(4)}" desc="Boundary.IQ Solved Parcel">\n`;
+  xml += `      <CoordGeom>\n`;
+
+  for (let i = 0; i < courses.length; i++) {
+    const c = courses[i];
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % pts.length];
+
+    if (!p1 || !p2) continue;
+
+    if ((c.type || '').toLowerCase() !== 'curve') {
+      xml += `        <Line>\n`;
+      xml += `          <Start>${p1.northing.toFixed(4)} ${p1.easting.toFixed(4)}</Start>\n`;
+      xml += `          <End>${p2.northing.toFixed(4)} ${p2.easting.toFixed(4)}</End>\n`;
+      xml += `        </Line>\n`;
+    } else {
+      const r = parseFloat(c.radius) || 0;
+      let centerXml = '';
+      let rot = 'cw';
+      if (r > 0.001) {
+        try {
+          const cx = (p1.easting + p2.easting) / 2;
+          const cy = (p1.northing + p2.northing) / 2;
+          const chord = Math.sqrt(Math.pow(p2.easting - p1.easting, 2) + Math.pow(p2.northing - p1.northing, 2));
+          const halfChord = chord / 2;
+          let dSq = r * r - halfChord * halfChord;
+          if (dSq < 0) dSq = 0;
+          const dd = Math.sqrt(dSq);
+          const chordLen = chord > 1e-9 ? chord : 1e-9;
+          const perpChordX = -(p2.northing - p1.northing) / chordLen;
+          const perpChordY = (p2.easting - p1.easting) / chordLen;
+          
+          const curveLeft = (c.curveDirection || c.direction || '').toLowerCase() === 'left';
+          const sign = curveLeft ? 1 : -1;
+          const centX = cx + sign * perpChordX * dd;
+          const centY = cy + sign * perpChordY * dd;
+
+          centerXml = `          <Center>${centY.toFixed(4)} ${centX.toFixed(4)}</Center>\n`;
+          rot = curveLeft ? 'ccw' : 'cw';
+        } catch {
+          // ignore center calculation error
+        }
+      }
+      xml += `        <Curve rot="${rot}">\n`;
+      xml += `          <Start>${p1.northing.toFixed(4)} ${p1.easting.toFixed(4)}</Start>\n`;
+      if (centerXml) xml += centerXml;
+      xml += `          <End>${p2.northing.toFixed(4)} ${p2.easting.toFixed(4)}</End>\n`;
+      xml += `          <Radius>${r.toFixed(4)}</Radius>\n`;
+      xml += `        </Curve>\n`;
+    }
+  }
+
+  xml += `      </CoordGeom>\n`;
+  xml += `    </Parcel>\n`;
+  xml += `  </Parcels>\n`;
+  xml += `</LandXML>\n`;
+
+  return xml;
+}
+

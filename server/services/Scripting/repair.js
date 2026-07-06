@@ -83,7 +83,7 @@ function finalizeResult(result, pob, units) {
     if (!result.finalExtraction) result.finalExtraction = result.extraction || {};
     
     // Stage 17: Resolve county and state from raw OCR text
-    let rawText = result.finalExtraction.rawText || 
+    const rawText = result.finalExtraction.rawText || 
                   result.finalExtraction.originalLegalDesc || 
                   result.finalExtraction.originalLegalDescription || 
                   result.originalExtraction?.rawText || 

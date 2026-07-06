@@ -19,7 +19,7 @@ export function createOutputFolder(sourceFolder) {
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yyyy = now.getFullYear();
   const fff = String(now.getMilliseconds()).padStart(3, '0');
-  let folderName = `${dd}${mm}${yyyy}.${fff}`;
+  const folderName = `${dd}${mm}${yyyy}.${fff}`;
   let outputPath = path.join(sourceFolder, folderName);
 
   if (fs.existsSync(outputPath)) {
@@ -145,7 +145,7 @@ export async function writeResultFiles(outputFolder, sourceFileName, result, wri
     const units = result.extraction?.units || 'Feet';
 
     // 4. Compute original uncorrected traverse
-    let origCourses = result.originalExtraction?.courses || [];
+    const origCourses = result.originalExtraction?.courses || [];
     let origTraverse = null;
     if (origCourses.length > 0) {
       try {

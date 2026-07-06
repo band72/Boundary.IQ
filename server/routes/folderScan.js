@@ -39,6 +39,17 @@ import { ensureExtractedText, readWordDocWithFallback } from '../services/textEx
 const router = Router();
 router.use(requireAuth);
 
+function safeParseJson(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (err) {
+    console.warn('Failed to parse JSON string:', value, err.message);
+    return null;
+  }
+}
+
 // ── Per-user rate limiter for scan endpoints ───────────────────────────────
 const scanLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -122,7 +133,7 @@ function validatePath(p) {
   normalized = normalized.replace(/\\/g, '/');
 
   // Translate to actual location under the extracted training folder if the directly requested ones don't exist
-  let resolvedCasePath = resolvePathCaseInsensitive(normalized);
+  const resolvedCasePath = resolvePathCaseInsensitive(normalized);
   if (fs.existsSync(resolvedCasePath)) {
     normalized = resolvedCasePath;
   } else {
@@ -527,8 +538,8 @@ router.post('/process-batch', async (req, res) => {
           const solvedCase = await db.findSolvedCase(fileName, fileHash);
           if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
             console.log(`Cache hit for ${fileName} (hash=${fileHash})`);
-            const cachedEx = JSON.parse(solvedCase.extractionJson);
-            const cachedTr = JSON.parse(solvedCase.traverseJson);
+            const cachedEx = safeParseJson(solvedCase.extractionJson);
+            const cachedTr = safeParseJson(solvedCase.traverseJson);
 
             // Extract from solvedCase.parcelName if possible
             const labelInferred = geminiVision.inferCountyStateFromText(solvedCase.parcelName || '');
@@ -546,8 +557,8 @@ router.post('/process-batch', async (req, res) => {
             }
             results[index] = { 
               fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash, 
-              agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
-              solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+              agentTurns: solvedCase.agentTurnsJson ? safeParseJson(solvedCase.agentTurnsJson) : null,
+              solutionSteps: solvedCase.solutionStepsJson ? safeParseJson(solvedCase.solutionStepsJson) : null
             };
             const cachedLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : (solvedCase.parcelName || 'CACHED');
             saveDeedLogWrapper(req, batchId, fileName, cachedLabel, cachedEx.courses?.length || 0, cachedTr.closure?.linearError || 0, parsePrecisionRatio(cachedTr.closure?.precisionRatio), 'PASS', 'Stage 5: SQLite Case Finder Solved', solvedCase.extractionJson, solvedCase.traverseJson, null, null, null, fileHash);
@@ -558,7 +569,7 @@ router.post('/process-batch', async (req, res) => {
           const skippedCase = await db.findSkippedCase(fileName, fileHash);
           if (skippedCase?.extractionJson) {
             console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
-            const cachedEx = JSON.parse(skippedCase.extractionJson);
+            const cachedEx = safeParseJson(skippedCase.extractionJson);
             results[index] = {
               fileName,
               status: 'skipped',
@@ -600,7 +611,7 @@ router.post('/process-batch', async (req, res) => {
         if (namedParcels && namedParcels.length >= 2) {
           console.log(`FolderScan: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels: ${namedParcels.map(p => p.label).join(', ')}`);
           
-          let parcelResults = [];
+          const parcelResults = [];
           for (const { label, text: parcelText } of namedParcels) {
             const ext = path.extname(fileName);
             const base = path.parse(fileName).name;
@@ -612,8 +623,8 @@ router.post('/process-batch', async (req, res) => {
               const solvedCase = await db.findSolvedCase(parcelFileName, parcelHash);
               if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
                 console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
-                const cachedEx = JSON.parse(solvedCase.extractionJson);
-                const cachedTr = JSON.parse(solvedCase.traverseJson);
+                const cachedEx = safeParseJson(solvedCase.extractionJson);
+                const cachedTr = safeParseJson(solvedCase.traverseJson);
 
                 // Extract from solvedCase.parcelName if possible
                 const labelInferred = geminiVision.inferCountyStateFromText(solvedCase.parcelName || '');
@@ -636,8 +647,8 @@ router.post('/process-batch', async (req, res) => {
                 }
                  const pRes = { 
                    fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, 
-                   agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
-                   solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+                   agentTurns: solvedCase.agentTurnsJson ? safeParseJson(solvedCase.agentTurnsJson) : null,
+                   solutionSteps: solvedCase.solutionStepsJson ? safeParseJson(solvedCase.solutionStepsJson) : null
                  };
                 parcelResults.push(pRes);
                 const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${base}`;
@@ -649,7 +660,7 @@ router.post('/process-batch', async (req, res) => {
               const skippedCase = await db.findSkippedCase(parcelFileName, parcelHash);
               if (skippedCase?.extractionJson) {
                 console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
-                const cachedEx = JSON.parse(skippedCase.extractionJson);
+                const cachedEx = safeParseJson(skippedCase.extractionJson);
                 const pRes = {
                   fileName: parcelFileName,
                   status: 'skipped',
@@ -736,8 +747,8 @@ router.post('/process-batch', async (req, res) => {
 
             try {
               const pResult = await runRepairPipeline(Buffer.from(parcelText, 'utf-8'), 'text/plain', pob, units, isOE, parcelFileName);
-              let pEx = pResult.finalExtraction;
-              let pTr = pResult.finalTraverse;
+              const pEx = pResult.finalExtraction;
+              const pTr = pResult.finalTraverse;
               let pStatus = pResult.status;
               let pStage  = pResult.repairStageUsed;
               const pLabel  = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : base}`;
@@ -1232,8 +1243,8 @@ router.post('/process-file', async (req, res) => {
     if (!force) {
       const solvedCase = await db.findSolvedCase(fileName, fileHash);
       if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
-        const cachedEx = JSON.parse(solvedCase.extractionJson);
-        const cachedTr = JSON.parse(solvedCase.traverseJson);
+        const cachedEx = safeParseJson(solvedCase.extractionJson);
+        const cachedTr = safeParseJson(solvedCase.traverseJson);
         const courses = cachedEx.courses || cachedEx.Courses || [];
 
         // Sanity-check: a valid deed must have at least 3 boundary courses.
@@ -1273,8 +1284,8 @@ router.post('/process-file', async (req, res) => {
           }
           const result = { 
             fileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, cached: true, fileHash, 
-            agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
-            solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+            agentTurns: solvedCase.agentTurnsJson ? safeParseJson(solvedCase.agentTurnsJson) : null,
+            solutionSteps: solvedCase.solutionStepsJson ? safeParseJson(solvedCase.solutionStepsJson) : null
           };
           const linErr = cachedTr.closure?.linearError ?? cachedTr.Closure?.LinearError ?? 0;
           const precRatio = cachedTr.closure?.precisionRatio ?? cachedTr.Closure?.PrecisionRatio ?? '';
@@ -1299,7 +1310,7 @@ router.post('/process-file', async (req, res) => {
       const skippedCase = await db.findSkippedCase(fileName, fileHash);
       if (skippedCase?.extractionJson) {
         console.log(`Cache hit (SKIPPED) for ${fileName} (hash=${fileHash})`);
-        const cachedEx = JSON.parse(skippedCase.extractionJson);
+        const cachedEx = safeParseJson(skippedCase.extractionJson);
         const result = {
           fileName,
           status: 'skipped',
@@ -1355,7 +1366,7 @@ router.post('/process-file', async (req, res) => {
     if (namedParcels && namedParcels.length >= 2) {
       console.log(`FolderScan process-file: Multi-parcel deed detected in ${fileName} — ${namedParcels.length} parcels`);
       
-      let parcelResults = [];
+      const parcelResults = [];
       const baseName = path.parse(fileName).name;
       const ext = path.extname(fileName);
       for (const { label, text: parcelText } of namedParcels) {
@@ -1367,8 +1378,8 @@ router.post('/process-file', async (req, res) => {
           const solvedCase = await db.findSolvedCase(parcelFileName, parcelHash);
           if (solvedCase?.extractionJson && solvedCase?.traverseJson) {
             console.log(`Cache hit for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
-            const cachedEx = JSON.parse(solvedCase.extractionJson);
-            const cachedTr = JSON.parse(solvedCase.traverseJson);
+            const cachedEx = safeParseJson(solvedCase.extractionJson);
+            const cachedTr = safeParseJson(solvedCase.traverseJson);
 
             // Extract from solvedCase.parcelName if possible
             const labelInferred = geminiVision.inferCountyStateFromText(solvedCase.parcelName || '');
@@ -1391,8 +1402,8 @@ router.post('/process-file', async (req, res) => {
             }
             const pRes = { 
               fileName: parcelFileName, status: 'success', extraction: cachedEx, traverse: cachedTr, legalDescription: cachedWrite, error: null, fileHash: parcelHash, 
-              agentTurns: solvedCase.agentTurnsJson ? JSON.parse(solvedCase.agentTurnsJson) : null,
-              solutionSteps: solvedCase.solutionStepsJson ? JSON.parse(solvedCase.solutionStepsJson) : null
+              agentTurns: solvedCase.agentTurnsJson ? safeParseJson(solvedCase.agentTurnsJson) : null,
+              solutionSteps: solvedCase.solutionStepsJson ? safeParseJson(solvedCase.solutionStepsJson) : null
             };
             parcelResults.push(pRes);
             const pLabel = cacheCounty && cacheState ? `${cacheCounty}, ${cacheState}` : `[${label}] ${baseName}`;
@@ -1403,7 +1414,7 @@ router.post('/process-file', async (req, res) => {
           const skippedCase = await db.findSkippedCase(parcelFileName, parcelHash);
           if (skippedCase?.extractionJson) {
             console.log(`Cache hit (SKIPPED) for parcel ${label} (${parcelFileName}) (hash=${parcelHash})`);
-            const cachedEx = JSON.parse(skippedCase.extractionJson);
+            const cachedEx = safeParseJson(skippedCase.extractionJson);
             const pRes = {
               fileName: parcelFileName,
               status: 'skipped',
@@ -1486,8 +1497,8 @@ router.post('/process-file', async (req, res) => {
 
         try {
           const pResult = await runRepairPipeline(Buffer.from(parcelText, 'utf-8'), 'text/plain', pob, units, isOE, parcelFileName);
-          let pEx = pResult.finalExtraction;
-          let pTr = pResult.finalTraverse;
+          const pEx = pResult.finalExtraction;
+          const pTr = pResult.finalTraverse;
           let pStatus = pResult.status;
           let pStage  = pResult.repairStageUsed;
           const pLabel  = `[${label}] ${resolvedCounty && resolvedState ? `${resolvedCounty}, ${resolvedState}` : baseName}`;
@@ -1960,7 +1971,7 @@ router.post('/retry-failed', async (req, res) => {
 
   // Local model cascade — dynamically query available models from local Ollama
   const hasGemini = !!GEMINI_API_KEY;
-  let LOCAL_MODELS = ['gemma3:4b', 'llama3.2:3b'];
+  const LOCAL_MODELS = ['gemma3:4b', 'llama3.2:3b'];
   if (!hasGemini) {
     LOCAL_MODELS.push('deepseek-r1:8b');
     LOCAL_MODELS.push('deepseek-r1:14b');
@@ -2282,7 +2293,7 @@ router.post('/retry-failed', async (req, res) => {
 router.get('/browse', async (req, res) => {
   try {
     const roots = getAllowedRoots();
-    let currentPath = req.query.path ? path.resolve(req.query.path) : roots[0];
+    const currentPath = req.query.path ? path.resolve(req.query.path) : roots[0];
 
     // Validate path to prevent directory traversal
     const validPath = validatePath(currentPath);

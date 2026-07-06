@@ -16,6 +16,7 @@ router.post('/compute', (req, res) => {
       courses: normalizeCourses(body.courses ?? body.Courses ?? []),
       units: body.units ?? body.Units ?? 'Feet',
       isOpenEnded: body.isOpenEnded ?? body.IsOpenEnded ?? false,
+      adjustmentMethod: body.adjustmentMethod ?? body.AdjustmentMethod ?? null,
     };
     const result = traverseSvc.compute(request);
     res.json(result);

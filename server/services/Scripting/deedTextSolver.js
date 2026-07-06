@@ -225,7 +225,7 @@ export function parseExtractionJson(raw, deedText) {
     root = JSON.parse(text);
   } catch (firstErr) {
     // Pass 3: trailing commas, undefined → null
-    let fixed = text
+    const fixed = text
       .replace(/,\s*([}\]])/g, '$1')
       .replace(/:\s*undefined/g, ': null');
     try {
@@ -328,7 +328,7 @@ export function parseExtractionJson(raw, deedText) {
 
     // Apply Commencement Splitting Heuristic if deedText is provided
     if (deedText && normalizedCourses.length > 0) {
-      let cleanComm = commencementSegments.filter(c => {
+      const cleanComm = commencementSegments.filter(c => {
         const b = (c.bearing || c.chordBearing || '').toUpperCase().replace(/\s/g, '');
         const d = c.distance || c.chordDistance || c.arcLength;
         const isPlaceholder = (b === 'N00°02\'10"W' || b === 'N0°02\'10"W' || b === 'N0°2\'10"W' || b === 'N00°02\'10”W') && d != null && Math.abs(d - 330.15) < 0.1;
@@ -1276,7 +1276,7 @@ export function solveFromText(deedText, options = {}) {
   // Fix letters-to-digits in minutes/seconds fields:
   // Minutes + minute mark + seconds + second mark (e.g. 47'OO")
   normalizedText = normalizedText.replace(/(\d{1,2})\s*([\u2018\u2019\u201A\u02BC\u00B4\u2032'])\s*([0-9OLolI|!]{1,2})\s*(["\u201C\u201D\u201E\u2033\u2034'])/gi, (m, mins, minMark, secs, secMark) => {
-    let cleanSecs = secs
+    const cleanSecs = secs
       .replace(/[OoqQ]/g, '0')
       .replace(/[Il|!]/g, '1')
       .replace(/[L]/g, '1');
@@ -1285,7 +1285,7 @@ export function solveFromText(deedText, options = {}) {
 
   // Degree + degree mark + minutes + minute mark (where minutes might have letters)
   normalizedText = normalizedText.replace(/(\d{1,2})\s*(°)\s*([0-9OLolI|!]{1,2})\s*([\u2018\u2019\u201A\u02BC\u00B4\u2032'])/gi, (m, degs, degMark, mins, minMark) => {
-    let cleanMins = mins
+    const cleanMins = mins
       .replace(/[OoqQ]/g, '0')
       .replace(/[Il|!]/g, '1')
       .replace(/[L]/g, '1');

@@ -124,7 +124,7 @@ function formatSubItemPhrase(c) {
     dirWord = dir + ' line';
   }
 
-  let parts = [];
+  const parts = [];
   if (connWord) parts.push(connWord);
   if (dirWord) parts.push(dirWord);
   if (feat) {

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { authFetch } from '../api';
 import { useToast } from '../hooks/useToast';
 import TraverseMap from './TraverseMap';
+import './WriterTab.css';
 
 const BLANK = { type: 'Line', bearing: '', distance: '', chordBearing: '', chordDistance: '', arcLength: '', delta: '', radius: '', curveDirection: 'Right', description: '', subConnector: '', subFeature: '', subDirection: '' };
 const EXAMPLE = [
@@ -12,8 +13,63 @@ const EXAMPLE = [
   { ...BLANK, bearing: 'N00-35-00W', distance: '669.80' },
 ];
 
+function validateBearing(bearing) {
+  if (!bearing) return false;
+  const clean = bearing.trim();
+  if (/^(N|S|E|W|NORTH|SOUTH|EAST|WEST)$/i.test(clean)) return true;
+  const regex = /^[NSns]\s*\d+([\s°\-\d'"’.\u2032\u2033\u2034\u02B9\u02BA\uF0B0\uF0B2\uFEFF\u00BA\u02DA]*)\s*[EWew]?$/;
+  return regex.test(clean);
+}
+
+function checkBearingWarning(bearing) {
+  if (!bearing) return null;
+  const clean = bearing.trim().toUpperCase();
+  
+  if (/^[MHPF]/.test(clean) || /[MHPF]$/.test(clean)) {
+    return 'Fuzzy OCR characters detected (e.g., M/H/P/F). Will be auto-corrected in backend.';
+  }
+  
+  const dmsMatch = clean.match(/^[NS]\s*(\d+(?:\.\d+)?)/);
+  if (dmsMatch) {
+    const deg = parseFloat(dmsMatch[1]);
+    if (deg === 0 || deg === 90) {
+      return `Cardinal directions (0° or 90°) should not have quadrant letters.`;
+    }
+  }
+
+  if (/^[NSns]\s*\d{5,6}(?:\.\d+)?\s*[EWew]?$/i.test(clean)) {
+    return 'Smashed digits detected. Will be parsed as DMS.';
+  }
+
+  if (/^[NSns]\s*\d+\.\d{4,}\s*[EWew]?$/i.test(clean)) {
+    return 'Packed DMS format detected. Ensure digits represent DD.MMSS.';
+  }
+
+  return null;
+}
+
 export default function WriterTab() {
-  const [courses, setCourses]     = useLocalStorage('boundaryiq_writer_courses', EXAMPLE);
+  // Use local state for performance, persisting to local storage with a 1-second debounce
+  const [courses, setCourses] = useState(() => {
+    try {
+      const item = window.localStorage.getItem('boundaryiq_writer_courses');
+      return item ? JSON.parse(item) : EXAMPLE;
+    } catch {
+      return EXAMPLE;
+    }
+  });
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      try {
+        window.localStorage.setItem('boundaryiq_writer_courses', JSON.stringify(courses));
+      } catch (err) {
+        console.debug('Failed to write courses to localStorage', err);
+      }
+    }, 1000);
+    return () => clearTimeout(handler);
+  }, [courses]);
+
   const [pobN, setPobN]           = useLocalStorage('boundaryiq_writer_pobN', '5000.00');
   const [pobE, setPobE]           = useLocalStorage('boundaryiq_writer_pobE', '5000.00');
   const [parcel, setParcel]       = useLocalStorage('boundaryiq_writer_parcel', '');
@@ -35,6 +91,28 @@ export default function WriterTab() {
   const [selectedCourseIndex, setSelectedCourseIndex] = useState(null);
 
   const { showToast, ToastPortal } = useToast();
+
+  const moveCourseUp = (i) => {
+    if (i === 0) return;
+    setCourses(prev => {
+      const next = [...prev];
+      const temp = next[i];
+      next[i] = next[i - 1];
+      next[i - 1] = temp;
+      return next;
+    });
+  };
+
+  const moveCourseDown = (i) => {
+    setCourses(prev => {
+      if (i === prev.length - 1) return prev;
+      const next = [...prev];
+      const temp = next[i];
+      next[i] = next[i + 1];
+      next[i + 1] = temp;
+      return next;
+    });
+  };
 
   const handleExtractText = async () => {
     if (!pasteText.trim()) { setError('Paste some legal description text first.'); return; }
@@ -155,13 +233,13 @@ export default function WriterTab() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="writer-container">
       {/* Title Header */}
       <div>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
+        <h1 className="writer-header-title">
           ✍️ Deed Writer
         </h1>
-        <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        <p className="writer-header-subtitle">
           Generate professional registry legal text
         </p>
       </div>
@@ -174,14 +252,15 @@ export default function WriterTab() {
             <div className="card-header">
               <div className="card-title">✍️ Legal Description Writer</div>
               <div className="flex-row">
-                <div style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 2 }}>
+                <div className="writer-mode-selector">
                   {[['form', '📋 Form Input'], ['text', '📝 Paste Text'], ['paste', '📌 Paste JSON']].map(([v, label]) => (
-                    <button key={v} onClick={() => setInputMode(v)} style={{
-                      padding: '0.35rem 0.9rem', border: 'none', fontFamily: 'inherit', fontSize: '0.8rem',
-                      fontWeight: 500, cursor: 'pointer', borderRadius: 'calc(var(--radius-sm) - 2px)',
-                      background: inputMode === v ? 'var(--accent)' : 'transparent',
-                      color: inputMode === v ? '#fff' : 'var(--text-secondary)', transition: 'all 0.15s',
-                    }}>{label}</button>
+                    <button
+                      key={v}
+                      onClick={() => setInputMode(v)}
+                      className={`writer-mode-btn ${inputMode === v ? 'active' : ''}`}
+                    >
+                      {label}
+                    </button>
                   ))}
                 </div>
                 <select value={units} onChange={e => setUnits(e.target.value)} style={{ width: 90 }}>
@@ -218,13 +297,13 @@ export default function WriterTab() {
                 </div>
 
                 {/* Column headers */}
-                <div style={{ display: 'grid', gridTemplateColumns: '28px 150px 1fr 120px 32px', gap: '0.5rem', padding: '0 0.5rem 0.4rem', fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  <span>#</span><span>Type</span><span>Details / Bearing</span><span>Distance / Coordinates</span><span></span>
+                <div className="writer-course-headers">
+                  <span>#</span><span>Type</span><span>Details / Bearing</span><span>Distance / Coordinates</span><span>Order</span><span></span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+                <div className="writer-course-list">
                   {courses.length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.85rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border)' }}>
+                    <div className="writer-course-empty">
                       No courses yet — click <strong>+ Add</strong> or <strong>Load Example</strong>
                     </div>
                   )}
@@ -233,18 +312,11 @@ export default function WriterTab() {
                       onMouseEnter={() => setHoveredCourseIndex(i)}
                       onMouseLeave={() => setHoveredCourseIndex(null)}
                       onClick={() => setSelectedCourseIndex(i === selectedCourseIndex ? null : i)}
-                      style={{
-                        display: 'flex', flexDirection: 'column', gap: '0.5rem',
-                        background: selectedCourseIndex === i ? 'var(--accent-glow)' : 'var(--bg-elevated)',
-                        border: `1px solid ${selectedCourseIndex === i ? 'var(--accent)' : hoveredCourseIndex === i ? 'var(--accent2)' : 'var(--border)'}`,
-                        borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.75rem',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
+                      className={`writer-course-item ${selectedCourseIndex === i ? 'selected' : ''}`}
                     >
                       {/* Main Input Row */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '28px 150px 1fr 120px 32px', gap: '0.5rem', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center' }}>{i + 1}</span>
+                      <div className="writer-course-row" onClick={e => e.stopPropagation()}>
+                        <span className="writer-course-num">{i + 1}</span>
                         <select value={(c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type || 'Line')} onChange={e => update(i, 'type', e.target.value)} style={{ fontSize: '0.8rem' }}>
                           <option value="Line">Line</option>
                           <option value="Curve">Curve</option>
@@ -257,7 +329,34 @@ export default function WriterTab() {
 
                         {(c.type === 'Line' || c.type === 'Squiggle') && (
                           <>
-                            <input type="text" placeholder="Bearing (e.g. N45°30'00&quot;E)" value={c.bearing} onChange={e => update(i, 'bearing', e.target.value)} />
+                            <div className="writer-bearing-input-wrapper">
+                              <input
+                                type="text"
+                                placeholder="Bearing (e.g. N45°30'00&quot;E)"
+                                value={c.bearing}
+                                onChange={e => update(i, 'bearing', e.target.value)}
+                              />
+                              {c.bearing && (() => {
+                                const warning = checkBearingWarning(c.bearing);
+                                const isValid = validateBearing(c.bearing) || warning;
+                                if (warning) {
+                                  return (
+                                    <span
+                                      className="writer-bearing-validation-icon warning"
+                                      title={warning}
+                                      style={{ color: '#ffb400', cursor: 'help' }}
+                                    >
+                                      ⚠️
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className={`writer-bearing-validation-icon ${isValid ? 'valid' : 'invalid'}`}>
+                                    {isValid ? '✓' : '✗'}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             <input type="number" placeholder="Distance" value={c.distance} onChange={e => update(i, 'distance', e.target.value)} />
                           </>
                         )}
@@ -265,11 +364,84 @@ export default function WriterTab() {
                         {c.type === 'Curve' && (
                           <>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
-                              <input type="text" placeholder="Chord Bearing" value={c.chordBearing} onChange={e => update(i, 'chordBearing', e.target.value)} />
-                              <input type="number" placeholder="Delta (DMS)" value={c.delta} onChange={e => update(i, 'delta', e.target.value)} />
-                              <input type="number" placeholder="Radius" value={c.radius} onChange={e => update(i, 'radius', e.target.value)} />
+                              <div className="writer-bearing-input-wrapper">
+                                <input
+                                  type="text"
+                                  placeholder="Chord Bearing"
+                                  value={c.chordBearing}
+                                  onChange={e => update(i, 'chordBearing', e.target.value)}
+                                />
+                                {c.chordBearing && (() => {
+                                  const warning = checkBearingWarning(c.chordBearing);
+                                  const isValid = validateBearing(c.chordBearing) || warning;
+                                  if (warning) {
+                                    return (
+                                      <span
+                                        className="writer-bearing-validation-icon warning"
+                                        title={warning}
+                                        style={{ color: '#ffb400', cursor: 'help' }}
+                                      >
+                                        ⚠️
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className={`writer-bearing-validation-icon ${isValid ? 'valid' : 'invalid'}`}>
+                                      {isValid ? '✓' : '✗'}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                              <input
+                                type="number"
+                                placeholder="Delta (DMS)"
+                                value={c.delta}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  const r = parseFloat(c.radius);
+                                  const d = parseFloat(val);
+                                  if (!isNaN(r) && r > 0 && !isNaN(d) && d > 0 && !c.chordDistance) {
+                                    const computedChord = 2 * r * Math.sin((d * Math.PI) / 180 / 2);
+                                    setCourses(courses.map((row, idx) => idx === i ? { ...row, delta: val, chordDistance: computedChord.toFixed(2) } : row));
+                                  } else {
+                                    update(i, 'delta', val);
+                                  }
+                                }}
+                              />
+                              <input
+                                type="number"
+                                placeholder="Radius"
+                                value={c.radius}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  const r = parseFloat(val);
+                                  const d = parseFloat(c.delta);
+                                  if (!isNaN(r) && r > 0 && !isNaN(d) && d > 0 && !c.chordDistance) {
+                                    const computedChord = 2 * r * Math.sin((d * Math.PI) / 180 / 2);
+                                    setCourses(courses.map((row, idx) => idx === i ? { ...row, radius: val, chordDistance: computedChord.toFixed(2) } : row));
+                                  } else {
+                                    update(i, 'radius', val);
+                                  }
+                                }}
+                              />
                             </div>
-                            <input type="number" placeholder="Chord Dist" value={c.chordDistance} onChange={e => update(i, 'chordDistance', e.target.value)} />
+                            <input
+                              type="number"
+                              placeholder="Chord Dist"
+                              value={c.chordDistance}
+                              onChange={e => {
+                                const val = e.target.value;
+                                const r = parseFloat(c.radius);
+                                const ch = parseFloat(val);
+                                if (!isNaN(r) && r > 0 && !isNaN(ch) && ch > 0 && ch <= 2 * r && !c.delta) {
+                                  const deltaRad = 2 * Math.asin(ch / (2 * r));
+                                  const computedDelta = deltaRad * 180 / Math.PI;
+                                  setCourses(courses.map((row, idx) => idx === i ? { ...row, chordDistance: val, delta: computedDelta.toFixed(4) } : row));
+                                } else {
+                                  update(i, 'chordDistance', val);
+                                }
+                              }}
+                            />
                           </>
                         )}
 
@@ -279,12 +451,32 @@ export default function WriterTab() {
                           </>
                         )}
 
-                        <button onClick={() => removeCourse(i)} style={{ background: 'rgba(255,77,109,0.15)', border: '1px solid rgba(255,77,109,0.3)', color: 'var(--danger)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.75rem', height: '100%' }}>✕</button>
+                        {/* Reorder controls */}
+                        <div className="writer-reorder-group">
+                          <button
+                            className="writer-reorder-btn"
+                            disabled={i === 0}
+                            onClick={() => moveCourseUp(i)}
+                            title="Move Up"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            className="writer-reorder-btn"
+                            disabled={i === courses.length - 1}
+                            onClick={() => moveCourseDown(i)}
+                            title="Move Down"
+                          >
+                            ▼
+                          </button>
+                        </div>
+
+                        <button onClick={() => removeCourse(i)} className="writer-course-delete-btn">✕</button>
                       </div>
 
                       {/* Sub-item Row */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '33px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.4rem' }} onClick={e => e.stopPropagation()}>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>Support Call:</span>
+                      <div className="writer-sub-item-row" onClick={e => e.stopPropagation()}>
+                        <span className="writer-sub-item-label">Support Call:</span>
                         
                         <select value={c.subConnector || ''} onChange={e => update(i, 'subConnector', e.target.value)} style={{ width: '130px', fontSize: '0.75rem', padding: '0.2rem' }}>
                           <option value="">(None)</option>
@@ -319,7 +511,7 @@ export default function WriterTab() {
                             placeholder="Custom Description (e.g. along river bank)"
                             value={c.description || ''}
                             onChange={e => update(i, 'description', e.target.value)}
-                            style={{ flexGrow: 1, fontSize: '0.75rem', padding: '0.2rem 0.4rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)' }}
+                            className="writer-custom-desc-input"
                           />
                         )}
                       </div>
@@ -426,7 +618,6 @@ export default function WriterTab() {
 
         {/* Right Column: Sticky live map and results */}
         <div className="sticky-column" style={{ alignSelf: 'stretch' }}>
-          {/* Live Map - Always visible! */}
           {/* Live Map - Always visible! */}
           <div className="card" style={!result ? { flex: 1, display: 'flex', flexDirection: 'column' } : {}}>
             <div className="card-header">

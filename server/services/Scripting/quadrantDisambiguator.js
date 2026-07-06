@@ -85,7 +85,7 @@ export function disambiguateQuadrants(courses, pobN = 5000, pobE = 5000) {
   }
 
   const corrections = [];
-  let current = courses.map(c => ({ ...c }));
+  const current = courses.map(c => ({ ...c }));
 
   // Baseline evaluation
   let baseline = evaluate(current, pobN, pobE);

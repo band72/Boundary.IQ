@@ -244,7 +244,7 @@ export function parseFromTextFallback(text) {
       || remaining.match(/([\d,]+\.?\d*)\s*(?:feet|foot|ft|meters|m)\b/i)
       || remaining.match(/([\d,]+\.?\d*)/);
 
-    let distance = distMatch ? parseFloat(distMatch[1].replace(/,/g, '')) : null;
+    const distance = distMatch ? parseFloat(distMatch[1].replace(/,/g, '')) : null;
 
     if (bearing) {
       bearing = bearing
@@ -492,7 +492,7 @@ function parseStructuredResponse(raw) {
     return tryParseJsonAndGetStructure(cleanJson);
   } catch (err) {
     // 2. Try to extract from markdown code blocks
-    let m = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const m = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (m) {
       const extracted = m[1].trim();
       try {
@@ -595,7 +595,7 @@ export function isPlaceholderHallucination(courses) {
 
 function constructFullBearing(bearing, direction) {
   if (!bearing || typeof bearing !== 'string') return bearing;
-  let cleanBrg = bearing.trim();
+  const cleanBrg = bearing.trim();
   // If the bearing already starts with N/S/E/W/North/South/East/West, don't prepend direction
   if (/^[NSnsEWew]|^North|^South|^East|^West/i.test(cleanBrg)) {
     return cleanBrg;
@@ -718,7 +718,7 @@ function parseSegmentArray(arr) {
 
     if (type.toLowerCase() === 'curve' || type.toLowerCase() === 'arc') {
       let chordBearing = el.chordBearing || el.ChordBearing || el.chord_bearing || null;
-      let curveDirection = el.curveDirection || el.Direction || el.CurveDirection || el.curve_direction || el.direction || el.Direction || null;
+      const curveDirection = el.curveDirection || el.Direction || el.CurveDirection || el.curve_direction || el.direction || el.Direction || null;
       chordBearing = constructFullBearing(chordBearing, curveDirection);
       if (chordBearing && typeof chordBearing === 'string') {
         chordBearing = chordBearing.trim()
@@ -752,7 +752,7 @@ function parseSegmentArray(arr) {
 
     // Line / Leg
     let bearing = el.bearing || el.Bearing || null;
-    let direction = el.direction || el.Direction || null;
+    const direction = el.direction || el.Direction || null;
     bearing = constructFullBearing(bearing, direction);
     if (bearing && typeof bearing === 'string') {
       bearing = bearing.trim()

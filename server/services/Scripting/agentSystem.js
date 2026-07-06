@@ -545,7 +545,7 @@ export class SupervisorAgent {
       const diagnoses = this.surveyor.diagnose(extraction.courses, cogoReport, pob, units, extraction, isOpenEnded);
       turnRecord.diagnoses = diagnoses.map(d => ({ type: d.type, confidence: d.confidence, message: d.message }));
 
-      let solvedWithMath = false;
+      const solvedWithMath = false;
 
       // Attempt math/survey-heuristic hypotheses first
       for (const diag of diagnoses) {
@@ -610,7 +610,7 @@ export class SupervisorAgent {
         if (turnsOnSameCourse >= 2 && bustIdx >= 0) {
           console.log(`[${this.name}] Bust course ${bustIdx} re-read failed ${turnsOnSameCourse}x — trying targeted bearing flip (Rec 3).`);
           const flippedVariants = _targetedBearingFlipVariants(extraction.courses, bustIdx);
-          let flipSolved = false;
+          const flipSolved = false;
           for (const flippedCourses of flippedVariants) {
             const flipReport = this.cogo.analyze(flippedCourses, pob, units, isOpenEnded);
             if (flipReport.success && flipReport.isPassing) {

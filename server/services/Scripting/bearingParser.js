@@ -380,11 +380,11 @@ export function toDisplayString(azDeg) {
   else if (azDeg <= 270) { ns = 'S'; ew = 'W'; brg = azDeg - 180; }
   else                   { ns = 'N'; ew = 'W'; brg = 360 - azDeg; }
 
-  let totalSec = Math.round(brg * 3600 * 100) / 100;
-  let d = Math.floor(totalSec / 3600);
-  let remSec = totalSec - d * 3600;
-  let mn = Math.floor(remSec / 60);
-  let sec = remSec - mn * 60;
+  const totalSec = Math.round(brg * 3600 * 100) / 100;
+  const d = Math.floor(totalSec / 3600);
+  const remSec = totalSec - d * 3600;
+  const mn = Math.floor(remSec / 60);
+  const sec = remSec - mn * 60;
 
   const dd = String(d).padStart(2, '0');
   const mm = String(mn).padStart(2, '0');
@@ -399,7 +399,7 @@ export function toDisplayString(azDeg) {
  * @returns {string} e.g. "N45°30'00.00"E"
  */
 export function vectorToBearing(dN, dE) {
-  let azRad = Math.atan2(dE, dN);
+  const azRad = Math.atan2(dE, dN);
   let azDeg = azRad * 180.0 / Math.PI;
   if (azDeg < 0) azDeg += 360.0;
   return toDisplayString(azDeg);
