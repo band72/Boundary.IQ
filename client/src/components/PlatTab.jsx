@@ -116,7 +116,7 @@ export default function PlatTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Title Header */}
       <div>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
           🗺️ Plat DXF
         </h1>
         <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.5 }}>

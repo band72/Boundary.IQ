@@ -3279,6 +3279,15 @@ export default function ScriptingTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+      {/* Title Header */}
+      <div>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
+          📝 Linework Scripting
+        </h1>
+        <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          IDE for survey command language & figure plotting
+        </p>
+      </div>
 
       {/* ── Civil 3D Batch Import Modal ──────────────────────────────────────── */}
       {batchImportModal && (
@@ -3453,19 +3462,17 @@ export default function ScriptingTab() {
       />
 
       {/* ── Top Header Actions ────────────────────────────────────────────────── */}
-      <div className="card" style={{ padding: '0.85rem 1.25rem' }}>
-        <div className="flex-between">
-          <div className="logo-mark">
-            <span style={{ fontSize: '1.25rem' }}>📝</span>
-            <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Linework Scripting IDE
-            </div>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              Civil 3D / Microstation Code Engine
+      <div className="card" style={{ padding: '1rem' }}>
+        <div className="flex-between" style={{ alignItems: 'center' }}>
+          <div className="card-title" style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, paddingBottom: 0, borderBottom: 'none' }}>
+            <span>📝</span>
+            <span>Linework Scripting IDE</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.25rem' }}>
+              · Civil 3D / Microstation Code Engine
             </span>
           </div>
           
-          <div className="flex-row" style={{ gap: '0.6rem' }}>
+          <div className="flex-row" style={{ gap: '0.6rem', alignItems: 'center' }}>
             <button
               id="civil3d-batch-import-btn"
               className="btn btn-sm"
@@ -3507,7 +3514,7 @@ export default function ScriptingTab() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '27% 38% 35%', gap: '1rem', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '27fr 38fr 35fr', gap: '1rem', flex: 1, minHeight: 0 }}>
         
         {/* ── Left Column: Code Set Config Abbreviations ────────────────────────── */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: '1rem' }}>

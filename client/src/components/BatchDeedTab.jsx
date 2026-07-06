@@ -1137,6 +1137,15 @@ export default function BatchDeedTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Title Header */}
+      <div>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
+          📦 Batch Deed
+        </h1>
+        <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          Folder scan & batch deed processing pipeline
+        </p>
+      </div>
 
       {/* ── Point of Reference & Coordinate Alignment ── */}
       <div className="card" style={{
