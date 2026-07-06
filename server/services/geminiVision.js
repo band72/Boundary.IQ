@@ -101,7 +101,7 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
 
   console.log(`${getActiveProvider()} raw extraction:`, rawText.substring(0, 200) + '...');
 
-  let { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis, referencePointName, commencementSegments, originalLegalDesc } = parseStructuredResponse(rawText);
+  let { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis, referencePointName, commencementSegments, originalLegalDesc, parcels } = parseStructuredResponse(rawText);
 
   // Fallback: if LOT_BLOCK or courses is empty, and conceptualAnalysis is missing, run the targeted fallback LLM parser
   if ((classification === 'LOT_BLOCK' || courses.length === 0) && !conceptualAnalysis) {
@@ -138,7 +138,8 @@ export async function extractBoundary(buffer, mimeType, feedback = null) {
     conceptualAnalysis: conceptualAnalysis || null,
     referencePointName: referencePointName || null,
     commencementSegments: commencementSegments || [],
-    originalLegalDesc: originalLegalDesc || null
+    originalLegalDesc: originalLegalDesc || null,
+    parcels: parcels || null
   };
 }
 
@@ -635,6 +636,21 @@ function getStructureFromRoot(root, cleanJson) {
       }
     }
 
+    // Parse all parcels in the Parcels array
+    let parsedParcels = null;
+    if (parcels && Array.isArray(parcels)) {
+      parsedParcels = parcels.map(p => {
+        const segs = p.Segments || p.segments || p.boundary || p.Boundary || p.legs || p.Legs || p.courses || p.Courses || [];
+        return {
+          parcelName: p.ParcelId || p.parcelId || p.name || p.Name || 'unnamed',
+          isOpenEnded: p.IsOpenEnded === true || p.isOpenEnded === true || p.isOpenEnded === 'true',
+          courses: parseSegmentArray(segs),
+          referencePointName: p.ReferencePointName || p.referencePointName || null,
+          commencementSegments: parseSegmentArray(p.CommencementSegments || p.commencementSegments || [])
+        };
+      });
+    }
+
     const referencePointName = root.ReferencePointName || root.referencePointName || null;
     const rawCommSegments = root.CommencementSegments || root.commencementSegments || [];
     const commencementSegments = parseSegmentArray(rawCommSegments);
@@ -651,7 +667,7 @@ function getStructureFromRoot(root, cleanJson) {
       courses = [];
     }
 
-    return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis, referencePointName, commencementSegments, originalLegalDesc };
+    return { courses, classification, preambleFound, isOpenEnded, cleanJson, mentalMapSummary, conceptualAnalysis, referencePointName, commencementSegments, originalLegalDesc, parcels: parsedParcels };
   }
 
   // Legacy flat array
@@ -1000,7 +1016,26 @@ Return ONLY a valid JSON object in this EXACT format. No markdown fences, no exp
     }
   ],
   "ReferencedParcelName": null,
-  "Parcels": null,
+  "Parcels": [
+    {
+      "ParcelId": "OVERALL_BOUNDARY",
+      "IsOpenEnded": false,
+      "Segments": [
+        { "Type": "Line", "Bearing": "N89°45'30\"E", "Distance": 1320.50, "IsUnknown": false }
+      ],
+      "ReferencePointName": "Section Corner",
+      "CommencementSegments": []
+    },
+    {
+      "ParcelId": "Lot 1",
+      "IsOpenEnded": false,
+      "Segments": [
+        { "Type": "Line", "Bearing": "N00°15'00\"W", "Distance": 100.00, "IsUnknown": false }
+      ],
+      "ReferencePointName": null,
+      "CommencementSegments": []
+    }
+  ],
   "ConceptualAnalysis": {
     "Description": "Thorough text analysis of the lots, blocks, or tracts mentioned in the deed, identifying the parent tract and subdivision lot/block hierarchy.",
     "ParentTractSizeEstimate": "Estimated or calculated size of the parent tract (e.g. '3.2 acres', '40 acres', or 'unknown').",
@@ -1018,15 +1053,19 @@ REFERENCED PARCEL: If the boundary calls reference an ADJACENT or EXCEPTION parc
 set ReferencedParcelName to the name/reference of that parcel (e.g. "Lot 5, Block 2, Plat Book 12").
 Otherwise set it to null.
 
-MULTI-PARCEL: If the document contains MULTIPLE separate boundary loops
-(e.g. "PARCEL A:...PARCEL B:...", or multiple BEGINNING AT blocks), set Parcels to an array:
-[
-  { "ParcelId": "A", "IsOpenEnded": false, "Segments": [...] },
-  { "ParcelId": "B", "IsOpenEnded": true,  "Segments": [...] }
-]
-For strip deed parcels within a multi-parcel doc, set IsOpenEnded=true on that parcel entry.
-and set Segments to the first parcel's segments only.
-Otherwise set Parcels to null.
+MULTI-PARCEL & RECORDED PLATS:
+If the document is a recorded plat map containing multiple lots/parcels, or a deed describing multiple parcels, you MUST extract ALL lots/parcels and place them in the "Parcels" array.
+For each parcel in the "Parcels" array, specify:
+- "ParcelId": The lot number or name (e.g. "Lot 1", "Lot 2", "Block 8 Lot 3").
+- "IsOpenEnded": false (or true for open-ended survey centerlines).
+- "Segments": The boundary segments (traverse courses) for that individual lot/parcel.
+- "ReferencePointName": Any reference point description, or null.
+- "CommencementSegments": Commencement segments if applicable, or empty.
+
+OVERALL BOUNDARY CAPTION:
+If the plat contains a "CAPTION" describing the overall perimeter boundary of the entire subdivision/tract (e.g. "A subdivision of a portion of Sections... Commencing at... thence... to the Point of Beginning"), you MUST ALSO extract this overall perimeter boundary traverse as a parcel in the "Parcels" array using "ParcelId": "OVERALL_BOUNDARY".
+
+For multi-parcel documents, also set the root-level "Segments" to the first parcel's segments (e.g., the overall boundary or the first lot). Otherwise, set "Parcels" to null.
 
 RULE 12 — NO PLACEHOLDER HALLUCINATION:
 Under no circumstances should you ever return the exact example segments (e.g., N45°22'10"E, 150.25', etc.) shown in the output schema. If you cannot find any valid boundary courses or metes-and-bounds traverse calls in the document, you MUST return an empty segments array ("Segments": []) and set the classification to "LOT_BLOCK" or "PLAT" as appropriate. In this case, you MUST also populate the "ConceptualAnalysis" field with a thorough analysis of the subdivision lot/block hierarchy, estimating parent tract and lot sizes to provide relative perspective.

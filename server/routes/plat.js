@@ -87,6 +87,33 @@ router.post('/extract-and-compute', upload.single('image'), async (req, res) => 
       }
     }
 
+    // Compute traverses for all extracted parcels/lots
+    if (extracted.parcels && Array.isArray(extracted.parcels)) {
+      for (const p of extracted.parcels) {
+        if (p.courses && p.courses.length > 0) {
+          try {
+            const trav = traverseSvc.compute({
+              pointOfBeginning: { northing: pobN, easting: pobE },
+              courses: p.courses,
+              units,
+              isOpenEnded: p.isOpenEnded,
+              commencementSegments: p.commencementSegments || []
+            });
+            p.traverse = trav;
+            p.stations = trav?.stations || [];
+            p.adjustedStations = trav?.adjustedStations || [];
+            p.perimeter = trav?.perimeter || 0;
+            p.areaAcres = trav?.areaAcres || 0;
+            p.closure = trav?.closure || null;
+            p.status = 'PASS';
+          } catch (tex) {
+            p.traverseError = `Traverse computation failed: ${tex.message}`;
+            p.status = 'FAIL';
+          }
+        }
+      }
+    }
+
     // ── QC Gate ────────────────────────────────────────────────────────────────
     // Always attach QC results so client can display status immediately.
     const QC_CLOSURE_MAX_FT = 5.0;

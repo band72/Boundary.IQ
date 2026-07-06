@@ -37,8 +37,8 @@ process.chdir(SERVER_DIR);
 const { init: initDb } = await import('../services/db/core.js');
 initDb?.();
 
-const { runRepairPipeline } = await import('../services/repair.js');
-const { generateDxf } = await import('../services/dxfExport.js');
+const { runRepairPipeline } = await import('../services/Scripting/repair.js');
+const { generateDxf, generateCombinedDxf } = await import('../services/dxfExport.js');
 const { setProvider, getActiveProvider, getActiveModel } = await import('../services/llm/dispatcher.js');
 const { GEMINI_API_KEY } = await import('../config.js');
 
@@ -328,7 +328,13 @@ async function main() {
             units: units
           };
 
-          const dxfString = generateDxf(stations, adjusted, courses, meta, result.bustCourseIndex);
+          let dxfString;
+          if (result.finalExtraction?.parcels && result.finalExtraction.parcels.length > 0) {
+            console.log(`📦 Generating combined multi-parcel DXF containing ${result.finalExtraction.parcels.length} parcels/lots.`);
+            dxfString = generateCombinedDxf(result.finalExtraction.parcels);
+          } else {
+            dxfString = generateDxf(stations, adjusted, courses, meta, result.bustCourseIndex);
+          }
           fs.writeFileSync(item.output, dxfString);
           
           // Save JSON metadata

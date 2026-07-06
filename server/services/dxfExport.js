@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import * as bp from './Scripting/bearingParser.js';
 
 class Drawing {
   static ACI = {
@@ -527,14 +528,88 @@ export function generateCombinedDxf(parcels) {
 
   const d = new Drawing();
 
-  // Bounding box calculation for the overall group of parcels
+  // 1. Align coordinates of adjacent lots sharing boundary segments
+  const positionedParcels = [];
+  for (const parcel of parcels) {
+    const stations = parcel.adjustedStations || parcel.stations || [];
+    const pts = stations.map(s => ({ x: getSafeCoord(s.easting), y: getSafeCoord(s.northing) }));
+    const courses = parcel.courses || [];
+    
+    let offsetX = 0;
+    let offsetY = 0;
+    
+    if (pts.length >= 2) {
+      if (positionedParcels.length > 0) {
+        outerLoop:
+        for (const posParcel of positionedParcels) {
+          for (let i = 0; i < courses.length; i++) {
+            const c1 = courses[i];
+            const len1 = c1.distance;
+            if (!len1 || len1 < 0.1) continue;
+            
+            for (let j = 0; j < posParcel.courses.length; j++) {
+              const c2 = posParcel.courses[j];
+              const len2 = c2.distance;
+              if (!len2 || len2 < 0.1) continue;
+              
+              if (Math.abs(len1 - len2) < 0.5) {
+                try {
+                  const b1 = bp.parse(c1.bearing || c1.chordBearing || '');
+                  const b2 = bp.parse(c2.bearing || c2.chordBearing || '');
+                  if (b1 && b2) {
+                    const diff = Math.abs(b1.azimuthDeg - b2.azimuthDeg) % 360;
+                    const isSameDir = diff < 2.0 || diff > 358.0;
+                    const isOppDir = Math.abs(diff - 180.0) < 2.0;
+                    
+                    if (isSameDir || isOppDir) {
+                      const q_r = pts[i];
+                      const p_k = posParcel.pts[j];
+                      const p_kp1 = posParcel.pts[(j + 1) % posParcel.pts.length];
+                      
+                      if (isSameDir) {
+                        offsetX = p_k.x - q_r.x;
+                        offsetY = p_k.y - q_r.y;
+                      } else {
+                        offsetX = p_kp1.x - q_r.x;
+                        offsetY = p_kp1.y - q_r.y;
+                      }
+                      break outerLoop;
+                    }
+                  }
+                } catch (e) {
+                  // ignore parsing failure
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      const alignedPts = pts.map(p => ({ x: p.x + offsetX, y: p.y + offsetY }));
+      positionedParcels.push({
+        parcelName: parcel.parcelName,
+        courses,
+        pts: alignedPts
+      });
+      
+      parcel.alignedStations = alignedPts.map((p, pIdx) => ({
+        ...stations[pIdx],
+        easting: p.x,
+        northing: p.y
+      }));
+    } else {
+      parcel.alignedStations = stations;
+    }
+  }
+
+  // Bounding box calculation for the overall group of aligned parcels
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   let totalPerimeter = 0;
   let totalArea = 0;
   let hasValidPt = false;
 
   for (const parcel of parcels) {
-    const stations = parcel.adjustedStations || parcel.stations || [];
+    const stations = parcel.alignedStations || [];
     const pts = stations.map(s => ({ x: getSafeCoord(s.easting), y: getSafeCoord(s.northing) }));
     for (const p of pts) {
       if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
@@ -582,14 +657,16 @@ export function generateCombinedDxf(parcels) {
     const layerError = `C-PROP-ERR-${safeName}`;
 
     // Select color for this parcel boundary (cycle through colors)
-    const boundaryColor = colors[parcelIdx % colors.length];
+    const isOverallBoundary = safeName.includes('OVERALL_BOUNDARY') || safeName.includes('OUTER_BOUNDARY');
+    const boundaryColor = isOverallBoundary ? Drawing.ACI.WHITE : colors[parcelIdx % colors.length];
+    const heavyWidth = isOverallBoundary ? textScale * 0.24 : textScale * 0.10;
 
     d.addLayer(layerBoundary, boundaryColor, 'CONTINUOUS');
     d.addLayer(layerText, Drawing.ACI.CYAN, 'CONTINUOUS');
     d.addLayer(layerPoints, Drawing.ACI.GREEN, 'CONTINUOUS');
     d.addLayer(layerError, Drawing.ACI.RED, 'DASHED');
 
-    const stations = parcel.adjustedStations || parcel.stations || [];
+    const stations = parcel.alignedStations || [];
     const pts = stations.map(s => ({ x: getSafeCoord(s.easting), y: getSafeCoord(s.northing) }));
     const courses = parcel.courses || [];
 
@@ -619,7 +696,6 @@ export function generateCombinedDxf(parcels) {
         // Draw line
         lineCount++;
         d.setActiveLayer(layerBoundary);
-        const heavyWidth = textScale * 0.12;
         d.drawPolyline([[p1.x, p1.y], [p2.x, p2.y]], false, heavyWidth, heavyWidth);
 
         const midX = (p1.x + p2.x) / 2 + perpX;
@@ -670,7 +746,6 @@ export function generateCombinedDxf(parcels) {
             if (!curveLeft) { [startAng, endAng] = [endAng, startAng]; }
 
             d.setActiveLayer(layerBoundary);
-            const heavyWidth = textScale * 0.12;
             const arcPoints = [];
             const numSteps = Math.max(16, Math.min(100, Math.ceil((r * Math.abs(endAng - startAng) * Math.PI / 180) / (textScale * 0.4))));
             let startRad = startAng * Math.PI / 180;
@@ -705,7 +780,6 @@ export function generateCombinedDxf(parcels) {
 
         if (!solved) {
           d.setActiveLayer(layerBoundary);
-          const heavyWidth = textScale * 0.12;
           d.drawPolyline([[p1.x, p1.y], [p2.x, p2.y]], false, heavyWidth, heavyWidth);
           const midX = (p1.x + p2.x) / 2 + perpX;
           const midY = (p1.y + p2.y) / 2 + perpY;
@@ -744,6 +818,20 @@ export function generateCombinedDxf(parcels) {
     // Closing POB node circle
     d.setActiveLayer(layerPoints);
     d.drawCircle(pts[0].x, pts[0].y, nodeRadius * 1.5);
+
+    // Centroid Lot Labeling (draw the text label at centroid if pts.length >= 3)
+    if (pts.length >= 3) {
+      let sumX = 0, sumY = 0;
+      for (const p of pts) {
+        sumX += p.x;
+        sumY += p.y;
+      }
+      const centX = sumX / pts.length;
+      const centY = sumY / pts.length;
+      d.setActiveLayer(layerText);
+      // Place the label in the center of the lot with a slightly larger font size for readability
+      d.drawText(centX, centY, textScale * 1.5, 0, safeText(rawName));
+    }
   });
 
   // Annotations North Arrow

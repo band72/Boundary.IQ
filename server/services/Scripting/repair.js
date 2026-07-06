@@ -69,7 +69,7 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
     }
   }
 
-  const final = finalizeResult(result);
+  const final = finalizeResult(result, pob, units);
   const elapsed = Date.now() - t0;
   log.info(
     { file: fileName, status: final?.status, stage: final?.repairStageUsed, elapsedMs: elapsed },
@@ -78,7 +78,7 @@ export async function runRepairPipeline(imageBytes, mimeType, pob, units, isOpen
   return final;
 }
 
-function finalizeResult(result) {
+function finalizeResult(result, pob, units) {
   if (result) {
     if (!result.finalExtraction) result.finalExtraction = result.extraction || {};
     
@@ -104,6 +104,35 @@ function finalizeResult(result) {
     if (result.extraction) {
       result.extraction.county = result.finalExtraction.county;
       result.extraction.state = result.finalExtraction.state;
+    }
+
+    // Compute traverses for multi-parcel extractions (Recorded Plats)
+    if (result.finalExtraction.parcels && Array.isArray(result.finalExtraction.parcels)) {
+      log.info(`Finalizing ${result.finalExtraction.parcels.length} parcels for multi-parcel result.`);
+      for (const p of result.finalExtraction.parcels) {
+        if (p.courses && p.courses.length > 0) {
+          try {
+            const startPob = pob || { northing: 5000, easting: 5000 };
+            const activeUnits = units || 'Feet';
+            const [t, err] = tryCompute(p.courses, startPob, activeUnits, p.isOpenEnded, p.commencementSegments || []);
+            if (t) {
+              p.traverse = t;
+              p.stations = t.stations || [];
+              p.adjustedStations = t.adjustedStations || [];
+              p.perimeter = t.perimeter || 0;
+              p.areaAcres = t.areaAcres || 0;
+              p.closure = t.closure || null;
+              p.status = 'PASS';
+            } else {
+              p.status = 'FAIL';
+              p.traverseError = err || 'Traverse computation failed';
+            }
+          } catch (err) {
+            p.status = 'ERROR';
+            p.traverseError = err.message;
+          }
+        }
+      }
     }
 
     if (result.finalTraverse) {
@@ -1091,10 +1120,10 @@ function buildSolutionSteps(originalExtraction, repairedExtraction, stage, trave
   };
 }
 
-function tryCompute(courses, pob, units, isOpenEnded = false) {
+function tryCompute(courses, pob, units, isOpenEnded = false, commencementSegments = []) {
   if (!courses || courses.length === 0) return [null, 'No courses'];
   try {
-    const result = traverseSvc.compute({ pointOfBeginning: pob, courses, units, isOpenEnded });
+    const result = traverseSvc.compute({ pointOfBeginning: pob, courses, units, isOpenEnded, commencementSegments });
     return [result, null];
   } catch (ex) {
     return [null, ex.message];
