@@ -69,8 +69,12 @@ router.post('/message', upload.single('image'), asyncHandler(async (req, res) =>
 
         pipelineResult = {
           points: adjusted.length > 0 ? adjusted : (stations.length > 0 ? stations : []),
+          stations: stations,
+          adjustedStations: adjusted,
+          courses: courses,
           closure: result.finalTraverse?.closure || null,
-          dxfContent: dxfContent || null
+          dxfContent: dxfContent || null,
+          parcels: result.finalExtraction?.parcels || null
         };
       }
     } catch (err) {

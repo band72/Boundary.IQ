@@ -112,9 +112,9 @@ export default function ChatTab() {
   })) || [];
 
   const activeTract = tracts[activeTractIndex] || {
-    stations: lastResult?.points || [],
-    adjustedStations: [],
-    courses: []
+    stations: lastResult?.stations || lastResult?.points || [],
+    adjustedStations: lastResult?.adjustedStations || [],
+    courses: lastResult?.courses || []
   };
 
   return (
