@@ -486,34 +486,37 @@ router.get('/batch-library/file', asyncHandler(async (req, res) => {
 }));
 
 // ── GET /api/settings/ai-usage ────────────────────────────────────────────────
+import { query } from '../services/db/core.js';
+
 router.get('/ai-usage', asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const db = dbSvc.getDb();
   
   // Count user-specific batch runs and files stored in the database
-  const batchStats = db.prepare(`
+  const batchStatsRes = await query(`
     SELECT 
-      COALESCE(COUNT(DISTINCT b.BatchId), 0) as totalBatchRuns,
-      COALESCE(COUNT(d.Id), 0) as totalBatchFiles
+      COALESCE(COUNT(DISTINCT b.BatchId), 0) as "totalBatchRuns",
+      COALESCE(COUNT(d.Id), 0) as "totalBatchFiles"
     FROM BatchRuns b
     LEFT JOIN DeedLogs d ON b.BatchId = d.BatchId
     WHERE b.UserId = ?
-  `).get(userId) || { totalBatchRuns: 0, totalBatchFiles: 0 };
+  `, [userId]);
+  const batchStats = batchStatsRes.rows[0] || { totalBatchRuns: 0, totalBatchFiles: 0 };
 
   // Count user-specific AI calls from TokenUsage
-  const tokenStats = db.prepare(`
+  const tokenStatsRes = await query(`
     SELECT
-      COALESCE(COUNT(*), 0) as totalAiRequests,
-      COALESCE(SUM(TotalTokens), 0) as totalTokens
+      COALESCE(COUNT(*), 0) as "totalAiRequests",
+      COALESCE(SUM(TotalTokens), 0) as "totalTokens"
     FROM TokenUsage
     WHERE UserId = ?
-  `).get(userId) || { totalAiRequests: 0, totalTokens: 0 };
+  `, [userId]);
+  const tokenStats = tokenStatsRes.rows[0] || { totalAiRequests: 0, totalTokens: 0 };
 
   res.json({
-    totalBatchRuns: batchStats.totalBatchRuns,
-    totalBatchFiles: batchStats.totalBatchFiles,
-    totalAiRequests: tokenStats.totalAiRequests,
-    totalTokens: tokenStats.totalTokens
+    totalBatchRuns: Number(batchStats.totalBatchRuns || 0),
+    totalBatchFiles: Number(batchStats.totalBatchFiles || 0),
+    totalAiRequests: Number(tokenStats.totalAiRequests || 0),
+    totalTokens: Number(tokenStats.totalTokens || 0)
   });
 }));
 
