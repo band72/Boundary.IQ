@@ -114,12 +114,15 @@ STRICT GUARDRAILS:
       };
     });
 
-    log.info({ model: OLLAMA_FALLBACK_MODEL }, 'Sending fallback request to Ollama chat API');
-    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+    const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL || OLLAMA_FALLBACK_MODEL;
+    const ollamaUrl = process.env.OLLAMA_URL || OLLAMA_URL;
+
+    log.info({ model: fallbackModel }, 'Sending fallback request to Ollama chat API');
+    const res = await fetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: OLLAMA_FALLBACK_MODEL,
+        model: fallbackModel,
         messages: ollamaMessages,
         stream: false
       })
