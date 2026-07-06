@@ -39,17 +39,23 @@ router.post('/message', upload.single('image'), asyncHandler(async (req, res) =>
   // 1. Get AI conversational response
   const aiResponse = await aiChat(message, history, imageFile?.path || null);
 
-  // 2. Best-effort visual/COGO extraction if image was attached
+  // 2. Best-effort visual/COGO extraction if image was attached or message contains deed text
   let pipelineResult = null;
-  if (imageFile) {
+  const hasDeedKeywords = message && /thence|beginning|commencing|degrees|minutes|seconds|feet|chains|links|rods|north|south|east|west/i.test(message);
+
+  if (imageFile || hasDeedKeywords) {
     try {
+      const inputBytes = imageFile ? fs.readFileSync(imageFile.path) : Buffer.from(message, 'utf-8');
+      const mime = imageFile ? (imageFile.mimetype || 'image/jpeg') : 'text/plain';
+      const fileName = imageFile ? imageFile.path : 'ChatTextSolve.txt';
+
       const result = await runRepairPipeline(
-        fs.readFileSync(imageFile.path),
-        imageFile.mimetype || 'image/jpeg',
+        inputBytes,
+        mime,
         { northing: 5000, easting: 5000 },
         'Feet',
         false, // isOpenEnded
-        imageFile.path // fileName
+        fileName // fileName
       );
 
       if (result) {
@@ -78,7 +84,7 @@ router.post('/message', upload.single('image'), asyncHandler(async (req, res) =>
         };
       }
     } catch (err) {
-      console.warn('[ChatRoute] Best-effort plat extraction failed:', err.message);
+      console.warn('[ChatRoute] Best-effort plat/text extraction failed:', err.message);
     }
   }
 
