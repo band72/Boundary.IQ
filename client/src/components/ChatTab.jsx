@@ -4,13 +4,13 @@ import TraverseMap from './TraverseMap';
 
 const WELCOME_MESSAGE = {
   role: 'ai',
-  content: `Hello! I'm **Boundary.IQ AI**, your surveying intelligence assistant.
+  content: `Hello! I'm Boundary.IQ AI, your surveying intelligence assistant.
 
 I can help you:
-* 📄 **Extract bearing and distance courses** from metes & bounds legal descriptions.
-* 🛰 **Analyze visual subdivision plats** (attach a JPG/PNG/WEBP plat map below).
-* 📐 **Compute COGO traverses** and linear closure precision.
-* 🔧 **Diagnose and correct misclosure errors** in deeds and surveys.
+📄 Extract bearing and distance courses from metes & bounds legal descriptions.
+🛰 Analyze visual subdivision plats (attach a JPG/PNG/WEBP plat map below).
+📐 Compute COGO traverses and linear closure precision.
+🔧 Diagnose and correct misclosure errors in deeds and surveys.
 
 Upload an image or paste a legal description to get started!`
 };
