@@ -174,6 +174,7 @@ function AppShell() {
   const [helpOpen, setHelpOpen]         = useState(false);
   const [healthStatus, setHealthStatus] = useState(null); // null | 'ok' | 'error'
   const [theme, setTheme]               = useLocalStorage('boundaryiq_theme', 'blue');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -277,6 +278,13 @@ function AppShell() {
       <div className="app-shell">
         {/* Header */}
         <header className="app-header">
+          <button
+            className="menu-toggle-btn"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            aria-label="Toggle Navigation Menu"
+          >
+            ☰
+          </button>
           <div className="logo-mark">
             <div className="logo-icon">⬡</div>
             <div className="logo-text">Boundary<span>.IQ</span></div>
@@ -341,8 +349,11 @@ function AppShell() {
         </header>
 
         <div className="main-content">
+          {isSidebarOpen && (
+            <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)} />
+          )}
           {/* Sidebar */}
-          <nav className="sidebar">
+          <nav className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
             <div className="nav-section" style={{ marginTop: '0.5rem' }}>Tools</div>
             {visibleTabs.map(t => {
               const planLocked = !isAdmin && userPlanRank(user) < (PLAN_RANK[t.minPlan] ?? 0);
@@ -351,7 +362,10 @@ function AppShell() {
                 <button
                   key={t.id}
                   className={`nav-item ${tab === t.id ? 'active' : ''} ${planLocked ? 'nav-item-locked' : ''}`}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => {
+                    setTab(t.id);
+                    setIsSidebarOpen(false);
+                  }}
                   title={planLocked ? `Requires ${t.minPlan} plan` : t.label}
                   style={{ position: 'relative' }}
                 >
@@ -384,7 +398,10 @@ function AppShell() {
               <button
                 key={t.id}
                 className={`nav-item ${tab === t.id ? 'active' : ''}`}
-                onClick={() => setTab(t.id)}
+                onClick={() => {
+                  setTab(t.id);
+                  setIsSidebarOpen(false);
+                }}
               >
                 <span className="nav-icon">{t.icon}</span>
                 {t.label}

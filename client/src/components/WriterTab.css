@@ -210,3 +210,36 @@
   border-radius: var(--radius-sm);
   color: var(--text-primary);
 }
+
+@media (max-width: 768px) {
+  .writer-course-headers {
+    display: none;
+  }
+  
+  .writer-course-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: var(--radius-sm);
+  }
+
+  .writer-course-row > * {
+    width: 100%;
+  }
+
+  .writer-course-num {
+    text-align: left;
+    font-weight: bold;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .writer-sub-item-row {
+    padding-left: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+}

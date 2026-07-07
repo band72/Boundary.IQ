@@ -270,9 +270,22 @@ export default function ChatTab() {
           transition: all 0.2s;
         }
         .lot-chip.active {
-          background: #2563eb;
-          border-color: #3b82f6;
+          background: var(--accent);
+          border-color: var(--accent);
           color: #fff;
+        }
+        @media (max-width: 900px) {
+          .chat-layout {
+            grid-template-columns: 1fr;
+            grid-template-rows: 1fr 350px;
+            height: calc(100vh - 120px);
+          }
+          .chat-panel {
+            height: 100%;
+          }
+          .preview-panel {
+            height: 350px;
+          }
         }
       `}</style>
 
