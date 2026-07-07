@@ -16,19 +16,19 @@ vi.mock('fs', () => {
   return {
     default: {
       existsSync: (p) => {
-        const cleaned = p.replace(/\\/g, '/');
+        const cleaned = p.replace(/\\/g, '/').replace(/^[a-zA-Z]:/, '');
         if (cleaned === '/' || cleaned === '/home' || cleaned === '/home/User') return true;
         if (cleaned.startsWith('/home/User/File_')) return true;
         return false;
       },
       statSync: (p) => {
-        const cleaned = p.replace(/\\/g, '/');
+        const cleaned = p.replace(/\\/g, '/').replace(/^[a-zA-Z]:/, '');
         return {
           isDirectory: () => cleaned === '/' || cleaned === '/home' || cleaned === '/home/User'
         };
       },
       readdirSync: (p) => {
-        const cleaned = p.replace(/\\/g, '/');
+        const cleaned = p.replace(/\\/g, '/').replace(/^[a-zA-Z]:/, '');
         if (cleaned === '/') return ['home'];
         if (cleaned === '/home') return ['User'];
         if (cleaned === '/home/User') {
@@ -143,7 +143,7 @@ describe('Case-Insensitive Path Resolution', () => {
 
     it(`Case ${i}: resolve ${inputPath} case-insensitively`, () => {
       const resolved = resolvePathCaseInsensitive(inputPath);
-      const cleanResolved = resolved.replace(/\\/g, '/');
+      const cleanResolved = resolved.replace(/\\/g, '/').replace(/^[a-zA-Z]:/, '');
       expect(cleanResolved).toBe(expectedPath);
     });
   }
