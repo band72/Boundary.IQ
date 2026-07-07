@@ -118,15 +118,26 @@ export default function ChatTab() {
   };
 
   return (
-    <div className="chat-layout">
-      <style>{`
-        .chat-layout {
-          display: grid;
-          grid-template-columns: 1fr 400px;
-          gap: 24px;
-          height: calc(100vh - 120px);
-          align-items: stretch;
-        }
+    <>
+      {/* Title Header */}
+      <div>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
+          💬 AI Chat
+        </h1>
+        <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          Interact with the surveying intelligence assistant to analyze deeds, correct closures, or extract boundary lines.
+        </p>
+      </div>
+
+      <div className="chat-layout">
+        <style>{`
+          .chat-layout {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 24px;
+            height: calc(100vh - 200px);
+            align-items: stretch;
+          }
         .chat-panel {
           display: flex;
           flex-direction: column;
@@ -278,7 +289,7 @@ export default function ChatTab() {
           .chat-layout {
             grid-template-columns: 1fr;
             grid-template-rows: 1fr 350px;
-            height: calc(100vh - 120px);
+            height: calc(100vh - 200px);
           }
           .chat-panel {
             height: 100%;
@@ -440,5 +451,6 @@ export default function ChatTab() {
         </div>
       </div>
     </div>
-  );
+  </>
+);
 }
