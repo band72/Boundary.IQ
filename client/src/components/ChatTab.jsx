@@ -118,7 +118,7 @@ export default function ChatTab() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+    <>
       {/* Title Header */}
       <div>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
@@ -451,6 +451,6 @@ export default function ChatTab() {
         </div>
       </div>
     </div>
-  </div>
+  </>
 );
 }
