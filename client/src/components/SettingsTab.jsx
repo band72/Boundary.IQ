@@ -10,7 +10,7 @@ const PANEL_DEFS = [
   { id: 'plat',      icon: '🛰️', label: 'Plat Extraction',         desc: 'AI-powered OCR for boundary images and PDFs',           color: '#00d4a8', minRole: 'user',  status: 'testing' },
   { id: 'writer',    icon: '✍️', label: 'Legal Description Writer', desc: 'Generate professional registry legal text',              color: '#a855f7', minRole: 'user',  status: 'testing' },
   { id: 'batch',     icon: '📦', label: 'Batch Deed',               desc: 'Folder scan & batch deed processing pipeline',           color: '#c97a00', minRole: 'user',  status: 'testing' },
-  { id: 'scripting', icon: '📝', label: 'Linework Scripting',       desc: 'IDE for survey command language & figure plotting',      color: '#e85a19', minRole: 'user',  status: 'live'    },
+  { id: 'scripting', icon: '📝', label: 'Linework',       desc: 'IDE for survey command language & figure plotting',      color: '#e85a19', minRole: 'user',  status: 'live'    },
   { id: 'dashboard', icon: '📊', label: 'Dashboard',                desc: 'Processing statistics and deed review panel',           color: '#4285F4', minRole: 'user',  status: 'testing' },
 ];
 

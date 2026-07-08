@@ -472,7 +472,7 @@ function AppShell() {
                 {tab === 'scripting' && (
                   hasAccess(user, TABS.find(t => t.id === 'scripting'))
                     ? <ScriptingTab />
-                    : <TestingWall feature="Linework Scripting" icon="📝" />
+                    : <TestingWall feature="Linework" icon="📝" />
                 )}
                 {tab === 'dashboard' && (
                   hasAccess(user, TABS.find(t => t.id === 'dashboard'))
