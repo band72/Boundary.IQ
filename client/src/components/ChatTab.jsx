@@ -122,7 +122,7 @@ export default function ChatTab() {
       {/* Title Header */}
       <div>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
-          💬 AI Chat & Au Chat
+          💬 AI Chat
         </h1>
         <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.5 }}>
           Interact with the surveying intelligence assistant to analyze deeds, correct closures, or extract boundary lines.
