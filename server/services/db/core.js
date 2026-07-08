@@ -520,6 +520,32 @@ async function _runMigrations() {
         }
       }
     }
+
+    const rlsMigrationName = 'enable_rls_all_tables';
+    if (!appliedMigrations.has(rlsMigrationName)) {
+      const client = await pool.connect();
+      try {
+        const tables = [
+          'BatchRuns', 'DeedLogs', 'HeuristicTracking', 'Users', 'Sessions',
+          'Subscriptions', 'UsageTracking', 'TokenUsage', 'AuditLog',
+          'InviteTokens', 'UserSettings', '_Migrations', 'PendingRegistrations',
+          'LicenseKeys', 'PlanSettings'
+        ];
+        for (const t of tables) {
+          try {
+            await client.query(`ALTER TABLE "${t}" ENABLE ROW LEVEL SECURITY;`);
+          } catch (e) {
+            console.error(`Failed to enable RLS on ${t}:`, e.message);
+          }
+        }
+        await client.query('INSERT INTO _Migrations (Name, AppliedAt) VALUES ($1, $2) ON CONFLICT (Name) DO NOTHING', [rlsMigrationName, now()]);
+        console.log(`  ✓ Migration applied: ${rlsMigrationName}`);
+      } catch (err) {
+        console.error(`Failed to apply migration ${rlsMigrationName}:`, err);
+      } finally {
+        client.release();
+      }
+    }
   } else {
     const applyMigration = db.transaction((m) => {
       try {
