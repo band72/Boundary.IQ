@@ -138,7 +138,7 @@ const TABS = [
   { id: 'writer',    icon: '✍️',  label: 'Deed Writer',      minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'batch',     icon: '📦',  label: 'Batch Deed',       minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'chat',      icon: '💬',  label: 'AI Chat',          minRole: 'user',  minPlan: 'free', status: 'live'    },
-  { id: 'scripting', icon: '📝',  label: 'Linework Scripting', minRole: 'user', minPlan: 'free', status: 'live'   },
+  { id: 'scripting', icon: '📝',  label: 'Linework', minRole: 'user', minPlan: 'free', status: 'live'   },
   { id: 'dashboard', icon: '📊',  label: 'Dashboard',        minRole: 'user',  minPlan: 'free', status: 'live'    },
   { id: 'settings',  icon: '⚙️',  label: 'Settings',         minRole: 'user',  minPlan: 'free', status: 'live'    },
 ];
