@@ -327,6 +327,15 @@ function UsersTab({ auth, flash, modal, setModal }) {
         <button className="btn btn-ghost" onClick={exportCSV} style={{ fontSize:'0.75rem' }}>⬇ CSV</button>
       </div>
 
+      {selected.size > 0 && (
+        <div style={{ marginBottom:'0.9rem' }}>
+          <button className="btn" style={{ background:'var(--error, #ff3333)', color:'#fff', padding:'0.4rem 0.8rem', fontSize:'0.75rem', border:'none' }}
+            onClick={()=>setModal({ title:'⚠️ Batch Delete', body:`Permanently delete ${selected.size} users? This cannot be undone.`, danger:true, onConfirm:doBatchDelete })}>
+            🗑️ Delete {selected.size} Selected
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div style={{ background:'rgba(9,14,26,.4)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
         <div style={{ display:'grid', gridTemplateColumns:'40px 2.5fr 1fr 1.2fr 1.2fr 1.5fr 2fr', padding:'0.55rem 1rem', background:'rgba(255,255,255,.04)', borderBottom:'1px solid var(--border)', fontSize:'0.65rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-muted)', alignItems:'center' }}>
