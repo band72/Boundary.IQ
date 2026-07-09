@@ -55,7 +55,7 @@ steps:
       - '--max-instances=10'
       - '--timeout=3600'
       - '--set-env-vars=NODE_ENV=production,ACTIVE_PROVIDER=gemini,ACTIVE_MODEL=gemini-3.5-flash,ALLOW_API_FALLBACK=true,STRIPE_BASIC_PRICE_ID=price_1TnINL2S1lrWwZ14vJIV9WBk,STRIPE_PRO_PRICE_ID=price_1TnL1N2S1lrWwZ14SfUXOc0I,STRIPE_ENTERPRISE_PRICE_ID=price_1TnL2q2S1lrWwZ14ghVlaB2N,GOOGLE_CLIENT_ID=318563891368-v62a25njk12jj0jc9ff9rtrjv3gfaag0.apps.googleusercontent.com,EMAIL_FROM=noreply@iq.banks.land'
-      - '--update-secrets=STRIPE_SECRET_KEY=stripe-secret:latest,STRIPE_WEBHOOK_SECRET=stripe-webhook:latest,RESEND_API_KEY=resend-api-key:latest'
+      - '--update-secrets=STRIPE_SECRET_KEY=stripe-secret:latest,STRIPE_WEBHOOK_SECRET=stripe-webhook:latest,RESEND_API_KEY=resend-api-key:latest,LICENSE_PRIVATE_KEY=license-private-key:latest'
     waitFor: [push]
 
 images:
