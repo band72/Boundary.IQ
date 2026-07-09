@@ -278,6 +278,7 @@ function MyAccountSection() {
     finally { setSessLoading(false); }
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchSessions(); }, []);
 
   useEffect(() => {
@@ -703,6 +704,7 @@ export default function UserSettingsTab({
 
   useEffect(() => {
     if (geminiKey || openaiKey) saveKeysToBackend(geminiKey, openaiKey, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const switchModel = async (provider, model) => {

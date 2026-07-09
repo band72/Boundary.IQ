@@ -291,6 +291,7 @@ export default function LoginScreen({ onAuthSuccess }) {
     } catch (err) {
       console.warn('Google Identity SDK initialization error:', err.message);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleClientId, gsiLoaded, clientIdLoaded]);
 
   // Callback ref to render Google button whenever the container element mounts in DOM

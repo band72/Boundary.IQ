@@ -140,6 +140,7 @@ export default function SettingsTab({
     if (geminiKey || openaiKey) {
       saveKeysToBackend(geminiKey, openaiKey, true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -322,6 +323,7 @@ export default function SettingsTab({
     } finally {
       setSystemLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const saveSystemSettings = async () => {

@@ -3275,6 +3275,7 @@ export default function ScriptingTab() {
     };
     window.addEventListener('boundaryiq:importBatchPath', handleRemoteImport);
     return () => window.removeEventListener('boundaryiq:importBatchPath', handleRemoteImport);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

@@ -338,6 +338,7 @@ export default function BatchDeedTab() {
     fetchRefPoints();
     const interval = setInterval(checkServerLockStatus, 10000);
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Recursively convert PascalCase keys to camelCase (DB stores PascalCase, UI expects camelCase)

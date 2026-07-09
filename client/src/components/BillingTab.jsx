@@ -58,6 +58,7 @@ export default function BillingTab({ user }) {
       })
       .catch(e => flash(e.message, 'error'))
       .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleUpgrade = async (plan) => {

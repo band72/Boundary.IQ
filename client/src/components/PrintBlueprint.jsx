@@ -1675,6 +1675,7 @@ export default function PrintBlueprint({
     ctx.fillText('UNCORRECTED', 0, 0);
     ctx.restore();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originalCanvasElement, originalCourses, courses, pob]);
 
   // Build a unique filename slug: parcel + deed book/page + timestamp

@@ -135,6 +135,7 @@ function UsersTab({ auth, flash, modal, setModal }) {
       setUsers(d.users || []);
     } catch (e) { flash(e.message, 'error'); }
     finally { setLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
@@ -414,6 +415,7 @@ function AuditTab({ auth }) {
       console.error('Failed to fetch audit log:', err);
     }
     finally { setLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionFilter]);
 
   useEffect(() => { fetch_(); }, [fetch_]);
@@ -473,6 +475,7 @@ function InvitesTab({ auth, flash }) {
       console.error('Failed to fetch invites:', err);
     }
     finally { setLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { fetchInvites(); }, [fetchInvites]);
@@ -573,6 +576,7 @@ function StatsTab({ auth }) {
 
   useEffect(() => {
     fetch(`${API}/auth/system-stats`, auth).then(r=>r.json()).then(setStats).catch(()=>{}).finally(()=>setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) return <div style={{ color:'var(--text-muted)', padding:'2rem', textAlign:'center' }}><span className="spinner" style={{ width:24, height:24, borderWidth:2 }}/></div>;
@@ -624,6 +628,7 @@ function OrdersTab({ auth, flash, modal, setModal }) {
       setRevenue(d.revenue || null);
     } catch (e) { flash(e.message, 'error'); }
     finally { setLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
@@ -826,6 +831,7 @@ function PlansTab({ auth, flash }) {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
