@@ -125,6 +125,7 @@ function UsersTab({ auth, flash, modal, setModal }) {
   const [planFilter, setPlanFilter] = useState('');
   const [drawerUser, setDrawerUser] = useState(null); // user detail drawer
   const [tempPw, setTempPw] = useState(null); // shown after force reset
+  const [selected, setSelected] = useState(new Set());
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -173,6 +174,20 @@ function UsersTab({ auth, flash, modal, setModal }) {
     } catch(e) { flash(e.message,'error'); }
     finally { setModal(null); }
   };
+
+  const doBatchDelete = async () => {
+    try {
+      const userIds = Array.from(selected);
+      const r = await fetch(`${API}/auth/users/batch-delete`, { method:'POST', ...auth, body:JSON.stringify({userIds}) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      flash(`✓ ${d.deletedCount} users deleted`);
+      fetchUsers();
+      setSelected(new Set());
+    } catch(e) { flash(e.message,'error'); }
+    finally { setModal(null); }
+  };
+
 
   const doForceReset = async (userId) => {
     try {
@@ -314,7 +329,14 @@ function UsersTab({ auth, flash, modal, setModal }) {
 
       {/* Table */}
       <div style={{ background:'rgba(9,14,26,.4)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'2.5fr 1fr 1.2fr 1.2fr 1.5fr 2fr', padding:'0.55rem 1rem', background:'rgba(255,255,255,.04)', borderBottom:'1px solid var(--border)', fontSize:'0.65rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-muted)' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'40px 2.5fr 1fr 1.2fr 1.2fr 1.5fr 2fr', padding:'0.55rem 1rem', background:'rgba(255,255,255,.04)', borderBottom:'1px solid var(--border)', fontSize:'0.65rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-muted)', alignItems:'center' }}>
+          <input type="checkbox" 
+            checked={filtered.length > 0 && selected.size === filtered.length} 
+            onChange={e => {
+              if (e.target.checked) setSelected(new Set(filtered.map(u => u.id)));
+              else setSelected(new Set());
+            }} 
+          />
           <span>User</span><span>Role</span><span>Plan</span><span>Tokens</span><span>Last Login</span><span>Actions</span>
         </div>
 
@@ -323,10 +345,16 @@ function UsersTab({ auth, flash, modal, setModal }) {
         ) : filtered.length===0 ? (
           <div style={{ textAlign:'center', padding:'2rem', color:'var(--text-muted)', fontSize:'0.83rem' }}>No users found</div>
         ) : filtered.map((u,i) => (
-          <div key={u.id} style={{ display:'grid', gridTemplateColumns:'2.5fr 1fr 1.2fr 1.2fr 1.5fr 2fr', padding:'0.7rem 1rem', alignItems:'center', borderBottom: i<filtered.length-1?'1px solid var(--border)':'none', cursor:'pointer', transition:'background .12s' }}
+          <div key={u.id} style={{ display:'grid', gridTemplateColumns:'40px 2.5fr 1fr 1.2fr 1.2fr 1.5fr 2fr', padding:'0.7rem 1rem', alignItems:'center', borderBottom: i<filtered.length-1?'1px solid var(--border)':'none', cursor:'pointer', transition:'background .12s' }}
             onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.025)'}
             onMouseLeave={e=>e.currentTarget.style.background='transparent'}
           >
+            <input type="checkbox" checked={selected.has(u.id)} onChange={e => {
+              const newSet = new Set(selected);
+              if (e.target.checked) newSet.add(u.id);
+              else newSet.delete(u.id);
+              setSelected(newSet);
+            }} onClick={e => e.stopPropagation()} />
             {/* User info */}
             <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
               <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0, background:'linear-gradient(135deg,var(--accent),#7c3aed)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.72rem', fontWeight:800, color:'#fff' }}>

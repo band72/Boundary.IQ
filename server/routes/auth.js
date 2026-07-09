@@ -638,6 +638,26 @@ router.delete('/users/:id', requireAuth, requireRole(['admin']), asyncHandler(as
   return res.json({ success: true });
 }));
 
+// ── POST /api/auth/users/batch-delete ─────────────────────────────────────────
+router.post('/users/batch-delete', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { userIds } = req.body;
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ error: 'Valid userIds array is required' });
+  }
+  let deletedCount = 0;
+  for (const id of userIds) {
+    const userId = parseInt(id);
+    if (isNaN(userId)) continue;
+    if (userId === req.user.id) continue;
+    const target = await getUserById(userId);
+    if (!target) continue;
+    await deleteUser(userId);
+    await logAudit({ actorId: req.user.id, action: 'delete_user', target: target.username, ipAddress: getIp(req) });
+    deletedCount++;
+  }
+  return res.json({ success: true, deletedCount });
+}));
+
 // ── POST /api/auth/users/:id/reset-password ───────────────────────────────────
 router.post('/users/:id/reset-password', requireAuth, requireRole(['admin']), asyncHandler(async (req, res) => {
   const userId = parseInt(req.params.id);

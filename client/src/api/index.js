@@ -184,10 +184,10 @@ export const api = {
   admin: {
     users:      ()                => authFetch('/auth/admin/users'),
     auditLog:   (params = {})     => authFetch(`/auth/admin/audit-log?${new URLSearchParams(params)}`),
-    orders:     ()                => authFetch('/auth/admin/orders'),
     setRole:    (userId, role)    => authFetch(`/auth/admin/users/${userId}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
     setPlan:    (userId, plan)    => authFetch(`/auth/admin/users/${userId}/plan`, { method: 'PUT', body: JSON.stringify({ plan }) }),
     deleteUser: (userId)          => authFetch(`/auth/admin/users/${userId}`, { method: 'DELETE' }),
+    batchDeleteUsers: (userIds)   => authFetch(`/auth/admin/users/batch-delete`, { method: 'POST', body: JSON.stringify({ userIds }) }),
     resetPw:    (userId)          => authFetch(`/auth/admin/users/${userId}/reset-password`, { method: 'POST' }),
     invites:    ()                => authFetch('/auth/admin/invites'),
     createInvite: (data)          => authFetch('/auth/admin/invites', { method: 'POST', body: JSON.stringify(data) }),
