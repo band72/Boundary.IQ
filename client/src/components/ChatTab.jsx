@@ -138,6 +138,13 @@ export default function ChatTab() {
             height: calc(100vh - 200px);
             align-items: stretch;
           }
+          @media (max-width: 900px) {
+            .chat-layout {
+              grid-template-columns: 1fr;
+              height: auto;
+              min-height: calc(100vh - 200px);
+            }
+          }
         .chat-panel {
           display: flex;
           flex-direction: column;
