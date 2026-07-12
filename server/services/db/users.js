@@ -191,6 +191,29 @@ export async function getUserCount() {
 }
 
 export async function deleteUser(userId) {
+  // Sanitize any globally corrupted foreign keys in AuditLog to prevent FOREIGN KEY constraint failures
+  // This cleans up bad data (e.g. string timestamps incorrectly stored in ActorId)
+  await query(`UPDATE AuditLog SET ActorId = NULL WHERE ActorId IS NOT NULL AND (typeof(ActorId) = 'text' OR ActorId NOT IN (SELECT Id FROM Users))`);
+  await query(`UPDATE AuditLog SET UserId = NULL WHERE UserId IS NOT NULL AND (typeof(UserId) = 'text' OR UserId NOT IN (SELECT Id FROM Users))`);
+
+  // Manual cascading deletes (production DB might lack ON DELETE CASCADE)
+  await query('DELETE FROM Sessions WHERE UserId = ?', [userId]);
+  await query('DELETE FROM Subscriptions WHERE UserId = ?', [userId]);
+  await query('DELETE FROM UsageTracking WHERE UserId = ?', [userId]);
+  await query('DELETE FROM TokenUsage WHERE UserId = ?', [userId]);
+  await query('DELETE FROM UserSettings WHERE UserId = ?', [userId]);
+  
+  await query('UPDATE AuditLog SET UserId = NULL WHERE UserId = ?', [userId]);
+  await query('UPDATE AuditLog SET ActorId = NULL WHERE ActorId = ?', [userId]);
+  
+  await query('DELETE FROM InviteTokens WHERE CreatedByUserId = ?', [userId]);
+  await query('UPDATE InviteTokens SET UsedByUserId = NULL WHERE UsedByUserId = ?', [userId]);
+  
+  await query('UPDATE LicenseKeys SET CreatedByUserId = NULL WHERE CreatedByUserId = ?', [userId]);
+  await query('UPDATE LicenseKeys SET RedeemedByUserId = NULL WHERE RedeemedByUserId = ?', [userId]);
+  
+  await query('UPDATE BatchRuns SET UserId = NULL WHERE UserId = ?', [userId]);
+
   const result = await query('DELETE FROM Users WHERE Id = ?', [userId]);
   return result.changes > 0;
 }

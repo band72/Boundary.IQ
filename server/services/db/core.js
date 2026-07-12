@@ -292,6 +292,18 @@ export function switchDbPath(newPath) {
 // ── Schema & migrations ───────────────────────────────────────────────────────
 
 async function _initializeSchema() {
+  if (!isPostgres) {
+    try {
+      const check = db.prepare('PRAGMA integrity_check').all();
+      if (check.some(row => row.integrity_check !== 'ok')) {
+        console.warn('Database corruption detected! Dropping corrupted AuditLog table to recover.');
+        db.prepare('DROP TABLE IF EXISTS AuditLog').run();
+      }
+    } catch (err) {
+      console.error('Failed to run integrity check', err);
+    }
+  }
+
   const ddl = `
     CREATE TABLE IF NOT EXISTS BatchRuns (
       BatchId TEXT PRIMARY KEY,
