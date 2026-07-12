@@ -60,7 +60,7 @@ if (!fs.existsSync(EXTRACT_DIR)) fs.mkdirSync(EXTRACT_DIR, { recursive: true });
 
 // ── Collect deed files ────────────────────────────────────────────────────────
 const SKIP_FILES     = new Set(['llms.txt', 'llms-full.txt']);
-const PROCESSABLE_EXTS = new Set(['.doc', '.docx', '.txt', '.rtf']);
+const PROCESSABLE_EXTS = new Set(['.doc', '.docx', '.txt', '.rtf', '.pdf']);
 
 const allFiles = fs.readdirSync(DEED_DIR)
   .filter(f => {
@@ -170,6 +170,8 @@ function getSkipReason(text, fileName) {
   const certWords = ['SCHEDULE A', 'SCHEDULE B', 'TITLE COMMITMENT', "SURVEYOR'S CERTIFICATE",
                      'CERTIFICATE OF TITLE', 'LEGAL OPINION'];
   if (certWords.some(w => up.includes(w))) return 'CERT_SKIP';
+  // Vision OCR truncation
+  if (up.includes('REST OF THE TEXT IS NOT PROVIDED') || up.includes('MAY NOT BE COMPLETE OR ACCURATE')) return 'INCOMPLETE_OCR';
   return null;
 }
 
@@ -245,71 +247,119 @@ for (let i = 0; i < filesToProcess.length; i++) {
 
   // Direct service call — no HTTP, no rate limit
   let result, status, errMsg = null;
-  let usedAi = false;
-
-  let solveText = text;
+  let solveTextArray = [text];
   const parsedParcels = extractNamedParcels(text);
   if (parsedParcels && parsedParcels.length > 0) {
-    const metesParcel = parsedParcels.find(p => /\b(THENCE|COMMENCE|BEGIN)\b/i.test(p.text));
-    solveText = metesParcel ? metesParcel.text : parsedParcels[0].text;
-  }
-
-  try {
-    result = solveFromText(solveText, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
-    status = classifyResult(result);
-  } catch (e) {
-    errMsg = e.message?.slice(0, 300) || 'Unknown error';
-    if (/no thence|no courses/i.test(errMsg)) {
-      status = 'NO_COURSES';
-    } else {
-      status = 'ERROR';
+    const metesParcels = parsedParcels.filter(p => /\b(THENCE|COMMENCE|BEGIN)\b/i.test(p.text));
+    if (metesParcels.length > 0) {
+      solveTextArray = metesParcels.map(p => p.text);
     }
-    result = null;
   }
 
-  // Escalate to AI if enabled and regex didn't pass
-  if (useAi && status !== 'PASS') {
+  let finalStatus = 'PASS';
+  let docCourses = 0;
+  let docError = 0;
+  let usedAi = false;
+  let docErrMsg = null;
+  let lastPrecRatio = '';
+
+  for (const solveText of solveTextArray) {
+    let result, status, errMsg = null;
+    let localUsedAi = false;
+
     try {
-      process.stdout.write(`[Escalating to AI...] `);
-      const aiResult = await solveDeedText(solveText, MODEL, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
-      const aiStatus = classifyResult(aiResult);
-      
-      const regexErr = result?.traverse?.closure?.linearError ?? Infinity;
-      const aiErr    = aiResult?.traverse?.closure?.linearError ?? Infinity;
-      const aiIsPass = aiStatus === 'PASS';
-      
-      if (aiIsPass || aiErr < regexErr) {
-        result = aiResult;
-        status = aiStatus;
-        usedAi = true;
-        errMsg = null;
+      result = solveFromText(solveText, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
+      status = classifyResult(result);
+    } catch (e) {
+      errMsg = e.message?.slice(0, 300) || 'Unknown error';
+      if (/no thence|no courses/i.test(errMsg)) {
+        status = 'NO_COURSES';
+      } else {
+        status = 'ERROR';
       }
-    } catch (aiErr) {
-      errMsg = (errMsg ? errMsg + ' | ' : '') + `AI solver error: ${aiErr.message}`;
+      result = null;
+    }
+
+    // Escalate to AI if enabled and regex didn't pass
+    if (useAi && status !== 'PASS') {
+      try {
+        process.stdout.write(`[AI...] `);
+        const aiResult = await solveDeedText(solveText, MODEL, { pobNorthing: POB_N, pobEasting: POB_E, units: UNITS });
+        
+        let aiStatus = 'PASS';
+        let aiMaxErr = 0;
+        let aiCourses = 0;
+        
+        // If AI returned multiple tracts for this parcel chunk, evaluate them all
+        const tractsToEval = (aiResult.tracts && aiResult.tracts.length > 0) ? aiResult.tracts : [aiResult];
+        for (const t of tractsToEval) {
+          const st = classifyResult(t);
+          if (st !== 'PASS' && st !== 'NEAR_PASS') aiStatus = st;
+          else if (st === 'NEAR_PASS' && aiStatus === 'PASS') aiStatus = 'NEAR_PASS';
+          aiMaxErr = Math.max(aiMaxErr, t.traverse?.closure?.linearError || 0);
+          aiCourses += (t.repairedCourses || t.originalCourses || []).length;
+        }
+
+        const regexErr = result?.traverse?.closure?.linearError ?? Infinity;
+        if (aiStatus === 'PASS' || aiStatus === 'NEAR_PASS' || aiMaxErr < regexErr) {
+          result = aiResult;
+          status = aiStatus;
+          localUsedAi = true;
+          usedAi = true;
+          errMsg = null;
+          
+          // Force overall result to reflect AI tracts for courses and err
+          if (aiResult.tracts && aiResult.tracts.length > 0) {
+            result.repairedCourses = { length: aiCourses }; // Mock length for aggregation
+            if (result.traverse) {
+              if (!result.traverse.closure) result.traverse.closure = {};
+              result.traverse.closure.linearError = aiMaxErr;
+            }
+          }
+        }
+      } catch (aiErr) {
+        errMsg = (errMsg ? errMsg + ' | ' : '') + `AI err: ${aiErr.message}`;
+      }
+    }
+
+    const courses   = result ? (result.repairedCourses || result.originalCourses || []).length : 0;
+    const linErr    = result?.traverse?.closure?.linearError ?? null;
+    lastPrecRatio   = result?.traverse?.closure?.precisionRatio || lastPrecRatio;
+
+    docCourses += courses;
+    docError = Math.max(docError, linErr || 0);
+    if (errMsg) docErrMsg = (docErrMsg ? docErrMsg + ' | ' : '') + errMsg;
+
+    // Aggregate worst status
+    if (status !== 'PASS') {
+      if (finalStatus === 'PASS' || status === 'ERROR' || status === 'FAIL') {
+        finalStatus = status;
+      } else if (finalStatus === 'NO_COURSES' && status !== 'NO_COURSES') {
+        finalStatus = status;
+      }
     }
   }
 
-  const courses   = result ? (result.repairedCourses || result.originalCourses || []).length : 0;
-  const linErr    = result?.traverse?.closure?.linearError ?? null;
-  const precRatio = result?.traverse?.closure?.precisionRatio || '';
+  // If no courses were found across all parcels, it's a NO_COURSES
+  if (docCourses === 0 && finalStatus === 'PASS') finalStatus = 'NO_COURSES';
 
-  if      (status === 'PASS')      stats.pass++;
-  else if (status === 'NEAR_PASS') stats.nearPass++;
-  else if (status === 'FAIL')      stats.fail++;
-  else if (status === 'NO_COURSES')stats.noCourses++;
-  else                             stats.error++;
+  if      (finalStatus === 'PASS')      stats.pass++;
+  else if (finalStatus === 'NEAR_PASS') stats.nearPass++;
+  else if (finalStatus === 'FAIL')      stats.fail++;
+  else if (finalStatus === 'NO_COURSES')stats.noCourses++;
+  else                                  stats.error++;
 
-  const icon = { PASS:'✓', NEAR_PASS:'~', FAIL:'✗', NO_COURSES:'0', ERROR:'E' }[status] || '?';
-  const errFt = linErr != null ? ` err=${linErr.toFixed(3)}ft` : '';
+  const icon = { PASS:'✓', NEAR_PASS:'~', FAIL:'✗', NO_COURSES:'0', ERROR:'E' }[finalStatus] || '?';
+  const errFt = docError > 0 ? ` err=${docError.toFixed(3)}ft` : '';
   const aiTag = usedAi ? ' [🤖 AI]' : '';
-  process.stdout.write(`→ ${icon} ${status} ${courses}c${errFt}${aiTag}\n`);
+  process.stdout.write(`→ ${icon} ${finalStatus} ${docCourses}c${errFt}${aiTag}\n`);
 
   results.push({
-    fileName, status,
-    linearError: linErr,
-    precisionRatio: precRatio,
-    courses,
-    error: errMsg,
+    fileName, status: finalStatus,
+    linearError: docError > 0 ? docError : null,
+    precisionRatio: lastPrecRatio,
+    courses: docCourses,
+    error: docErrMsg,
     snippet: text.slice(0, 300),
     usedAi
   });

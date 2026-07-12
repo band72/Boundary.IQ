@@ -2419,6 +2419,18 @@ export function extractNamedParcels(docText) {
     });
   }
 
+  // 3. Implicit tract dividers (e.g., "THAT CERTAIN TRACT OR PARCEL", "A PART OF", "A TRACT OF LAND")
+  // Only match if they start a line (paragraph)
+  const implicitRe = /(?:^|\n)[ \t]*(?:THAT CERTAIN TRACT OR PARCEL|A PART OF|A TRACT OF LAND|PARCEL NO\.|PART OF THE)[ \t]/gi;
+  while ((m = implicitRe.exec(docText)) !== null) {
+    dividers.push({
+      type: 'implicit',
+      label: 'TRACT',
+      index: m.index,
+      length: m[0].length
+    });
+  }
+
   // Sort dividers by index
   dividers.sort((a, b) => a.index - b.index);
 

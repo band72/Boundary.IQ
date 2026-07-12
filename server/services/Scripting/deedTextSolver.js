@@ -1259,6 +1259,11 @@ export function solveFromText(deedText, options = {}) {
     .replace(/\u00BA/g, '°')
     // Normalize ring above ˚ (U+02DA) → °
     .replace(/\u02DA/g, '°')
+    // Normalize Wingdings and ordinal indicators to °
+    .replace(/\uf0b0/gi, '°')
+    .replace(/\u00ba/g, '°')
+    // Add missing degree symbol where degrees and minutes are clumped together (e.g. S.8936'40"W.)
+    .replace(/([NSns])\s*\.?\s*(\d{1,3})(\d{2})\s*['\u2018\u2019\u201A\u02BC\u00B4\u2032]\s*(\d{1,2}(?:\.\d+)?)\s*["\u201C\u201D\u201E\u2033\u2034]\s*\.?\s*([EWew])/g, '$1$2°$3\'$4"$5')
     // Remove BOM
     .replace(/\uFEFF/g, '')
     // Remove commas between degree/minute symbols and digits to avoid splitting DMS fields
@@ -1307,7 +1312,12 @@ export function solveFromText(deedText, options = {}) {
     .replace(/\bMINUTES?|MIN\b/gi, "'")
     .replace(/\bSECONDS?|SEC\b/gi, '"');
 
-  // Inject THENCE before bearings that are followed by a distance, but lack THENCE/COMMENCE/RUN keywords in the preceding 35 characters.
+  // Remove redundant (PLAT) or (DEED) bearing/distance calls when they are immediately followed by another bearing, to prevent dual-traversals
+  // Matches: [Bearing] optionally followed by distance, followed by (PLAT) or (DEED), optionally with punctuation, followed by a new [Bearing]
+  normalizedText = normalizedText
+    .replace(/(?:[NSns]\s*\d+[°d:]\d+['m:]\d+["s:]*[EWew])(?:[^A-Za-z]{0,15}(?:FEET|FT|METERS|M\b))?[^()A-Za-z0-9]{0,10}\((?:PLAT|DEED)\)[^()A-Za-z0-9]{0,10}(?=[NSns]\s*\d+[°d:]\d+['m:]\d+["s:]*[EWew])/gi, '');
+
+  // Inject THENCE before bearings that are followed by a distance, but lack THENCE/COMMENCE/RUN keywords in the preceding 85 characters.
   let textWithInjectedThence = '';
   let lastIdx = 0;
   const bearingMatchRegex = /\b(?:NORTH|SOUTH|[NSns])\s*\d+(?:[\s°\-d:]+\d+)?(?:[\s'\-m:]+\d+)?[\s"\-s:]*(?:EAST|WEST|[EWew])\b/gi;
@@ -1318,8 +1328,8 @@ export function solveFromText(deedText, options = {}) {
     const start = match.index;
     const end = bearingMatchRegex.lastIndex;
     
-    // Grab preceding 35 characters
-    const preceding = normalizedText.substring(Math.max(0, start - 35), start).toUpperCase();
+    // Grab preceding 85 characters
+    const preceding = normalizedText.substring(Math.max(0, start - 85), start).toUpperCase();
     // Grab succeeding 120 characters
     const succeeding = normalizedText.substring(end, Math.min(normalizedText.length, end + 120)).toUpperCase();
     
@@ -1339,7 +1349,8 @@ export function solveFromText(deedText, options = {}) {
 
   // Pre-normalize text: "RUN THENCE", "THENCE CONTINUE", "THEN" → all become THENCE
   const preparedText = normalizedText
-    .replace(/\bTHENCE\s+CONTINUE(?:ING)?\b/gi, 'THENCE')
+    .replace(/\bTHENCE\s+CONTINU(?:ING|E)\b/gi, 'THENCE')
+    .replace(/\bTHENCE\s+RUN\b/gi, 'THENCE')
     .replace(/\bRUN\s+THENCE\b/gi, 'THENCE')
     .replace(/\bTHEN\s+(?=(?:NORTH|SOUTH|EAST|WEST|NORTHEASTERLY|NORTHWESTERLY|SOUTHEASTERLY|SOUTHWESTERLY|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b|(?:[NSEWnsew])(?:\b|\d)\s*[.\d])/gi, 'THENCE ')
     // "CONTINUING...bearing" and "CONTINUE...bearing" -> THENCE
@@ -1368,10 +1379,10 @@ export function solveFromText(deedText, options = {}) {
     const content = rawSegments[i + 1] || '';
     const cleanContent = content.replace(/\(.*?\)/g, ' ').trim();
 
-    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?(?:POINT\s+OF\s+BEGINNING|P\.?O\.?B\.?)|SAID\s+POINT\s+OF\s+BEGINNING|FOR\s+(?:THE\s+|A\s+)?POINT\s+OF\s+BEGINNING)\b/i.test(cleanContent)
-      || /\b(?:POINT\s+OF\s+BEGINNING|P\.?\s*O\.?\s*B\.?)\b/i.test(cleanContent);
+    const isPobDest = /\b(TO\s+(?:THE\s+|A\s+)?(?:POINT\s+OF\s+BEGINNING|PLACE\s+OF\s+BEGINNING|P\.?O\.?B\.?)|SAID\s+(?:POINT|PLACE)\s+OF\s+BEGINNING|FOR\s+(?:THE\s+|A\s+)?(?:POINT|PLACE)\s+OF\s+BEGINNING)\b/i.test(cleanContent)
+      || /\b(?:POINT\s+OF\s+BEGINNING|PLACE\s+OF\s+BEGINNING|P\.?\s*O\.?\s*B\.?)\b/i.test(cleanContent);
     // Detect 'FROM THE POINT OF BEGINNING THUS ESTABLISHED' — means we're at the POB now
-    const isFromPob = /\bFROM\s+(?:THE\s+)?POINT\s+OF\s+BEGINNING\b/i.test(cleanContent);
+    const isFromPob = /\bFROM\s+(?:THE\s+)?(?:POINT|PLACE)\s+OF\s+BEGINNING\b/i.test(cleanContent);
 
 
     // ── Segment Type Classification ──────────────────────────────────────────
