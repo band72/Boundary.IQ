@@ -147,12 +147,17 @@ export default function WriterTab() {
           subDirection: c.subDirection || '',
         }));
         setCourses(newCourses);
+        let finalPobN = pobN;
+        let finalPobE = pobE;
         if (data.pob) {
-          setPobN(String(data.pob.northing));
-          setPobE(String(data.pob.easting));
+          finalPobN = String(data.pob.northing);
+          finalPobE = String(data.pob.easting);
+          setPobN(finalPobN);
+          setPobE(finalPobE);
         }
         setInputMode('form');
         showToast(`Successfully extracted ${newCourses.length} courses from text!`);
+        await generate(newCourses, finalPobN, finalPobE);
       } else {
         throw new Error('No courses could be extracted from this text.');
       }
@@ -169,9 +174,11 @@ export default function WriterTab() {
   const update = (i, field, val) => setCourses(c => c.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
   // ── Generate ────────────────────────────────────────────────────────────────
-  const generate = async () => {
+  const generate = async (customCourses, customPobN, customPobE) => {
     setLoading(true); setError(''); setResult('');
-    let finalCourses = courses;
+    let finalCourses = customCourses || courses;
+    const finalPobN = customPobN !== undefined ? customPobN : pobN;
+    const finalPobE = customPobE !== undefined ? customPobE : pobE;
     if (inputMode === 'paste') {
       if (!pasteJson.trim()) { setError('Paste a JSON array of courses first.'); setLoading(false); return; }
       try { finalCourses = JSON.parse(pasteJson); }
@@ -196,8 +203,8 @@ export default function WriterTab() {
           subFeature: c.subFeature || null,
           subDirection: c.subDirection || null,
         })),
-        pobNorthing: parseFloat(pobN) || 5000,
-        pobEasting:  parseFloat(pobE) || 5000,
+        pobNorthing: parseFloat(finalPobN) || 5000,
+        pobEasting:  parseFloat(finalPobE) || 5000,
         parcelDescription: parcel  || null,
         county:   county    || null,
         state:    stateVal  || null,
@@ -233,6 +240,14 @@ export default function WriterTab() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
+  useEffect(() => {
+    if (!result) return;
+    const handler = setTimeout(() => {
+      generate();
+    }, 1000);
+    return () => clearTimeout(handler);
+  }, [courses, pobN, pobE, parcel, county, stateVal, units, basisBrg, areaAcres, perimeter, bearingDecimals]);
 
   return (
     <div className="writer-container">
