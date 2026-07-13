@@ -129,7 +129,7 @@ export default function WriterTab() {
         })
       });
       
-      if (data.repairedCourses) {
+      if (data.repairedCourses && data.repairedCourses.length > 0) {
         const newCourses = data.repairedCourses.map(c => ({
           ...BLANK,
           type: (c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type || 'Line'),
@@ -174,6 +174,7 @@ export default function WriterTab() {
   const update = (i, field, val) => setCourses(c => c.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
   const areCoursesValid = (arr) => {
+    if (!arr || !arr.length) return false;
     return arr.every(c => {
       const type = (c.type || 'Line').toLowerCase();
       if (type === 'line' || type === 'squiggle') {
@@ -207,7 +208,7 @@ export default function WriterTab() {
             units,
           })
         });
-        if (data.repairedCourses) {
+        if (data.repairedCourses && data.repairedCourses.length > 0) {
           finalCourses = data.repairedCourses.map(c => ({
             ...BLANK,
             type: (c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type || 'Line'),
@@ -246,7 +247,13 @@ export default function WriterTab() {
       try { finalCourses = JSON.parse(pasteJson); }
       catch { setError('Invalid JSON — check format and try again.'); setLoading(false); return; }
     }
-    if (!finalCourses.length) { setError('Add at least one course.'); setLoading(false); return; }
+    if (!finalCourses.length) {
+      if (!isAutoRun) {
+        setError('Add at least one course.');
+      }
+      setLoading(false);
+      return;
+    }
 
     try {
       const body = {
