@@ -14,7 +14,7 @@ const EXAMPLE = [
 ];
 
 function validateBearing(bearing) {
-  if (!bearing) return false;
+  if (!bearing || typeof bearing !== 'string') return false;
   const clean = bearing.trim();
   if (/^(N|S|E|W|NORTH|SOUTH|EAST|WEST)$/i.test(clean)) return true;
   const regex = /^[NSns]\s*\d+([\s°\-\d'"’.\u2032\u2033\u2034\u02B9\u02BA\uF0B0\uF0B2\uFEFF\u00BA\u02DA]*)\s*[EWew]?$/;
@@ -22,7 +22,7 @@ function validateBearing(bearing) {
 }
 
 function checkBearingWarning(bearing) {
-  if (!bearing) return null;
+  if (!bearing || typeof bearing !== 'string') return null;
   const clean = bearing.trim().toUpperCase();
   
   if (/^[MHPF]/.test(clean) || /[MHPF]$/.test(clean)) {
@@ -53,7 +53,14 @@ export default function WriterTab() {
   const [courses, setCourses] = useState(() => {
     try {
       const item = window.localStorage.getItem('boundaryiq_writer_courses');
-      return item ? JSON.parse(item) : EXAMPLE;
+      if (!item) return EXAMPLE;
+      const parsed = JSON.parse(item);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Ensure each item is a valid object, filtering out any nulls/non-objects
+        const cleaned = parsed.filter(c => c && typeof c === 'object');
+        return cleaned.length > 0 ? cleaned : EXAMPLE;
+      }
+      return EXAMPLE;
     } catch {
       return EXAMPLE;
     }
@@ -174,8 +181,9 @@ export default function WriterTab() {
   const update = (i, field, val) => setCourses(c => c.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
   const areCoursesValid = (arr) => {
-    if (!arr || !arr.length) return false;
+    if (!arr || !Array.isArray(arr) || !arr.length) return false;
     return arr.every(c => {
+      if (!c || typeof c !== 'object') return false;
       const type = (c.type || 'Line').toLowerCase();
       if (type === 'line' || type === 'squiggle') {
         if (!c.bearing || !validateBearing(c.bearing)) return false;
@@ -257,7 +265,7 @@ export default function WriterTab() {
 
     try {
       const body = {
-        courses: finalCourses.map(c => ({
+        courses: finalCourses.filter(c => c && typeof c === 'object').map(c => ({
           type: (c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type ?? 'Line'),
           bearing: c.bearing || null,
           distance: c.distance ? parseFloat(c.distance) : null,
