@@ -43,7 +43,7 @@ VITE_BIN="$PROJECT_DIR/client/node_modules/.bin/vite"
 # ── Start API server ──────────────────────────────────────────────────────────
 echo ""
 echo "▶ Starting Boundary.IQ API  →  http://localhost:5050"
-"$NODE_BIN" "$PROJECT_DIR/server/index.js" &
+"$NODE_BIN" --watch "$PROJECT_DIR/server/index.js" &
 API_PID=$!
 echo "  API PID: $API_PID"
 
