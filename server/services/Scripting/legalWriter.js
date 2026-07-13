@@ -181,7 +181,9 @@ function formatBearing(raw, precision = 0) {
     }
   }
 
-  return `${ns} ${mid} ${ew}`;
+  const nsChar = firstChar === 'N' ? 'N' : (firstChar === 'S' ? 'S' : '');
+  const ewChar = lastChar === 'E' ? 'E' : (lastChar === 'W' ? 'W' : '');
+  return `${nsChar}${mid}${ewChar}`;
 }
 
 /**
