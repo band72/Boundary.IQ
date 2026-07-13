@@ -195,6 +195,52 @@ export default function WriterTab() {
     let finalCourses = customCourses || courses;
     const finalPobN = customPobN !== undefined ? customPobN : pobN;
     const finalPobE = customPobE !== undefined ? customPobE : pobE;
+    if (inputMode === 'text' && !customCourses) {
+      if (!pasteText.trim()) { setError('Paste some legal description text first.'); setLoading(false); return; }
+      try {
+        const data = await authFetch('/deed/solve-text', {
+          method: 'POST',
+          body: JSON.stringify({
+            deedText: pasteText,
+            pobNorthing: parseFloat(finalPobN) || 5000,
+            pobEasting:  parseFloat(finalPobE)  || 5000,
+            units,
+          })
+        });
+        if (data.repairedCourses) {
+          finalCourses = data.repairedCourses.map(c => ({
+            ...BLANK,
+            type: (c.type === 'Meandering Line' || c.type === 'meandering line') ? 'Squiggle' : (c.type || 'Line'),
+            bearing: c.bearing || '',
+            distance: c.distance != null ? String(c.distance) : '',
+            chordBearing: c.chordBearing || '',
+            chordDistance: c.chordDistance != null ? String(c.chordDistance) : '',
+            arcLength: c.arcLength != null ? String(c.arcLength) : '',
+            delta: c.delta != null ? String(c.delta) : '',
+            radius: c.radius != null ? String(c.radius) : '',
+            curveDirection: c.curveDirection || 'Right',
+            description: c.description || '',
+            subConnector: c.subConnector || '',
+            subFeature: c.subFeature || '',
+            subDirection: c.subDirection || '',
+          }));
+          setCourses(finalCourses);
+          if (data.pob) {
+            setPobN(String(data.pob.northing));
+            setPobE(String(data.pob.easting));
+          }
+          setInputMode('form');
+        } else {
+          setError('No courses could be extracted from this text.');
+          setLoading(false);
+          return;
+        }
+      } catch (e) {
+        setError('Extraction failed: ' + e.message);
+        setLoading(false);
+        return;
+      }
+    }
     if (inputMode === 'paste') {
       if (!pasteJson.trim()) { setError('Paste a JSON array of courses first.'); setLoading(false); return; }
       try { finalCourses = JSON.parse(pasteJson); }
