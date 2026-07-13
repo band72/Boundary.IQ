@@ -1,9 +1,9 @@
 // ─── Writer Route ───────────────────────────────────────────────────────────
 import { Router } from 'express';
 import * as legalWriter from '../services/Scripting/legalWriter.js';
-import authFirebase from '../middleware/authFirebase.js';
+import { requireAuth } from '../middleware/auth.js';
 const router = Router();
-router.use(authFirebase);
+router.use(requireAuth);
 
 router.post('/generate', (req, res) => {
   try {
