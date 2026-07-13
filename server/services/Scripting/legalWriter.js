@@ -166,7 +166,9 @@ function formatBearing(raw, precision = 0) {
     const s = parseFloat(matches[3]);
     let sStr;
     if (precision === 0) {
-      sStr = `${Math.round(s).toString().padStart(2, '0')}"`;
+      // Truncate (not round) so that 05.72" stays 05" — rounding would change
+      // the bearing value from the original deed, which is unexpected to the user.
+      sStr = `${Math.floor(s).toString().padStart(2, '0')}"`;
     } else {
       sStr = `${s.toFixed(precision).padStart(3 + precision, '0')}"`;
     }

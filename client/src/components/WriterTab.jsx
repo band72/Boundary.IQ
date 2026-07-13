@@ -189,7 +189,7 @@ export default function WriterTab() {
   };
 
   // ── Generate ────────────────────────────────────────────────────────────────
-  const generate = async (customCourses, customPobN, customPobE, isAutoRun = false) => {
+  const generate = async (customCourses, customPobN, customPobE, isAutoRun = false, overrideBearingDecimals = null) => {
     if (!isAutoRun) {
       setLoading(true); setError(''); setResult('');
     }
@@ -282,7 +282,7 @@ export default function WriterTab() {
         bearingSystem: 'grid bearings',
         areaAcres:  areaAcres  ? parseFloat(areaAcres)  : null,
         perimeter:  perimeter  ? parseFloat(perimeter)  : null,
-        bearingSecondsDecimals: parseInt(bearingDecimals, 10),
+        bearingSecondsDecimals: parseInt(overrideBearingDecimals ?? bearingDecimals, 10),
       };
 
       const data = await authFetch('/writer/generate', {
@@ -699,7 +699,15 @@ export default function WriterTab() {
             <div className="grid-2" style={{ marginBottom: '1rem' }}>
               <div className="form-group">
                 <label className="form-label">Bearing Seconds Format</label>
-                <select value={bearingDecimals} onChange={e => setBearingDecimals(e.target.value)}>
+                <select value={bearingDecimals} onChange={e => {
+                  const newVal = e.target.value;
+                  setBearingDecimals(newVal);
+                  // Pass the new value directly so the correct precision is used
+                  // before React state has updated in the next render cycle.
+                  if (areCoursesValid(courses)) {
+                    generate(undefined, undefined, undefined, false, newVal);
+                  }
+                }}>
                   <option value="0">S79°37'05"E (Whole Seconds)</option>
                   <option value="1">S79°37'05.7"E (1 Decimal Place)</option>
                   <option value="2">S79°37'05.72"E (2 Decimal Places)</option>
