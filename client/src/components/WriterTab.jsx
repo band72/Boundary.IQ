@@ -706,7 +706,7 @@ export default function WriterTab() {
                 </select>
               </div>
               <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                <button className="btn btn-primary" onClick={generate} disabled={loading} style={{ width: '100%', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button className="btn btn-primary" onClick={() => generate()} disabled={loading} style={{ width: '100%', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {loading ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Generating…</> : '✍️ Generate Legal Description'}
                 </button>
               </div>

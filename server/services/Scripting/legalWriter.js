@@ -15,7 +15,7 @@ export function write(req) {
   if (!state || state === 'Unknown') state = 'Unknown State';
   const parcel = req.parcelDescription || 'a parcel of land';
   const lines = [];
-  const precision = req.bearingSecondsDecimals !== undefined ? parseInt(req.bearingSecondsDecimals, 10) : 0;
+  const precision = (req.bearingSecondsDecimals != null && !isNaN(parseInt(req.bearingSecondsDecimals, 10))) ? parseInt(req.bearingSecondsDecimals, 10) : 0;
 
   // ── Header
   lines.push(`A parcel of land being ${parcel}, situated in ${county}, ${state}, more particularly described as follows:`);
