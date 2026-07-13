@@ -126,15 +126,18 @@ Open **`http://localhost:5174`** in your browser.
 
 ## 📊 Performance
 
-Sample run on 102 historical deed PDFs (Regency Title training corpus):
+### Local Model Performance Comparison
+Consecutive batch runs performed across 1,390 historical deed documents per local model:
 
-| Metric | Value |
-|---|---|
-| Files processed | 102 |
-| Auto-PASS (no human intervention) | 82 (80%) |
-| After repair pipeline | 97+ (95%+) |
-| Average time per deed | ~45 seconds (Gemini) / ~3 min (Ollama local) |
-| Best precision ratio achieved | 1:1,047,000 |
+| Local Model | PASS Rate (Processable) | ✓ PASS | ✗ FAIL | 0 NO_COURSES | ⚠ EXTRACT_FAIL | — SKIPPED |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`gemma4:26b`** | **96.7%** | **1,005** | 11 | 15 | 8 | 351 |
+| **`deepseek-r1:8b`** | **96.2%** | **1,000** | 13 | 18 | 8 | 351 |
+| **`deepseek-r1:14b`** | **96.0%** | **997** | 16 | 18 | 8 | 351 |
+| **`llama3.2:3b`** | **95.5%** | **992** | 32 | 7 | 8 | 351 |
+| **`gemma3:4b`** | **94.4%** | **981** | 23 | 27 | 8 | 351 |
+
+*Note: Skipped files represent non-boundary documents filtered automatically at the start of parsing.*
 
 ---
 
