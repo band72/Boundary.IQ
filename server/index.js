@@ -228,6 +228,7 @@ if (IS_PROD) {
       if (req.path.startsWith('/api')) {
         return next();
       }
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.sendFile(path.join(clientDist, 'index.html'));
     });
     logger.info(`✓ Serving client static files from: ${clientDist}`);
