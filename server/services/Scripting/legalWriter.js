@@ -15,6 +15,7 @@ export function write(req) {
   if (!state || state === 'Unknown') state = 'Unknown State';
   const parcel = req.parcelDescription || 'a parcel of land';
   const lines = [];
+  const precision = req.bearingSecondsDecimals !== undefined ? parseInt(req.bearingSecondsDecimals, 10) : 0;
 
   // ── Header
   lines.push(`A parcel of land being ${parcel}, situated in ${county}, ${state}, more particularly described as follows:`);
@@ -41,11 +42,11 @@ export function write(req) {
     let phrase = '';
 
     if (type === 'line') {
-      const brg = formatBearing(c.bearing || '');
+      const brg = formatBearing(c.bearing || '', precision);
       const dist = (c.distance || 0).toFixed(2);
       phrase = `THENCE ${brg}, a distance of ${dist} ${units}${subPhrase}`;
     } else if (type === 'squiggle' || type === 'meandering line') {
-      const brg = formatBearing(c.bearing || '');
+      const brg = formatBearing(c.bearing || '', precision);
       const dist = (c.distance != null && c.distance !== '' && !isNaN(c.distance) && parseFloat(c.distance) > 0) ? parseFloat(c.distance) : null;
       const desc = c.description ? ` (${c.description})` : '';
       if (brg && dist != null) {
@@ -63,7 +64,7 @@ export function write(req) {
       const chord = (c.chordDistance || 0).toFixed(2);
       // chord bearing may be absent — use bearing field as fallback, or omit
       const rawChord = c.chordBearing || c.bearing || '';
-      const chBrg = rawChord ? formatBearing(rawChord) : null;
+      const chBrg = rawChord ? formatBearing(rawChord, precision) : null;
       if (chBrg) {
         phrase = `THENCE along a curve to the ${dir}, having a radius of ${radius} ${units}, a central angle of ${delta}, an arc length of ${arc} ${units}, a chord bearing of ${chBrg}, and a chord distance of ${chord} ${units}${subPhrase}`;
       } else {
@@ -144,7 +145,7 @@ function formatSubItemPhrase(c) {
   return ' ' + parts.join(' ');
 }
 
-function formatBearing(raw) {
+function formatBearing(raw, precision = 0) {
   if (!raw || raw.length < 3) return raw || '';
   raw = raw.trim();
   // Normalize Unicode/Latin degree symbol variants (º U+00BA, ˚ U+02DA, ° U+00B0)
@@ -156,13 +157,30 @@ function formatBearing(raw) {
   // If not in N/S/E/W quadrant format, return as-is
   if (!ns || !ew) return raw;
   let mid = raw.slice(1, -1).trim();
-  // Normalize dash separators to symbols
-  if (mid.includes('-')) {
-    const i1 = mid.indexOf('-');
-    mid = mid.substring(0, i1) + '\u00B0' + mid.substring(i1 + 1);
-    const i2 = mid.indexOf('-');
-    if (i2 >= 0) mid = mid.substring(0, i2) + "'" + mid.substring(i2 + 1);
+
+  // Try to parse degrees, minutes, seconds from mid
+  const matches = mid.match(/^(\d+)\D+(\d+)\D+(\d+(?:\.\d+)?)/);
+  if (matches) {
+    const d = parseInt(matches[1], 10);
+    const m = parseInt(matches[2], 10);
+    const s = parseFloat(matches[3]);
+    let sStr;
+    if (precision === 0) {
+      sStr = `${Math.round(s).toString().padStart(2, '0')}"`;
+    } else {
+      sStr = `${s.toFixed(precision).padStart(3 + precision, '0')}"`;
+    }
+    mid = `${d}\u00B0${String(m).padStart(2, '0')}'${sStr}`;
+  } else {
+    // Fallback normalization of dash separators
+    if (mid.includes('-')) {
+      const i1 = mid.indexOf('-');
+      mid = mid.substring(0, i1) + '\u00B0' + mid.substring(i1 + 1);
+      const i2 = mid.indexOf('-');
+      if (i2 >= 0) mid = mid.substring(0, i2) + "'" + mid.substring(i2 + 1);
+    }
   }
+
   return `${ns} ${mid} ${ew}`;
 }
 

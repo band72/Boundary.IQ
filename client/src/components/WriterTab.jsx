@@ -79,6 +79,7 @@ export default function WriterTab() {
   const [basisBrg, setBasisBrg]   = useLocalStorage('boundaryiq_writer_basisBrg', '');
   const [areaAcres, setAreaAcres] = useLocalStorage('boundaryiq_writer_area', '');
   const [perimeter, setPerimeter] = useLocalStorage('boundaryiq_writer_perimeter', '');
+  const [bearingDecimals, setBearingDecimals] = useLocalStorage('boundaryiq_writer_bearingDecimals', '0');
   const [pasteJson, setPasteJson] = useLocalStorage('boundaryiq_writer_paste', '');
   const [pasteText, setPasteText] = useLocalStorage('boundaryiq_writer_paste_text', '');
   const [inputMode, setInputMode] = useLocalStorage('boundaryiq_writer_mode', 'form');
@@ -205,6 +206,7 @@ export default function WriterTab() {
         bearingSystem: 'grid bearings',
         areaAcres:  areaAcres  ? parseFloat(areaAcres)  : null,
         perimeter:  perimeter  ? parseFloat(perimeter)  : null,
+        bearingSecondsDecimals: parseInt(bearingDecimals, 10),
       };
 
       const data = await authFetch('/writer/generate', {
@@ -573,10 +575,7 @@ export default function WriterTab() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
               <h3 style={{ margin: 0 }}>Deed Metadata (Optional)</h3>
               <button className="btn btn-ghost btn-sm" onClick={() => {
-                if(window.confirm('Clear all metadata fields?')) {
-                  setCounty(''); setStateVal(''); setParcel('');
-                  setBasisBrg(''); setAreaAcres(''); setPerimeter('');
-                }
+                setCounty(''); setStateVal(''); setParcel(''); setBasisBrg(''); setAreaAcres(''); setPerimeter(''); setBearingDecimals('0');
               }}>Clear Metadata</button>
             </div>
             <div className="grid-3" style={{ marginBottom: '0.75rem' }}>
@@ -607,11 +606,20 @@ export default function WriterTab() {
                 <input type="number" placeholder="2679.20" value={perimeter} onChange={e => setPerimeter(e.target.value)} />
               </div>
             </div>
-
-            <div className="flex-row" style={{ justifyContent: 'flex-end' }}>
-              <button className="btn btn-primary" onClick={generate} disabled={loading}>
-                {loading ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Generating…</> : '✍️ Generate Legal Description'}
-              </button>
+            <div className="grid-2" style={{ marginBottom: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Bearing Seconds Format</label>
+                <select value={bearingDecimals} onChange={e => setBearingDecimals(e.target.value)}>
+                  <option value="0">S79°37'05"E (Whole Seconds)</option>
+                  <option value="1">S79°37'05.7"E (1 Decimal Place)</option>
+                  <option value="2">S79°37'05.72"E (2 Decimal Places)</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
+                <button className="btn btn-primary" onClick={generate} disabled={loading} style={{ width: '100%', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {loading ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Generating…</> : '✍️ Generate Legal Description'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

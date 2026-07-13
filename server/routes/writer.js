@@ -20,6 +20,7 @@ router.post('/generate', (req, res) => {
       bearingSystem: body.bearingSystem ?? body.BearingSystem ?? null,
       areaAcres: body.areaAcres ?? body.AreaAcres ?? null,
       perimeter: body.perimeter ?? body.Perimeter ?? null,
+      bearingSecondsDecimals: body.bearingSecondsDecimals ?? body.BearingSecondsDecimals ?? null,
     };
     const text = legalWriter.write(request);
     res.json({ legalDescription: text, courseCount: request.courses.length });
