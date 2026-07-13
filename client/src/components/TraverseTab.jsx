@@ -379,7 +379,7 @@ export default function TraverseTab() {
   const [fixDeedLoading, setFixDeedLoading] = useState(false);
   const [fixDeedResult, setFixDeedResult] = useState(null);
   const [fixDeedError, setFixDeedError] = useState('');
-  const [fixDeedOpen, setFixDeedOpen] = useState(false);
+  const [fixDeedOpen, setFixDeedOpen] = useState(true);
   // AI auto-correction: when regex parse fails, escalate to LLM solver
   const [useAIFallback, setUseAIFallback] = useLocalStorage('boundaryiq_deed_ai_fallback', false);
   const [fixDeedUsedAI, setFixDeedUsedAI] = useState(false);
