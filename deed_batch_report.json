@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-07-12T22:59:39.426Z",
+  "generatedAt": "2026-07-13T04:17:50.189Z",
   "stats": {
-    "pass": 945,
+    "pass": 1005,
     "nearPass": 0,
-    "fail": 73,
+    "fail": 11,
     "error": 0,
     "skipped": 351,
-    "noCourses": 13,
+    "noCourses": 15,
     "extractFail": 8
   },
   "results": [
@@ -198,18 +198,18 @@
     },
     {
       "fileName": "10122L.doc",
-      "status": "FAIL",
-      "linearError": 25.13726532383438,
-      "precisionRatio": "1:13",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.002715183483427033,
+      "precisionRatio": "1:114,202",
+      "courses": 4,
       "error": null,
       "snippet": "﻿LOT 17, BLOCK 2, AS SHOWN ON THE UNRECORDED MAP OF BAYWOOD PREPARED BY H. A. DURDEN ASSOCIATES, INC. AND DATED JANUARY 18, 1974, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  A PART OF GOVERNMENT LOT 2, SECTION 7, TOWNSHIP 4 SOUTH, RANGE 28 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOL",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "10126L(1).doc",
       "status": "PASS",
-      "linearError": 0.0008513462084134482,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 9,
       "error": null,
@@ -219,7 +219,7 @@
     {
       "fileName": "10126L.doc",
       "status": "PASS",
-      "linearError": 0.0008513462084134482,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 9,
       "error": null,
@@ -229,7 +229,7 @@
     {
       "fileName": "10128L.doc",
       "status": "PASS",
-      "linearError": 0.0008513462084134482,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 9,
       "error": null,
@@ -241,10 +241,10 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 2,
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nPARCEL “A”\n\nTHAT PART OF LOTS 2 AND 3 OF GILMORE RIDGE SUBDIVISION, ACCORDING TO PLAT THEREOF RECORDED IN PLAT BOOK 17, PAGE 88, OF THE PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, DESCRIBED AS FOLLOWS:  COMMENCING AT THE SOUTHEAST CORNER OF LOT 2, ON FORT CAROLINE ROAD; THENCE N.2240’00”E. ALONG THE",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "10137L.doc",
@@ -267,7 +267,7 @@
     {
       "fileName": "10155L-2.doc",
       "status": "PASS",
-      "linearError": 0.004058692648709557,
+      "linearError": 0.0006346913191089958,
       "precisionRatio": "1:239,773",
       "courses": 17,
       "error": null,
@@ -277,7 +277,7 @@
     {
       "fileName": "10155L.doc",
       "status": "PASS",
-      "linearError": 0.004058692648709557,
+      "linearError": 0.0006346913191089958,
       "precisionRatio": "1:239,773",
       "courses": 17,
       "error": null,
@@ -287,9 +287,9 @@
     {
       "fileName": "10160L.doc",
       "status": "PASS",
-      "linearError": 0.000006223027449439196,
+      "linearError": 0.0010932519361908615,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 7,
+      "courses": 6,
       "error": null,
       "snippet": "﻿PARCEL 15: A PORTION, PART OR TRACT OF LAND, LOCATED IN LOT 25, FERNANDEZ GRANT, SECTION 37, TOWNSHIP 1 SOUTH, RANGE 27 EAST, CITY OF JACKSONVILLE, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE SOUTHWESTERLY RIGHT-OF-WAY LINE OF TERRAPIN CREEK LANE (ALSO KNOW",
       "usedAi": false
@@ -297,12 +297,12 @@
     {
       "fileName": "10198L.doc",
       "status": "PASS",
-      "linearError": 236.30674562423522,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": 0.010291303216325693,
+      "precisionRatio": "1:84,071",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPARCEL NO. 38 OF GOLDSBORO IN SECTION 5-T5S-R24E, CLAY COUNTY, FLORIDA\nDESCRIPTION:\nCOMMENCE AT THE SOUTHEAST CORNER OF SECTION 5, TOWNSHIP 5 SOUTH, RANGE 24E AND RUN S.8926’45”W. ALONG THE SOUTH LINE OF SAID SECTION 650.00 FEET TO THE SOUTHWEST CORNER OF “MIMOSA WOODS”, UNRECORDED SUBDIVISION, ",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "10200L.doc",
@@ -325,7 +325,7 @@
     {
       "fileName": "10220L.doc",
       "status": "PASS",
-      "linearError": 0.026631429672204485,
+      "linearError": 0.0013084935597548616,
       "precisionRatio": "1:13,039",
       "courses": 8,
       "error": null,
@@ -345,9 +345,9 @@
     {
       "fileName": "10230L.doc",
       "status": "PASS",
-      "linearError": 0.0044054964111127975,
-      "precisionRatio": "1:278,890",
-      "courses": 10,
+      "linearError": 0.0009418319345757493,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 9,
       "error": null,
       "snippet": "﻿\n\nPART OF SECTION 52, TOWNSHIP 2 SOUTH, RANGE 27 EAST, MORE PARTICULARLY DESCRIBED AS :  COMMENCING AT THE INTERSECTION OF THE WESTERLY LINE OF BARTRAM ROAD (COUNTY ROAD #78) AS NOW ESTABLISHED (A 60.00 FOOT RIGHT-OF-WAY) WITH THE SOUTHERLY LINE OF LOT 1, BLOCK 1, MILMAR MANOR (PLAT BOOK 21, PAGE 4",
       "usedAi": false
@@ -442,8 +442,8 @@
       "fileName": "10300L.doc",
       "status": "PASS",
       "linearError": 0.0003590990646350288,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "precisionRatio": "1:∞ (Open-Ended)",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\n\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATE, LYING AND BEING IN THE COUNTY OF DUVAL, STATE OF FLORIDA, BEING PART OF THE ELEANOR PRITCHARD GRANT, SECTION 40, TOWNSHIP 3 SOUTH. RANGE 27 EAST, BEING MORE PARTICULARLY DESCRIBED:   COMMENCE AT THE SOUTHEAST CORNER OF ELEANOR PRITCHARD GRANT, ",
       "usedAi": true
@@ -500,11 +500,11 @@
       "fileName": "10354L.doc",
       "status": "PASS",
       "linearError": null,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 7,
+      "precisionRatio": "1:∞ (Open-Ended)",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\n\nPART OF LOT 40, GARDENVALE (DEED BOOK 1635-PAGE 553) ALSO (DEED BOOK 1783-PAGE 15), PLAT BOOK 2 PAGE 1 CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGIN AT THE SOUTHWEST CORNER OF LOT 5, MAGNOLIA GARDENS UNIT 3, PLAT BOOK 23, PAGE 25 AND RUN S.8",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "10367L.doc",
@@ -547,7 +547,7 @@
     {
       "fileName": "10374L.doc",
       "status": "PASS",
-      "linearError": 0.13947509852331852,
+      "linearError": 0.13072053600634093,
       "precisionRatio": "1:4,489",
       "courses": 10,
       "error": null,
@@ -637,10 +637,10 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 2,
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nLOT 15, BLOCK 1, AS SHOWN ON THE UNRECORDED MAP OF BAYWOOD, AS RECORDED IN OFFICIAL RECORDS VOLUME 4175, PAGE 791 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS LOT 15, BLOCK 1, AS SHOWN ON THE UNRECORDED MAP OF BAYWOOD, PREPARED BY H.A. DURDEN & ASSOCIATES",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "10463L.doc",
@@ -759,13 +759,13 @@
     },
     {
       "fileName": "10567L.doc",
-      "status": "FAIL",
-      "linearError": 98.96685908770496,
-      "precisionRatio": "1:1",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nLOT 15, BLOCK 1, AS SHOWN ON THE UNRECORDED MAP OF BAYWOOD, AS RECORDED IN OFFICIAL RECORDS VOLUME 4175, PAGE 791 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS LOT 15, BLOCK 1, AS SHOWN ON THE UNRECORDED MAP OF BAYWOOD, PREPARED BY H.A. DURDEN & ASSOCIATES",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "10568L.doc",
@@ -782,17 +782,17 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 2,
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nLOT 15, BLOCK 1, AS SHOWN ON THE UNRECORDED MAP OF BAYWOOD, AS RECORDED IN OFFICIAL RECORDS VOLUME 4175, PAGE 791 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS LOT 15, BLOCK 1, AS SHOWN ON THE UNRECORDED MAP OF BAYWOOD, PREPARED BY H.A. DURDEN & ASSOCIATES",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "10614L.doc",
       "status": "PASS",
-      "linearError": 0.0037245401616987036,
-      "precisionRatio": "1:115,477",
-      "courses": 4,
+      "linearError": 0.0003113130547613903,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 3,
       "error": null,
       "snippet": "﻿\nA PART OF THE SOUTHEAST 1/4 OF SECTION 5, TOWNSHIP 4 SOUTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE SOUTHEAST CORNER OF SAID SECTION 5; THENCE N.0126’00”W., ALONG THE EAST LINE OF SAID SECTION 5, A DISTANCE OF 333.91 FEET, TO AN ANGLE",
       "usedAi": false
@@ -915,10 +915,10 @@
     },
     {
       "fileName": "10674L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nCOMMENCE AT A POINT 524.00 FEET N.0°05’00”E. FROM THE SOUTHEAST CORNER OF PINEVIEW SUB-DIVISION (PLAT BOOK 14, PAGE 14, PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA) FOR A POINT OF BEGINNING; FROM THE POINT OF BEGINNING, THUS ESTABLISHED, RUN THENCE S.89°30’00”W. TO THE EASTERLY RIGHT-OF-WAY LINE OF D",
       "usedAi": true
@@ -1011,10 +1011,10 @@
     },
     {
       "fileName": "10715L.doc",
-      "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "status": "FAIL",
+      "linearError": null,
+      "precisionRatio": "1:1",
+      "courses": 1,
       "error": null,
       "snippet": "﻿\n\nA PART OF THE CASTRO Y. FERRER GRANT, SECTION 38, TOWNSHIP 2 SOUTH, RANGE 29 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS;  FOR THE POINT OF BEGINNING COMMENCE AT THE INTERSECTION OF THE NORTHERLY RIGHT-OF-WAY LINE OF FOREST AVENUE, AS NOW ESTABLISHED AS A 80.00 FEET RIGHT-",
       "usedAi": true
@@ -1050,19 +1050,19 @@
     {
       "fileName": "10744L.doc",
       "status": "PASS",
-      "linearError": 0.18826051275249311,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nLOT 29, BLOCK 2, OF UNRECORDED MAP OF BAYWOOD PREPARED BY H. A. DURDEN AND ASSOCIATES, INC. DATED JANUARY 18, 1974 AND UPDATED NOVEMBER 5, 1980, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  A PART OF GOVERNMENT LOT 2, SECTION 7, TOWNSHIP 4 SOUTH, RANGE 28 EAST DUVAL COUNTY, FLORIDA, MORE PARTICULARLY ",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "10747L.doc",
       "status": "PASS",
-      "linearError": 0.0007378277502464139,
+      "linearError": 0.0007378277515305308,
       "precisionRatio": "1:811,748",
-      "courses": 6,
+      "courses": 5,
       "error": null,
       "snippet": "﻿COMMENCE AT THE INTERSECTION OF THE WESTERLY LINE OF SAID LOT 37, WITH THE SOUTHEASTYERLY RIGHT-OF-WAY LINE OF RICHARDSON ROAD (A 66.00 FOOT RIGHT-OF-WAY AS NOW ESTABLISHED); THENCE N.19º56’00”E. ALONG SAID SOUTHEASTERLY RIGHT-OF-RIGHT LINE OF RICHARDSON ROAD, 115.70 FEET FOR A POINT OF BEGINNING; ",
       "usedAi": false
@@ -1107,8 +1107,8 @@
       "fileName": "10782L.doc",
       "status": "PASS",
       "linearError": null,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "precisionRatio": "1:∞ (Open-Ended)",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nA PART OF LOT 2 OF THE E.D. PLUMMER SUBDIVISION OF A PART OF THE ELEANOR PRITCHARD GRANT, SECTION 40, TOWNSHIP 3 SOUTH, RANGE 27 EAST, AS RECORDED IN PLAT BOOK 6, PAGE 62 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE FOR A POINT",
       "usedAi": true
@@ -1164,7 +1164,7 @@
     {
       "fileName": "10803L.doc",
       "status": "PASS",
-      "linearError": 0.001542259745919376,
+      "linearError": 0.0015422597457504738,
       "precisionRatio": "1:287,870",
       "courses": 8,
       "error": null,
@@ -1220,9 +1220,9 @@
     {
       "fileName": "10823L.doc",
       "status": "PASS",
-      "linearError": 0.0035335934341531065,
-      "precisionRatio": "1:492,434",
-      "courses": 5,
+      "linearError": 0.05646640656658013,
+      "precisionRatio": "1:30,815",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nTHAT CERTAIN TRACT OR PARCEL OF LAND BEING A PART OF THE SAMUEL FAIRBANKS GRANT, SECTION 22, TOWNSHIP 4 SOUTH, RANGE 26 EAST, MORE PARTICULARLY DESCRIBED AS: COMMENCING AT THE SOUTHEAST INTERSECTION OF THE BRADY ROAD AND THE MANDARIN ROAD; THENCE N.78º50’30”E. ALONG THE SOUTHERLY RIGHT-OF-WAY LINE",
       "usedAi": false
@@ -1392,9 +1392,9 @@
     {
       "fileName": "10919L.doc",
       "status": "PASS",
-      "linearError": 0.00017918479493456496,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "linearError": 0.00393050646049668,
+      "precisionRatio": "1:476,913",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nPART OF LOT 17, OF H.H. SIMMONS SUBDIVISION OF THE FRANCES BAGLEY AND THE CHARLES F, SIBBALD GRANTS AS RECORDED IN PLAT BOOK 3, PAGE 85, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF BEGINNING COMMENCE AT THE INTERSECTION O",
       "usedAi": false
@@ -1422,7 +1422,7 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 8,
+      "courses": 7,
       "error": null,
       "snippet": "﻿THAT PART OF LEININGER AND STRICKLAND REPLAT OF GLENWOOD, ACCORDING TO PLAT THEREOF, RECORDED IN PLAT BOOK 14, PAGE 47 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, PARTICULARLY DESCRIBED AS FOLLOWS:\nPARCEL “A”\nCOMMENCING AT THE NORTHERLY LINE OF PARK STREET AS NOW ESTABLISHED WHERE THE S",
       "usedAi": false
@@ -1508,12 +1508,12 @@
     {
       "fileName": "10991L.doc",
       "status": "PASS",
-      "linearError": null,
+      "linearError": 264.15999999999974,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 7,
+      "courses": 5,
       "error": null,
       "snippet": "﻿PARCEL 1 “B”\nA PART OF THE SOUTHWEST 1/4 OF THE NORTHEAST 1/4 OF SECTION 21, TOWNSHIP 4 SOUTH, RANGE 23 EAST, CLAY COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS; COMMENCING AT THE SOUTHWEST CORNER OF THE SAID SOUTHWEST 1/4 OF THE NORTHEAST 1/4 OF SECTION 21;  THENCE S.89º37’38”E.",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "10992L.doc",
@@ -1576,7 +1576,7 @@
     {
       "fileName": "11070-11.doc",
       "status": "PASS",
-      "linearError": 0.012726359113798881,
+      "linearError": 0.000040431611542581074,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 9,
       "error": null,
@@ -1596,12 +1596,12 @@
     {
       "fileName": "11070-5.doc",
       "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "linearError": null,
+      "precisionRatio": "1:15",
+      "courses": 11,
       "error": null,
       "snippet": "﻿PARCEL ; 5\n\nPART OF LOT 23, SUBDIVISION OF ESTATE OF JAMES A PICKETT, AS RECORDED IN DEED BOOK “AQ”, PAGE 1, FORMER PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING RE-RECORDED IN PLAT BOOK 8, PAGES 44 AND 45, CURRENT PUBLIC RECORDS OF SAID COUNTY, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS;  C",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "11070-7.doc",
@@ -1646,7 +1646,7 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 2,
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nA PARCEL OF LAND SITUATED IN LOT 3, TOWNSEND’S SUBDIVISION, ORANGE PARK, CLAY COUNTY, FLORIDA, ACCORDING TO PLAT BOOK 1, PAGE 50, OF THE PUBLIC RECORDS OF SAID COUNTY; SAID PARCEL BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:\nBEGIN AT THE SOUTHEAST CORNER OF SAID LOT 3; THENCE ON THE WESTERLY LINE",
       "usedAi": true
@@ -1730,9 +1730,9 @@
     {
       "fileName": "11126L.doc",
       "status": "PASS",
-      "linearError": 0.005031149210055852,
-      "precisionRatio": "1:369,639",
-      "courses": 7,
+      "linearError": 0.002581413193173256,
+      "precisionRatio": "1:969,233",
+      "courses": 6,
       "error": null,
       "snippet": "﻿THAT PART OF TRACT 1, BLOCK 4, SECTION 24, TOWNSHIP 3 SOUTH, RANGE 25 EAST, ACCORDING TO THE PLAT OF JACKSONVILLE HEIGHTS IMPROVEMENT CO. RECORDED IN PLAT BOOK 5, PAGE 93 OF THE PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, DESCRIBED AS FOLLOWS:  BEGINNING AT THE NORTHEASTERLY CORNER OF SAID TRACT 1, BE",
       "usedAi": false
@@ -1760,9 +1760,9 @@
     {
       "fileName": "11148L.doc",
       "status": "PASS",
-      "linearError": 0.00005848802944784408,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "linearError": 0.0033130654848413333,
+      "precisionRatio": "1:435,560",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\n\nPART OF LOT 17, OF H.H. SIMMONS SUBDIVISION OF PART OF THE FRANCES BAGLEY AND THE CHARLES F. SIBBALD GRANT AS RECORDED IN PLAT BOOK 3, PAGE 85, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENCE COMMENCE AT THE INTERS",
       "usedAi": false
@@ -1780,7 +1780,7 @@
     {
       "fileName": "11158L.doc",
       "status": "PASS",
-      "linearError": 0.00022294947750111768,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -1956,9 +1956,9 @@
     {
       "fileName": "11297L.doc",
       "status": "PASS",
-      "linearError": 0.0015337488055057254,
-      "precisionRatio": "1:768,568",
-      "courses": 6,
+      "linearError": 0.002317119444780689,
+      "precisionRatio": "1:507,626",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nPART OF THE ISAAC CARTER DONATION IN SECTION 42, TOWNSHIP 1 SOUTH, RANGE 26 EAST, DESCRIBED AS COMMENCING AT AN IRON STAKE AT THE INTERSECTION OF THE SOUTHWESTERLY BOUNDARY LINE OF STATE ROAD NO. 4 NOW U.S. ROAD NO. 1 AND THE SOUTHERLY BOUNDARY LINE OF SAID ISACC CARTER DONATION, THENCE RUN NORTHW",
       "usedAi": false
@@ -1966,9 +1966,9 @@
     {
       "fileName": "11297L2.doc",
       "status": "PASS",
-      "linearError": 0.0016927763273140606,
-      "precisionRatio": "1:696,093",
-      "courses": 6,
+      "linearError": 0.0013578182365535792,
+      "precisionRatio": "1:867,620",
+      "courses": 5,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING IN THE COUNTY OF DUVAL AND STATE OF FLORIDA, KNOWN AND DESCRIBED AS: PART OF THE ISAAC CARTER DONATION IN SECTION 42, TOWNSHIP 1 SOUTH, RANGE 26 EAST, DESCRIBED AS COMMENCING AT AN IRON STAKE AT THE INTERSECTION OF THE SOUTHWESTE",
       "usedAi": false
@@ -1976,9 +1976,9 @@
     {
       "fileName": "11297L2.pdf",
       "status": "PASS",
-      "linearError": 0.0016927763273140606,
-      "precisionRatio": "1:696,093",
-      "courses": 6,
+      "linearError": 0.0013578182365535792,
+      "precisionRatio": "1:867,620",
+      "courses": 5,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING IN THE COUNTY OF DUVAL AND STATE OF FLORIDA, KNOWN AND DESCRIBED AS: PART OF THE ISAAC CARTER DONATION IN SECTION 42, TOWNSHIP 1 SOUTH, RANGE 26 EAST, DESCRIBED AS COMMENCING AT AN IRON STAKE AT THE INTERSECTION OF THE SOUTHWESTE",
       "usedAi": false
@@ -1998,7 +1998,7 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 5,
+      "courses": 4,
       "error": null,
       "snippet": "﻿FRACTIONAL PART OF LOT 10, MARY HOGAN’S SUBDIVISION, AS RECORDED IN PLAT BOOK 12, PAGE 59 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE NORTHEASTERLY CORNER OF SAID LOT 10, BEING THE SOUTHWESTERLY CORNER OF HOGAN SETTLEMENT ROAD &",
       "usedAi": false
@@ -2053,11 +2053,11 @@
     },
     {
       "fileName": "11346L.doc",
-      "status": "NO_COURSES",
+      "status": "PASS",
       "linearError": null,
-      "precisionRatio": "",
-      "courses": 8,
-      "error": "AI err: Failed to parse LLM JSON output: Expected double-quoted property name in JSON at position 885. Raw: {\n  \"Units\": \"Feet\",\n  \"Tracts\": [\n    {\n      \"Name\": \"A part of the Southeast 1/4 of the Southeast 1/4 of Section 8, Township 2 South, Range 26 East\",\n      \"POB\": { \"Northing\": 5000.00, \"Easting\": 5000.00 },\n      \"ReferencePointName\": \"Center line of Commonwealth Avenue and west line of said Sou",
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
+      "error": null,
       "snippet": "﻿A PART OF THE SOUTHEAST 1/4 OF THE SOUTHEAST 1/4 OF SECTION 8, TOWNSHIP 2 SOUTH, RANGE 26 EAST, AND MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT A POINT IN THE CENTER LINE OF COMMONWEALTH AVENUE AND IN THE WEST LINE OF SAID SOUTHEAST 1/4 OF THE SOUTHEAST 1/4 , SAID SECTION 8, TOWNSHIP 2 S",
       "usedAi": false
     },
@@ -2117,13 +2117,13 @@
     },
     {
       "fileName": "11414-A.doc",
-      "status": "FAIL",
-      "linearError": 67.58861292689488,
-      "precisionRatio": "1:7",
-      "courses": 8,
+      "status": "PASS",
+      "linearError": 0.0004345850423397256,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 7,
       "error": null,
       "snippet": "﻿A PART OF LOTS 8 AND 9, BLOCK 19 , OF SOUTH RIVERSIDE SECTION “C”, AS RECORDED IN PLAT BOOK 6, PAGE 80 OF THE PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:\n\nFOR A POINT OF REFERENCE, BEGIN AT THE INTERSECTION WITH THE SOUTHERLY RIGHT OF WAY LINE EMERSON STREE",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "11414-C.doc",
@@ -2183,13 +2183,13 @@
     },
     {
       "fileName": "11482L.doc",
-      "status": "NO_COURSES",
-      "linearError": null,
-      "precisionRatio": "",
-      "courses": 6,
+      "status": "PASS",
+      "linearError": 0.0021159050436361836,
+      "precisionRatio": "1:406,928",
+      "courses": 4,
       "error": null,
       "snippet": "﻿A PORTION OF FARMS 3 AND 4, AS SHOWN ON MAP OF JACKSONVILLE FARMS, AS RECORDED IN PLAT BOOK 3, PAGE 41 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA SAID FARMS 3 AND 4 BEING SITUATE IN THE NW 1/4 OF THE SW 1/4 OF SECTION 14, TOWNSHIP 2 SOUTH, RANGE 24 EAST OF SAID COUNTY AND BEING MORE PAR",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "11492L.doc",
@@ -2233,13 +2233,13 @@
     },
     {
       "fileName": "11523L.doc",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPART OF TRACT “J” ROYAL TERRACE, RECORDED IN VOLUME 484, PAGE 496, OFFICIAL RECORDS, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS:  START AT THE PERMANENT REFERENCE MARK THE SOUTHEAST CORNER OF TRACT “J” OF REPLAT NO. 2, ROYAL TERRACE, AS RECORDED IN PLAT BOOK 7, PAGE 19, OF THE CU",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "11536L.doc",
@@ -2284,7 +2284,7 @@
     {
       "fileName": "11571L.doc",
       "status": "PASS",
-      "linearError": 0.0018572571108191095,
+      "linearError": 0.0006807558032749372,
       "precisionRatio": "1:498,799",
       "courses": 9,
       "error": null,
@@ -2304,9 +2304,9 @@
     {
       "fileName": "11575L.doc",
       "status": "PASS",
-      "linearError": 0.0014077860113514593,
-      "precisionRatio": "1:378,589",
-      "courses": 6,
+      "linearError": 0.0028698523796544307,
+      "precisionRatio": "1:181,522",
+      "courses": 5,
       "error": null,
       "snippet": "﻿A PART OF LOT 1, BEAUCLERC GARDENS, ACCORDING TO PLAT RECORDED IN PLAT BOOK 16, PAGE 20 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND WHICH IS MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE INTERSECTION OF THE SOUTHERLY RIGHT-OF-WAY LINE OF BEAUCLERC ROAD WITH THE WESTERLY ",
       "usedAi": false
@@ -2321,10 +2321,10 @@
     },
     {
       "fileName": "11576L.doc",
-      "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 0,
       "error": null,
       "snippet": "﻿\n\nA PORTION OF GOVERNMENT LOT 1, SECTION 31, TOWNSHIP 3 SOUTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA, BEING A PORTION OF A TRACT OF LAND INDICATED AS PARCEL 8 ON THE MAP OF A SURVEY OF A PORTION OF SAID GOVERNMENT LOT 1, PREPARED BY ROBERT M. ANGAS AND ASSOCIATES, DATED AUGUST 1, 1956, REVISED AND A",
       "usedAi": true
@@ -2351,11 +2351,11 @@
     },
     {
       "fileName": "11617-PARCEL 2.doc",
-      "status": "FAIL",
-      "linearError": 119.03480542586611,
-      "precisionRatio": "1:26",
-      "courses": 11,
-      "error": "AI err: Failed to parse LLM JSON output: Expected ',' or '}' after property value in JSON at position 678. Raw: {\n  \"Units\": \"Feet\",\n  \"Tracts\": [\n    {\n      \"Name\": \"Parcel 2 (or Tract 1, etc.)\",\n      \"POB\": { \"Northing\": 5000.00, \"Easting\": 5000.00 },\n      \"ReferencePointName\": \"Intersection of the West Right of Way Line of Jones Road with the South Line of the North ½ of the North ½ of the Southeast ¼ o",
+      "status": "PASS",
+      "linearError": 9.094947017729282e-13,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 10,
+      "error": null,
       "snippet": "﻿PARCEL “2”\nPART OF THE NORTH ½ OF THE NORTH ½ OF THE SOUTHEAST 1/4 OF THE SOUTHWEST ¼ OF SECTION 4, TOWNSHIP 2 SOUTH, RANGE 25 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:\n\nFOR A POINT OF REFERENCE, COMMENCE AT THE INTERSECTION OF THE WEST RIGHT OF WAY LINE OF JONES RO",
       "usedAi": false
     },
@@ -2460,7 +2460,7 @@
     {
       "fileName": "11713L.doc",
       "status": "PASS",
-      "linearError": 0.015896486519115672,
+      "linearError": 0.0002820036012197642,
       "precisionRatio": "1:12,801",
       "courses": 10,
       "error": null,
@@ -2751,9 +2751,9 @@
     },
     {
       "fileName": "11844L.doc",
-      "status": "FAIL",
-      "linearError": 242.27068003582573,
-      "precisionRatio": "1:2",
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "",
       "courses": 3,
       "error": null,
       "snippet": "﻿LOT 4, BLOCK 4, PEARL COURT, ACCORDING TO PLAT THEREOF RECORDED IN PLAT BOOK 10, PAGE 30 AND PLAT BOOK 11 PAGE 17 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA.  \nAND\nPART OF LOT 2, BLOCK 4, UNIT 1, PEARL COURT, ACCORDING TO PLAT THEREOF RECORDED IN PLAT BOOK 10, PAGE 30, OF THE CURRENT PU",
@@ -2808,7 +2808,7 @@
     {
       "fileName": "11883L.doc",
       "status": "PASS",
-      "linearError": 0.0007274470401658639,
+      "linearError": 9.094947017729282e-13,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 16,
       "error": null,
@@ -2903,10 +2903,10 @@
     },
     {
       "fileName": "11931L.doc",
-      "status": "NO_COURSES",
-      "linearError": null,
-      "precisionRatio": "",
-      "courses": 3,
+      "status": "PASS",
+      "linearError": 0.0014788476262402584,
+      "precisionRatio": "1:76,634",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nPART OF LOT 8, BLOCK 67, SHOWN ON MAP OF MAIN STREET COMPANY’S SUBDIVISION, MORE PARTICULARLY RECORDED IN PLAT BOOK 5, PAGE 11, PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA. FOR POINT OF BEGINNING, BEGIN AT THE NORTHEAST CORNER OF SAID LOT 8; THENCE RUN SOUTHERLY ALONG THE EASTERLY LINE OF LOT 8, BEING",
       "usedAi": true
@@ -2964,12 +2964,12 @@
     {
       "fileName": "11983L.doc",
       "status": "PASS",
-      "linearError": 0.0018741612874562184,
-      "precisionRatio": "1:984,185",
+      "linearError": 0.0019444665566404286,
+      "precisionRatio": "1:948,599",
       "courses": 4,
       "error": null,
       "snippet": "﻿\nCOMMENCE AT THE SOUTHEAST CORNER OF SECTION 6, TOWNSHIP 5 SOUTH, RANGE 24 EAST   AND RUN S.89º47’58”W. ALONG THE SOUTH LINE OF SAID SECTION, 2907.84 FEET TO THE EASTERLY  RIGHT-OF-WAY OF COUNTY ROAD NO. 218; THENCE RUN N.34º52’13”W. ALONG SAID RIGHT-OF-WAY 72.95 FEET TO THE   NORTH RIGHT-OF-WAY OF",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "11984L.doc",
@@ -3089,13 +3089,13 @@
     },
     {
       "fileName": "12077L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
+      "status": "PASS",
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "courses": 8,
       "error": null,
       "snippet": "﻿A PART OF THE EAST 1/2 OF THE NORTHEAST 1/4 OF SECTION 6, TOWNSHIP 5 SOUTH, RANGE 26 EAST, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE NORTHEAST CORNER OF AFORESAID SECTION 6, THENCE RUN S.89º26’40”W., 66.24 FEET TO A POINT ON THE NORTHERLY LINE OF AFORESAID SECTION 6; THENCE S.04º17’4",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12077L2.doc",
@@ -3133,7 +3133,7 @@
       "courses": 6,
       "error": null,
       "snippet": "﻿A PORTION OF LOT 1, BLOCK 2 AS SHOWN ON PLAT OF RIDGELAND GARDENS AS RECORDED IN PLAT BOOK 12, PAGE 65 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENCE COMMENCE AT THE MOST NORTHERLY CORNER OF SAID LOT 1; FROM THE POI",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12144L.doc",
@@ -3148,19 +3148,19 @@
     {
       "fileName": "12151L.doc",
       "status": "PASS",
-      "linearError": 0.1867650782658733,
-      "precisionRatio": "1:34,972",
-      "courses": 6,
+      "linearError": 0.0034121342132666416,
+      "precisionRatio": "1:537,080",
+      "courses": 5,
       "error": null,
       "snippet": "﻿A PARCEL OF LAND SITUATED IN THE NORTHEAST 1/4 OF SECTION 7. TOWNSHIP 5 SOUTH, RANGE 24 EAST, CLAY COUNTY, FLORIDA; SAID PARCEL BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT A CONCRETE MONUMENT AT THE NORTHEAST CORNER OF SAID SECTION 7 AND RUN S.89º48’32”W., ALONG THE NORTH LINE OF SAI",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12155-1.doc",
       "status": "PASS",
-      "linearError": 0.001976296784479855,
-      "precisionRatio": "1:705,360",
-      "courses": 9,
+      "linearError": 0.0003512051510476919,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 8,
       "error": null,
       "snippet": "﻿PARCEL “A”\n\nA PART OF SECTION 24, TOWNSHIP 4, SOUTH, RANGE 25 EAST,  CLAY COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: \nFOR A POINT OF BEGINNING, COMMENCE AT THE INTERSECTION OF THE SOUTHWESTERLY LINE OF LOT 1, LAKE VILLAS AS RECORDED IN PLAT BOOK 1, PAGE 52, OF PUBLIC RECORDS ",
       "usedAi": false
@@ -3168,9 +3168,9 @@
     {
       "fileName": "12155-1B.doc",
       "status": "PASS",
-      "linearError": 0.0011544462423217542,
+      "linearError": 0.000547448785804654,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 10,
+      "courses": 9,
       "error": null,
       "snippet": "﻿PARCEL “A”\n\nA PART OF SECTION 24, TOWNSHIP 4, SOUTH, RANGE 25 EAST,  CLAY COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: \nFOR A POINT OF BEGINNING, COMMENCE AT THE INTERSECTION OF THE SOUTHWESTERLY LINE OF LOT 1, LAKE VILLAS AS RECORDED IN PLAT BOOK 1, PAGE 52, OF PUBLIC RECORDS ",
       "usedAi": false
@@ -3238,12 +3238,12 @@
     {
       "fileName": "12155-F.doc",
       "status": "PASS",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 1,
+      "linearError": 0.00006781531079594223,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 6,
       "error": null,
       "snippet": "﻿DESCRIPTION BY DEED:\n\nTHAT CERTAIN PARCEL OF LAND 150.00 FEET IN WIDTH FRONTING ON DOCTOR’S LAKE, DESCRIBED AS “TRACT A”, IN SURVEY BY H.W. DESAUSSURE, DATED SEPTEMBER 22, 1950 AND BEING A PART OF GOVERNMENT LOT 7, SECTION 24 , TOWNSHIP 4 SOUTH, RANGE 25 EAST, SAID PARCEL OF LAND BEING MORE PARTICU",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12191L.doc",
@@ -3255,20 +3255,20 @@
     },
     {
       "fileName": "12197L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT PART OF FARM 2, BLOCK 20, ORTEGA FARMS, ACCORDING TO THE PLAT THEREOF RECORDED IN PLAT BOOK 3, PAGE 79 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE NORTHWEST CORNER OF SAID FARM 2, BLOCK 20, ORTEGA FARMS, AND RUN THENC3E",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12200L.doc",
       "status": "PASS",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 5,
+      "linearError": 9.094947017729282e-13,
+      "precisionRatio": "1:289,049",
+      "courses": 10,
       "error": null,
       "snippet": "﻿PARCEL I:\nA PARCEL OF LAND BEING A PART OF TRACT “B” IN SURVEY BY H.W. DESSASURE, DATED SEPTEMBER 20, 1950, BEING A PART OF GOVERNMENT LOT 7, SECTION 24, TOWNSHIP 4 SOUTH, RANGE 25 EAST, CLAY COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE FOR A POINT OF REFERENCE AT THE",
       "usedAi": true
@@ -3323,30 +3323,30 @@
     },
     {
       "fileName": "12256-1.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "",
+      "courses": 1,
       "error": null,
       "snippet": "﻿PARCEL 1\n\nSOUTH 98.00 FEET, MORE OR LESS, OF UNNUMBERED LOT ABUTTING ON THE WEST LOT 11 OF DONNER’S SUBDIVISION, ACCORDING TO A PLAT THEREOF RECORDED IN PLAT BOOK 8, PAGE 4, OF THE CURRENT PUBLIC RECORDS OF PLATS IN SAID DUVAL COUNTY AND MORE PARTICULARLY DESCRIBED AS BEGINNING ON THE WEST LINE OF ",
       "usedAi": true
     },
     {
       "fileName": "12256.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
+      "status": "PASS",
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "courses": 5,
       "error": null,
       "snippet": "﻿PARCEL 1\n\nSOUTH 98.00 FEET, MORE OR LESS, OF UNNUMBERED LOT ABUTTING ON THE WEST LOT 11 OF DONNER’S SUBDIVISION, ACCORDING TO A PLAT THEREOF RECORDED IN PLAT BOOK 8, PAGE 4, OF THE CURRENT PUBLIC RECORDS OF PLATS IN SAID DUVAL COUNTY AND MORE PARTICULARLY DESCRIBED AS BEGINNING ON THE WEST LINE OF ",
       "usedAi": true
     },
     {
       "fileName": "12261L.doc",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT PARCEL OF LAND RECEIVED IN CONVEYANCE RECORDED IN DEED BOOK 996, PAGES 131-132 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGINNING AT SOUTHEAST CORNER OF LOT 8, J.A. PICKET’S SUBDIVISION OF PART OF THE SIBBALD GRANT, SECTION 39, ",
       "usedAi": true
@@ -3354,12 +3354,12 @@
     {
       "fileName": "12264L.doc",
       "status": "PASS",
-      "linearError": 131.0614673174544,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": 0.1282113896469451,
+      "precisionRatio": "1:2,983",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nA PART OF SECTION 16, TOWNSHIP 2 SOUTH, RANGE 29 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF BEGINNING COMMENCE AT THE NORTHEAST CORNER OF LOT 18, BLOCK 1, ATLANTIC BEACH PARKWAY, AS RECORDED IN PLAT BOOK 15, PAGE 61 OF THE CURRENT PUBLIC RECORDS OF SAID C",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12267L.doc",
@@ -3394,9 +3394,9 @@
     {
       "fileName": "12271L-2.doc",
       "status": "PASS",
-      "linearError": 0.0001315627849304921,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "linearError": 0.0008394422170657145,
+      "precisionRatio": "1:552,665",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING A PART OF PARCEL 2, AS SHOWN ON THE REPLAT OF DEPREE ACRES, AS RECORDED IN PLAT BOOK 32, PAGE 91, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE INTERS",
       "usedAi": false
@@ -3404,9 +3404,9 @@
     {
       "fileName": "12271L.doc",
       "status": "PASS",
-      "linearError": 0.0001315627849304921,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "linearError": 0.0008394422170657145,
+      "precisionRatio": "1:552,665",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING A PART OF PARCEL 2, AS SHOWN ON THE REPLAT OF DEPREE ACRES, AS RECORDED IN PLAT BOOK 32, PAGE 91, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE INTERS",
       "usedAi": false
@@ -3447,13 +3447,13 @@
     },
     {
       "fileName": "12287L.doc",
-      "status": "FAIL",
-      "linearError": 105,
-      "precisionRatio": "1:10",
-      "courses": 9,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 8,
       "error": null,
       "snippet": "﻿\nPARCEL 5:\nLOT 6, EXCEPT THE EAST 12.50 FEET, TOGETHER WITH A PART OF LOT 7, ALL IN BLOCK 2, NEPTUNE GARDENS AS RECORDED IN PLAT BOOK 16, PAGE 91, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND PART OF PARK DRIVE CLOSED BY CITY ORDINANCE NUMBER 78, NEPTUNE BEACH, FLORIDA, AND BEING MORE",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "12291L.doc",
@@ -3477,10 +3477,10 @@
     },
     {
       "fileName": "12301L1.doc",
-      "status": "FAIL",
-      "linearError": 87.21833523163346,
-      "precisionRatio": "1:5",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.004930521583656405,
+      "precisionRatio": "1:403,537",
+      "courses": 15,
       "error": null,
       "snippet": "﻿\nTRACT 1\nA TRACT OF LAND BEING A PORTION OF THE LANDS OF LOT 8, PICKETT SUBDIVISION OF J.A. PICKETT, AS DESCRIBED IN DEED BOOK 79, PAGE 488, OF THE FORMER PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  \nBEGIN AT THE INTERSECTION OF THE SOUTHERLY RIGHT-OF",
       "usedAi": true
@@ -3488,9 +3488,9 @@
     {
       "fileName": "12301L2.doc",
       "status": "PASS",
-      "linearError": 0.004340634797886027,
-      "precisionRatio": "1:147,582",
-      "courses": 4,
+      "linearError": 0.00350337217142381,
+      "precisionRatio": "1:107,716",
+      "courses": 3,
       "error": null,
       "snippet": "﻿TRACT 2\nA TRACT OF LAND BEING A PORTION OF THE LANDS OF LOT 8, PICKETT SUBDIVISION OF J.A. PICKETT, AS DESCRIBED IN DEED BOOK 79, PAGE 488, OF THE FORMER PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  \nCOMMENCE AT THE INTERSECTION OF THE SOUTHERLY RIGHT-",
       "usedAi": false
@@ -3498,9 +3498,9 @@
     {
       "fileName": "12301L3.doc",
       "status": "PASS",
-      "linearError": 0.0010850790645152851,
-      "precisionRatio": "1:341,837",
-      "courses": 6,
+      "linearError": 0.0016138817455563664,
+      "precisionRatio": "1:307,247",
+      "courses": 5,
       "error": null,
       "snippet": "﻿TRACT 3\nA TRACT OF LAND BEING A PORTION OF THE LANDS OF LOT 8, PICKETT SUBDIVISION OF J.A. PICKETT, AS DESCRIBED IN DEED BOOK 79, PAGE 488, OF THE FORMER PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  \nCOMMENCE AT THE INTERSECTION OF THE SOUTHERLY RIGHT-",
       "usedAi": false
@@ -3508,12 +3508,12 @@
     {
       "fileName": "12301L4.doc",
       "status": "PASS",
-      "linearError": 0.0007142136188755243,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 2,
+      "linearError": 0.006972347076614549,
+      "precisionRatio": "1:44,979",
+      "courses": 4,
       "error": null,
       "snippet": "﻿TRACT 4\nA TRACT OF LAND BEING A PORTION OF THE LANDS OF LOT 8, PICKETT SUBDIVISION OF J.A. PICKETT, AS DESCRIBED IN DEED BOOK 79, PAGE 488, OF THE FORMER PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  \nCOMMENCE AT THE INTERSECTION OF THE SOUTHERLY RIGHT-",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12309L.doc",
@@ -3795,30 +3795,30 @@
     },
     {
       "fileName": "12487-1.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
+      "status": "PASS",
+      "linearError": 0.0013144461976094433,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 9,
+      "courses": 11,
       "error": null,
       "snippet": "﻿\nPARCEL 1: PART OF THE SOUTHEAST J/4 OF SECTION IS, OF A SUBDIVISION OITHE JOHN BRAWARD GRANT, SECRTON 46, TOWNSHIP 1 SOUTH, RANGE 1.7 EAST, DESCRIBED AS FOLLOWS:\n\nBEGINNING AT A POINT TO BE ARRIVED AT AS FOLLOWS: START AT THE SOUTHEAST CORNER OF SECTION IS, AND RUN 1413 FEET WEST ALONG SAID SECTIO",
       "usedAi": true
     },
     {
       "fileName": "12487-1.rtf",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
+      "status": "PASS",
+      "linearError": 0.0013144461976094433,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 9,
+      "courses": 11,
       "error": null,
       "snippet": "﻿\nPARCEL 1: PART OF THE SOUTHEAST J/4 OF SECTION IS, OF A SUBDIVISION OITHE JOHN BRAWARD GRANT, SECRTON 46, TOWNSHIP 1 SOUTH, RANGE 1.7 EAST, DESCRIBED AS FOLLOWS:\n\nBEGINNING AT A POINT TO BE ARRIVED AT AS FOLLOWS: START AT THE SOUTHEAST CORNER OF SECTION IS, AND RUN 1413 FEET WEST ALONG SAID SECTIO",
       "usedAi": true
     },
     {
       "fileName": "12487-11.rtf",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
+      "status": "PASS",
+      "linearError": 0.0013144461976094433,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 10,
+      "courses": 12,
       "error": null,
       "snippet": "﻿\nPARCEL 1: PART OF THE SOUTHEAST 1/4 OF SECTION I5, OF A SUBDIVISION OF THE JOHN BROWARD GRANT, SECTION 46, TOWNSHIP 1 SOUTH, RANGE 27 EAST, DESCRIBED AS FOLLOWS:\n\nBEGINNING AT A POINT TO BE ARRIVED AT AS FOLLOWS: START AT THE SOUTHEAST CORNER OF SECTION 15, AND RUN 1413.00 FEET WEST ALONG SAID SEC",
       "usedAi": true
@@ -3826,22 +3826,22 @@
     {
       "fileName": "12487-2.doc",
       "status": "PASS",
-      "linearError": 236.30674562423522,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": 0.010000000000218279,
+      "precisionRatio": "1:12,001",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nRIGHT-OF-WAY, A  DISTANCE OF 1580.30 FEET TO A POINT OF BEGINNING IN THE WESTERLY LINE OF THE LANDS OF THE GRANTEE HEREIN; THENCE SOUTHEASTERLY AND SOUTHERLY ALONG THE SOUTHERLY AND WESTERLY BOUNDARY OF SAID RIGHT-OF-WAY, I750.00 FEET, MORE OR LESS, TO A POINT IN A LINE RUNNING EAST AND WEST THROU",
       "usedAi": true
     },
     {
       "fileName": "12487-2.rtf",
-      "status": "FAIL",
-      "linearError": 60,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": 0.010000000000218279,
+      "precisionRatio": "1:12,001",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nRIGHT-OF-WAY, A  DISTANCE OF 1580.30 FEET TO A POINT OF BEGINNING IN THE WESTERLY LINE OF THE LANDS OF THE GRANTEE HEREIN; THENCE SOUTHEASTERLY AND SOUTHERLY ALONG THE SOUTHERLY AND WESTERLY BOUNDARY OF SAID RIGHT-OF-WAY, I750.00 FEET, MORE OR LESS, TO A POINT IN A LINE RUNNING EAST AND WEST THROU",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "12487L.doc",
@@ -3866,12 +3866,12 @@
     {
       "fileName": "12489L.doc",
       "status": "PASS",
-      "linearError": 0.0022568963559114136,
-      "precisionRatio": "1:379,238",
-      "courses": 6,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿PART OF LOT 46, TIGER HOLE PLANTATION, AS RECORDED IN DEED BOOK AQ, PAGES 260 AND 261, OF THE PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGINNING AT AN IRON STAKE IN THE NORTH CORNER OF LOT 46 AND THE WEST LINE OF TIGER HOLE ROAD, RUNNING THENCE SOUTH ALON",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "12511L.doc",
@@ -4071,10 +4071,10 @@
     },
     {
       "fileName": "12683L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.001435005015816111,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 5,
       "error": null,
       "snippet": "﻿A PORTION OF ISAAC CARTER DONATION, SECTION 42, TOWNSHIP 1 SOUTH, RANGE 26 EAST, CITY OF JACKSONVILLE, DUVAL COUNTY, FLORIDA. BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE INTERSECTION OF THE SOUTHERLY RIGHT-OF-WAY LINE OF TROUT RIVER BOULEVARD (A 66.00 FOOT RIGHT-OF-WAY AS NOW EST",
       "usedAi": true
@@ -4116,11 +4116,11 @@
     },
     {
       "fileName": "12765L.doc",
-      "status": "NO_COURSES",
-      "linearError": null,
-      "precisionRatio": "",
-      "courses": 8,
-      "error": "AI err: Failed to parse LLM JSON output: Expected ',' or '}' after property value in JSON at position 672. Raw: {\n  \"Units\": \"Feet\",\n  \"Tracts\": [\n    {\n      \"Name\": \"Parcel 1 (or Tract 1, etc.)\",\n      \"POB\": { \"Northing\": 5000.00, \"Easting\": 5000.00 },\n      \"ReferencePointName\": \"Intersection of North Line of Section 17, Township 2 South, Range 28 East, with the East Line of Atlantic Boulevard Estates, Se",
+      "status": "PASS",
+      "linearError": 0.006281101636591305,
+      "precisionRatio": "1:351,322",
+      "courses": 5,
+      "error": null,
       "snippet": "﻿\nA PARCEL OF LAND IN GOVERNMENT LOT 5, SECTION 17, TOWNSHIP 2 SOUTH, RANGE 28 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  AS A POINT OF REFERENCE COMMENCE AT THE INTERSECTION OF THE NORTH LINE OF SECTION 17, TOWNSHIP 2 SOUTH, RANGE 28 EAST, WITH THE EAST LINEOF ATLANTIC BO",
       "usedAi": false
     },
@@ -4182,13 +4182,13 @@
     },
     {
       "fileName": "12820L.doc",
-      "status": "FAIL",
-      "linearError": 242.27068003582573,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.00003491269498679005,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 7,
       "error": null,
       "snippet": "﻿\nA TRACT OF LAND SITUATED IN SECTION 8, TOWNSHIP 5 SOUTH, RANGE 24 EAST, CLAY COUNTY, FLORIDA; SAID TRACT BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT A CONCRETE MONUMENT AT THE NORTHWEST CORNER OF SAID SECTION 8 AND RUN S.01º59’40”E. ALONG THE WEST LINE OF SAID SECTION 8 A DISTANCE O",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12822L-A.doc",
@@ -4213,7 +4213,7 @@
     {
       "fileName": "12830L.doc",
       "status": "PASS",
-      "linearError": 0.0006181534329899541,
+      "linearError": 9.094947017729282e-13,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 10,
       "error": null,
@@ -4222,23 +4222,23 @@
     },
     {
       "fileName": "12833L.doc",
-      "status": "FAIL",
-      "linearError": 100.00000000000044,
-      "precisionRatio": "1:4",
-      "courses": 3,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nA PART OF GOVERNMENT LOT 12, SECTION 4, TOWNSHIP 3 SOUTH, RANGE 29 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGIN AT THE NORTHWEST CORNER OF LOT 16, MISSION HILLS UNIT ONE REPLAT, ACCORDING TO PLAT THEREOF RECORDED IN PLAT BOOK 30, PAGES 40 AND 40A OF THE CURRENT PUBLI",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12838L.doc",
       "status": "PASS",
-      "linearError": 72.48903316292021,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 10,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 12,
       "error": null,
       "snippet": "﻿PARCEL 1  (DEED)\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING A PART OF LOT 5, BLOCK 12, HARVEY’S ADDITION TO JACKSONVILLE, AS RECORDED IN PLAT BOOK 3, PAGE 4 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING A PORTION OF THE NORTH 1/2 OF THE NORTHWEST 1/4 OF",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "12839L.doc",
@@ -4283,7 +4283,7 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 5,
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPARCEL A:\nLOT 1, HOLLY BAY SUBDIVISION, ACCORDING TO PLAT THEREOF AS RECORDED IN PLAT BOOK 6, PAGE 38 OF THE PUBLIC RECORDS OF CLAY COUNTY, FLORIDA.\nPARCEL B:\nA PARCEL OF LAND SITUATED IN SECTION 2, ORANGE PARK, CLAY COUNTY, FLORIDA, AND BEING A PORTION OF THAT LAND SHOWN AS “NOT PART OF THIS PLA",
       "usedAi": false
@@ -4453,7 +4453,7 @@
     {
       "fileName": "12926L-A.doc",
       "status": "PASS",
-      "linearError": 0.001080818181223675,
+      "linearError": 0.00005819783316728568,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -4463,7 +4463,7 @@
     {
       "fileName": "12926L-Abc.doc",
       "status": "PASS",
-      "linearError": 0.001080818181223675,
+      "linearError": 0.00005819783316728568,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -4493,7 +4493,7 @@
     {
       "fileName": "12926L.doc",
       "status": "PASS",
-      "linearError": 9.094947017729282e-13,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -4511,19 +4511,19 @@
     {
       "fileName": "12936L.doc",
       "status": "PASS",
-      "linearError": 0.0017394872479228384,
-      "precisionRatio": "1:107,313",
-      "courses": 2,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿PARCEL 1\nTHAT PART OF THE SEYMOUR PICKETT DONATION IN SECTION 52 AND 53, TOWNSHIP 2 SOUTH, RANGE 26 EAST, DESCRIBED AS BEGINNING AT THE SOUTHEAST CORNER OF LANE’S ROAD, ALSO KNOWN AS COUNTY ROAD NO. 58, AND THE PICKETT LANE, AND AT THE NORTHWEST CORNER OF THE LOT DEEDED TO M.H. HAYWOOD, AS PER DEED",
       "usedAi": true
     },
     {
       "fileName": "12936L2.doc",
-      "status": "PASS",
+      "status": "FAIL",
       "linearError": null,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "precisionRatio": "1:3",
+      "courses": 5,
       "error": null,
       "snippet": "﻿PARCEL 2\nTHAT PART OF THE SEYMOUR PICKETT DONATION IN SECTION 52 AND 53, TOWNSHIP 2 SOUTH, RANGE 26 EAST, DESCRIBED AS BEGINNING AT THE SOUTHEAST CORNER OF LANE’S ROAD, ALSO KNOWN AS COUNTY ROAD NO. 58, AND THE PICKETT LANE,  RUNNING THENCE S.30º00’00”E. 420.00 FEET TO A STAKE AND CORNER OF LAND TO",
       "usedAi": false
@@ -4550,10 +4550,10 @@
     },
     {
       "fileName": "12948.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Open-Ended)",
+      "courses": 0,
       "error": null,
       "snippet": "﻿A PORTION OF TRACT 15, BLOCK 3, SECTION 27, TOWNSHIP 3 SOUTH, RANGE 25 EAST, JACKSONVILLE HEIGHTS, AS RECORDED IN PLAT BOOK 5, PAGE 93, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE INTERSECTION OF THE SOUTH LINE OF SAID TRACT",
       "usedAi": true
@@ -4571,7 +4571,7 @@
     {
       "fileName": "12960-1.doc",
       "status": "PASS",
-      "linearError": 0.001311644268104498,
+      "linearError": 0.0009656114649358833,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -4581,7 +4581,7 @@
     {
       "fileName": "12960-2.doc",
       "status": "PASS",
-      "linearError": 0.0009656114649358833,
+      "linearError": 0.000923913663337916,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 11,
       "error": null,
@@ -4591,7 +4591,7 @@
     {
       "fileName": "12960-A.doc",
       "status": "PASS",
-      "linearError": 0.001311644268104498,
+      "linearError": 0.0009656114649358833,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -4601,7 +4601,7 @@
     {
       "fileName": "12960-B.doc",
       "status": "PASS",
-      "linearError": 0.0075483891175551305,
+      "linearError": 0.0009656114649358833,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -4611,7 +4611,7 @@
     {
       "fileName": "12960-c.doc",
       "status": "PASS",
-      "linearError": 0.0009656114649358833,
+      "linearError": 0.0008937020332009908,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -4847,7 +4847,7 @@
     {
       "fileName": "13103L-2-revisedOLD.doc",
       "status": "PASS",
-      "linearError": 0.0019077609745056935,
+      "linearError": 0.0010637395872272416,
       "precisionRatio": "1:373,039",
       "courses": 13,
       "error": null,
@@ -4857,7 +4857,7 @@
     {
       "fileName": "13103L-2OLD.doc",
       "status": "PASS",
-      "linearError": 0.0019077609745056935,
+      "linearError": 0.0010637395872272416,
       "precisionRatio": "1:373,039",
       "courses": 13,
       "error": null,
@@ -4877,27 +4877,27 @@
     {
       "fileName": "13103L-PARCEL-B.doc",
       "status": "FAIL",
-      "linearError": 21.111069220999585,
+      "linearError": null,
       "precisionRatio": "1:21",
       "courses": 8,
-      "error": "AI err: Failed to parse LLM JSON output: Expected double-quoted property name in JSON at position 964. Raw: {\n  \"Units\": \"Feet\",\n  \"Tracts\": [\n    {\n      \"Name\": \"Parcel B\",\n      \"POB\": { \"Northing\": 5000.00, \"Easting\": 5000.00 },\n      \"ReferencePointName\": \"Northwest corner of Lot 6\",\n      \"CommencementSegments\": [\n        { \"Type\": \"Line\", \"Bearing\": \"S00°32'47\" }, \n        { \"Type\": \"Line\", \"Bearin",
+      "error": null,
       "snippet": "﻿PARCEL “B”:\n A PORTION OF LOTS 12, 13 AND 34, AND A PORTION OF A 10.00 FOOT WIDE ALLEY LYING WESTERLY OF LOTS 6 AND 11, ALL IN BLOCK 1, WOODSTOCK PARK ACCORDING TO MAP RECORDED IN PLAT BOOK 5, PAGE 27, CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA; ALL BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS",
       "usedAi": false
     },
     {
       "fileName": "13103L3OLD.doc",
-      "status": "FAIL",
-      "linearError": 21.111069220999585,
+      "status": "PASS",
+      "linearError": 0.003488704888238984,
       "precisionRatio": "1:21",
       "courses": 12,
-      "error": "AI err: Failed to parse LLM JSON output: Expected ',' or '}' after property value in JSON at position 542. Raw: {\n  \"Units\": \"Feet\",\n  \"Tracts\": [\n    {\n      \"Name\": \"Parcel B\",\n      \"POB\": { \"Northing\": 5000.00, \"Easting\": 5000.00 },\n      \"ReferencePointName\": \"Northwest corner of Lot 6\",\n      \"CommencementSegments\": [\n        { \"Type\": \"Line\", \"Bearing\": \"S00°32'47\" } \n      ],\n      \"IsOpenEnded\": fals",
+      "error": null,
       "snippet": "﻿PARCEL “A”:\nA PART OF LOTS 13, 14,15,16, AND 34, BLOCK 1, WOODSTOCK PARK, ACCORDING TO PLAT THEREOF, AS RECORDED IN PLAT BOOK 5 PAGE 27 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND MORE PARTICULARLY DESCRIBED AS FOLLOWS:\n\nFOR A POINT OF BEGINNING, COMMENCE AT THE NORTHWEST CORNER OF ",
       "usedAi": false
     },
     {
       "fileName": "13103LOLD.doc",
       "status": "PASS",
-      "linearError": 0.003488704888238984,
+      "linearError": 0.0019077609745056935,
       "precisionRatio": "1:373,039",
       "courses": 13,
       "error": null,
@@ -4934,10 +4934,10 @@
     },
     {
       "fileName": "13120L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "",
+      "courses": 1,
       "error": null,
       "snippet": "﻿PARCEL 1\n\nSOUTH 98.00 FEET, MORE OR LESS, OF UNNUMBERED LOT ABUTTING ON THE WEST LOT 11 OF DONNER’S SUBDIVISION, ACCORDING TO A PLAT THEREOF RECORDED IN PLAT BOOK 8, PAGE 4, OF THE CURRENT PUBLIC RECORDS OF PLATS IN SAID DUVAL COUNTY AND MORE PARTICULARLY DESCRIBED AS BEGINNING ON THE WEST LINE OF ",
       "usedAi": true
@@ -5055,7 +5055,7 @@
     {
       "fileName": "13160L.doc",
       "status": "PASS",
-      "linearError": 0.0010959947133366416,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -5181,7 +5181,7 @@
     {
       "fileName": "13225-1a.doc",
       "status": "PASS",
-      "linearError": 0.004834994854536402,
+      "linearError": 0.00009674848329756492,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -5191,7 +5191,7 @@
     {
       "fileName": "13225-4a.doc",
       "status": "PASS",
-      "linearError": 0.00028998125218963005,
+      "linearError": 0.0002757322769851869,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 18,
       "error": null,
@@ -5201,7 +5201,7 @@
     {
       "fileName": "13225-L1.doc",
       "status": "PASS",
-      "linearError": 0.008922676091358939,
+      "linearError": 0.00036225643040411126,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -5211,7 +5211,7 @@
     {
       "fileName": "13225-L2.doc",
       "status": "PASS",
-      "linearError": 0.00039412826296780903,
+      "linearError": 0.00036225643040411126,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -5221,7 +5221,7 @@
     {
       "fileName": "13225-L3.doc",
       "status": "PASS",
-      "linearError": 0.001124993744858414,
+      "linearError": 0.00036225643040411126,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -5231,7 +5231,7 @@
     {
       "fileName": "13225-L4.doc",
       "status": "PASS",
-      "linearError": 0.00036225643040411126,
+      "linearError": 0.00014937382269230226,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 18,
       "error": null,
@@ -5241,7 +5241,7 @@
     {
       "fileName": "13225_1a.doc",
       "status": "PASS",
-      "linearError": 0.004834994854536402,
+      "linearError": 0.00009674848329756492,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -5291,7 +5291,7 @@
     {
       "fileName": "13253-L1.doc",
       "status": "PASS",
-      "linearError": 0.004834994854536402,
+      "linearError": 0.0007744791502807845,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 13,
       "error": null,
@@ -5351,9 +5351,9 @@
     {
       "fileName": "13282L.doc",
       "status": "PASS",
-      "linearError": 0.004217736764658603,
-      "precisionRatio": "1:776,383",
-      "courses": 5,
+      "linearError": 0.002442842306278035,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND LYING AND BEING IN THE COUNTY OF DUVAL AND STATE OF FLORIDA, KNOWN AND DESCRIBED AS:  A FIVE ACRE TRACT OF LAND IN THE SOUTH 1/2 OF SECTION 22, TOWNSHIP 1 NORTH, RANGE 27 EAST, MORE PARTICULARLY DESCRIBED AS:  COMMENCING AT A 60 PENNY NAIL IN A GALVANIZED",
       "usedAi": false
@@ -5516,9 +5516,9 @@
     {
       "fileName": "13352LA.doc",
       "status": "PASS",
-      "linearError": 0.0033563865212848645,
-      "precisionRatio": "1:353,002",
-      "courses": 7,
+      "linearError": 0.0002165808569164603,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 6,
       "error": null,
       "snippet": "﻿PART OF THE SOUTHEAST 1/4 OF THE NORTHEAST 1/4 OF SECTION 15, TOWNSHIP 1 SOUTH, RANGE 25 EAST, DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE SOUTHWEST CORNER OF SAID SOUTHEAST 1/4 OF THE NORTHEAST 1/4; THENCE N.00º54’32”W. ON THE WEST LINE OF SAID SOUTHEA",
       "usedAi": false
@@ -5545,10 +5545,10 @@
     },
     {
       "fileName": "13381L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.23913839952149654,
+      "precisionRatio": "1:3,464",
+      "courses": 4,
       "error": null,
       "snippet": "﻿PART OF GOVERNMENT LOT 4, SECTION 12, TOWNSHIP 5 SOUTH, RANGE 24 EAST, CLAY COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGINNING AT THE NORTHWEST CORNER OF LOT 12, BLOCK 2, BUDINGTON’S SUBDIVISION AS RECORDED IN PLAT BOOK 4, PAGE 16, CURRENT PUBLIC RECORDS OF CLAY COUNTY, FLORIDA, RU",
       "usedAi": true
@@ -5623,23 +5623,23 @@
     },
     {
       "fileName": "13409L.doc",
-      "status": "NO_COURSES",
+      "status": "PASS",
       "linearError": null,
-      "precisionRatio": "",
-      "courses": 1,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿LOT 16, MIMOSA CREEKSIDE:\nCOMMENCE AT THE SW CORNER OF SECTION 4, TOWNSHIP 5 SOUTH, RANGE 24 EAST AND RUN N.02º59’06”E ALONG THE WEST RIGHT-OF-WAY OF A 60.00 FOOT ACCESS ROAD 114.21 FEET; THENCE RUN ALONG SAID RIGHT-OF-WAY N.58º00’00”W. 364.15 FEET; THENCE RUN N.00º31’56”W. 887.91 FEET TO A POINT O",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "13409L.pdf",
       "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿LOT 16, MIMOSA CREEKSIDE:\nCOMMENCE AT THE SW CORNER OF SECTION 4, TOWNSHIP 5 SOUTH, RANGE 24 EAST AND RUN N.02º59’06”E ALONG THE WEST RIGHT-OF-WAY OF A 60.00 FOOT ACCESS ROAD 114.21 FEET; THENCE RUN ALONG SAID RIGHT-OF-WAY N.58º00’00”W. 364.15 FEET; THENCE RUN N.00º31’56”W. 887.91 FEET TO A POINT O",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "13417L.doc",
@@ -5689,13 +5689,13 @@
     },
     {
       "fileName": "13449L.doc",
-      "status": "FAIL",
-      "linearError": 101.60000000000036,
-      "precisionRatio": "1:4",
-      "courses": 5,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿PART OF LOT 1, SECTION 2, TOWNSHIP 2 SOUTH, RANGE 26 EAST, DESCRIBED AS FOLLOWS:  BEGIN AT AN IRON AT THE INTERSECTION OF THE WESTERN LINE OF JUPITER STREET WITH THE NORTHERN LINE OF 17TH STREET; THENCE WESTERLY ALONG THE NORTHERLY LINE OF 17TH STREET, 101.60 FEET TO A POINT, FOR THE POINT OF BEGIN",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "13450L-PARCEL-1.doc",
@@ -5730,7 +5730,7 @@
     {
       "fileName": "13460L.doc",
       "status": "PASS",
-      "linearError": 0.000790275309153835,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 12,
       "error": null,
@@ -5750,9 +5750,9 @@
     {
       "fileName": "13463L.doc",
       "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "linearError": null,
+      "precisionRatio": "1:3",
+      "courses": 15,
       "error": null,
       "snippet": "﻿A PIECE, PARCEL, OR TRACT OF LAND BEING A PART OF TRACT 16, BLOCK 1, OF JACKSONVILLE HEIGHTS SUBDIVISION, SECTION 8, TOWNSHIP 2 SOUTH, RANGE 25 EAST, AS RECORDED IN PLAT BOOK 5, AT PAGE 93 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:\n\nFOR A POINT O",
       "usedAi": true
@@ -5779,10 +5779,10 @@
     },
     {
       "fileName": "13476L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 1.2862197421537486e-12,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 12,
       "error": null,
       "snippet": "﻿A PIECE, PARCEL, OR TRACT OF LAND BEING A PART OF TRACT 16, BLOCK 1, OF JACKSONVILLE HEIGHTS SUBDIVISION, SECTION 8, TOWNSHIP 2 SOUTH, RANGE 25 EAST, AS RECORDED IN PLAT BOOK 5, AT PAGE 93 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:\n\nFOR A POINT O",
       "usedAi": true
@@ -5878,9 +5878,9 @@
     {
       "fileName": "13575L.doc",
       "status": "PASS",
-      "linearError": 0.00027234527316698703,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 7,
+      "linearError": 0.0020281373322455793,
+      "precisionRatio": "1:948,747",
+      "courses": 6,
       "error": null,
       "snippet": "﻿\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATE, LYING AND BEING IN THE CITY OF JACKSONVILLE, COUNTY OF DUVAL, STATE OF FLORIDA, TO WIT: BEING A PART OF LOT 3, SECTION 13, TOWNSHIP 4 SOUTH, RANGE 26 EAST, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE NORTHEAST CORNER OF ",
       "usedAi": false
@@ -6044,9 +6044,9 @@
     {
       "fileName": "13657L.doc",
       "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 6,
+      "linearError": 0.0009828949381909665,
+      "precisionRatio": "1:1",
+      "courses": 5,
       "error": null,
       "snippet": "﻿LOT 6, BLOCK 168, TOGETHER WITH A PART OF BLOCK 169, SECTION “H”, ATLANTIC BEACH, AS RECORDED IN PLAT BOOK 18, PAGE 34 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF BEGINNING, COMMENCE AT THE SOUTHEAST CORNER OF SAID LOT 6, ",
       "usedAi": true
@@ -6104,7 +6104,7 @@
     {
       "fileName": "13673L.doc",
       "status": "PASS",
-      "linearError": 0.00048644760785259127,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 16,
       "error": null,
@@ -6265,13 +6265,13 @@
     },
     {
       "fileName": "13771L.doc",
-      "status": "FAIL",
-      "linearError": 109.3400000000005,
+      "status": "PASS",
+      "linearError": 0.0011010140759527799,
       "precisionRatio": "1:448,886",
-      "courses": 7,
+      "courses": 6,
       "error": null,
       "snippet": "﻿WALKER’S REPLAT, A DISTANCE OF 22.25 FEET TO THE SOUTHWESTERLY CORNER OF SAID LOT 3, WALKER’S REPLAT, THENCE NORTHEASTERLY ALONG THE SOUTHEASTERLY LINE OF LOT 3, WALKER’S REPLAT 109.34 FEET TO THE POINT OF BEGINNING. THE ABOVE DESCRIBED LANDS ARE THE SAME LANDS AS RECORDED IN OFFICIAL RECORDS OF SA",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "13772L.doc",
@@ -6296,7 +6296,7 @@
     {
       "fileName": "13801L.doc",
       "status": "PASS",
-      "linearError": 0.020876000352910266,
+      "linearError": null,
       "precisionRatio": "1:130,815",
       "courses": 8,
       "error": null,
@@ -6306,7 +6306,7 @@
     {
       "fileName": "13821L.doc",
       "status": "PASS",
-      "linearError": 0.0075483891175551305,
+      "linearError": 0.0009656114649358833,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -6376,17 +6376,17 @@
     {
       "fileName": "13871L.doc",
       "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nPART OF THE FRANCIS P. FATIO GRANT, SECTION 44, TOWNSHIP 5 SOUTH, RANGE 26 EAST, AND SECTION 39, TOWNSHIP 5 SOUTH, RANGE 27 EAST, ST. JOHNS COUNTY, FLORIDA: COMMENCE AT THE INTERSECTION OF THE NORTHEASTERLY RIGHT-OF-WAY LINE OF SCOTT ROAD (A 60.00 FOOT RIGHT-OF-WAY) WITH THE SOUTHERLY LINE OF LOUI",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "13874L.doc",
       "status": "PASS",
-      "linearError": 0.005937624612608961,
+      "linearError": 0.005132807439946322,
       "precisionRatio": "1:211,017",
       "courses": 9,
       "error": null,
@@ -6396,7 +6396,7 @@
     {
       "fileName": "13877L.doc",
       "status": "PASS",
-      "linearError": 0.0036093967629489123,
+      "linearError": 0.00036998720878641053,
       "precisionRatio": "1:135,690",
       "courses": 13,
       "error": null,
@@ -6415,10 +6415,10 @@
     },
     {
       "fileName": "13886L.doc",
-      "status": "NO_COURSES",
-      "linearError": 721.6696477349664,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 11,
+      "status": "PASS",
+      "linearError": 9.094947017729282e-13,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 12,
       "error": null,
       "snippet": "﻿Parcel 30: NORMANDY ACRES, UNIT 7 (UNRECORDED), SECTION 19. TOWNSHIP 3 SOUTH, RANGE 24 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT A POINT ON THE NORTHERLY RIGHT-OF-WAY LINE OF NORMANDY BOULEVARD, THAT IS 1097.77 FEET WESTERLY FROM THE INTERSECTION OF T",
       "usedAi": true
@@ -6465,13 +6465,13 @@
     },
     {
       "fileName": "13904-easements.doc",
-      "status": "PASS",
+      "status": "FAIL",
       "linearError": null,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
-      "error": null,
+      "precisionRatio": "1:15",
+      "courses": 15,
+      "error": "AI err: Failed to parse LLM JSON output: Expected ',' or ']' after array element in JSON at position 175. Raw: ```json\n{\n  \"Units\": \"Feet\",\n  \"Tracts\": [\n    {\n      \"Name\": \"15 FOOT EASEMENT FOR DRAINAGE AND UTILITIES\",\n      \"POB\": {\n        \"Northing\": null,\n        \"Easting\": null\n      },\n      \"ReferencePointName\": \"Southwesterly corner of Farm Lot 2\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t                      ",
       "snippet": "﻿15 FOOT EASEMENT FOR DRAINAGE AND UTILITIES\n\nA 15 FOOT EASEMENT FOR DRAINAGE AND UTILITIES BEING A PART OF FARM LOT 26, BOWDEN FARMS AS RECORDED IN PLAT BOOK 6, PAGE 91, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENC",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "13904-proposed-esmnt.doc",
@@ -6496,7 +6496,7 @@
     {
       "fileName": "13904L-EASEMENTS.doc",
       "status": "PASS",
-      "linearError": 0.0014544410426125941,
+      "linearError": 0.00005425131138697737,
       "precisionRatio": "1:508,855",
       "courses": 11,
       "error": null,
@@ -6507,8 +6507,8 @@
       "fileName": "13904L-PARCEL-2.doc",
       "status": "PASS",
       "linearError": 0.00005425131138697737,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 9,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 20,
       "error": null,
       "snippet": "﻿PARCEL “2”:\nA PART OF FARM LOT 26, BOWDEN FARMS AS RECORDED IN PLAT BOOK 6, PAGE 91, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENCE COMMENCE AT THE SOUTHWESTERLY CORNER OF FARM LOT 26; THENCE N.5848’10”E. ALONG THE",
       "usedAi": true
@@ -6571,10 +6571,10 @@
     },
     {
       "fileName": "13939L-1.doc",
-      "status": "FAIL",
-      "linearError": 228.36940772664184,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 9,
+      "status": "PASS",
+      "linearError": 0.004661911006755721,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 8,
       "error": null,
       "snippet": "﻿PARCEL “1”\n\nA PART OF SECTION 32 OF A SUBDIVISION OF SECTION 37, OF THE JOHN BROWARD GRANT, TOWNSHIP 1 NORTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: FOR A POINT OF REFERENCE COMMENCE AT POINT ON THE WESTERLY RIGHT-OF-WAY LINE OF NEW BERLIN ROAD (ESTAB",
       "usedAi": true
@@ -6582,18 +6582,18 @@
     {
       "fileName": "13939L-2.doc",
       "status": "PASS",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 7,
+      "linearError": 0.004661911006755721,
+      "precisionRatio": "1:3",
+      "courses": 13,
       "error": null,
       "snippet": "﻿PARCEL “2”\n\nA PART OF SECTION 32 OF A SUBDIVISION OF SECTION 37, OF THE JOHN BROWARD GRANT, TOWNSHIP 1 NORTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA AND BEING THE WESTERLY 313 FEET OF THE FOLLOWING DESCRIBE PARCEL:\n\nFOR A POINT OF REFERENCE COMMENCE AT POINT ON THE WESTERLY RIGHT-OF-WAY LINE OF NEW B",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "13939L.doc",
-      "status": "FAIL",
-      "linearError": 228.34940474980385,
-      "precisionRatio": "1:1",
+      "status": "PASS",
+      "linearError": 0.004661911006755721,
+      "precisionRatio": "1:∞ (Open-Ended)",
       "courses": 8,
       "error": null,
       "snippet": "﻿\nLEGAL DESCRIPTION:\nA PART OF SECTION 32 OF A SUBDIVISION OF SECTION 37, OF THE JOHN BROWARD GRANT, TOWNSHIP 1 NORTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: FOR A POINT OF REFERENCE COMMENCE AT POINT ON THE WESTERLY RIGHT-OF-WAY LINE OF NEW BERLIN ROA",
@@ -6642,7 +6642,7 @@
     {
       "fileName": "13963L.doc",
       "status": "PASS",
-      "linearError": 0.004502933027073108,
+      "linearError": 0.0014856200827487406,
       "precisionRatio": "1:70,232",
       "courses": 8,
       "error": null,
@@ -6651,10 +6651,10 @@
     },
     {
       "fileName": "13973L.doc",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": 0.0012113010359737434,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 14,
       "error": null,
       "snippet": "﻿A PORTION OF LOTS 2,3,4,5 AND 6 OF KING SUBDIVISION, AS SHOWN ON THE MAP PLAT RECORDED IN PLAT BOOK 2, PAGE 53 OF THE FORMER PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA TOGETHER WITH LOTS 174,175,176,177,178,179,180, 181AND D OF EDMONDSON’S MAIN STREET ESTATES, AS SHOWN ON THE PLAT RECORDED IN PLAT BOO",
       "usedAi": true
@@ -6698,7 +6698,7 @@
     {
       "fileName": "14025L.doc",
       "status": "PASS",
-      "linearError": 0.0040182286908704064,
+      "linearError": 0.002884121745518147,
       "precisionRatio": "1:178,783",
       "courses": 8,
       "error": null,
@@ -6764,10 +6764,10 @@
       "status": "PASS",
       "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 2,
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING A PART FRAC. SECTION 5 , TOWNSHIP 3 SOUTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:   COMMENCING AT THE INTERSECTION OF THE NORTHERLY RIGHT-OF-WAY LINE OF DAWN ROAD (A 60.00 FOOT RIGH",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14092L.doc",
@@ -6810,7 +6810,7 @@
     {
       "fileName": "14112L.doc",
       "status": "PASS",
-      "linearError": 0.13962630865343956,
+      "linearError": 0.04329712147899387,
       "precisionRatio": "1:6,532",
       "courses": 8,
       "error": null,
@@ -6820,12 +6820,12 @@
     {
       "fileName": "14114-2L.doc",
       "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿A PART OF LOTS 7 AND 8, BLOCK 3, AS SHOWN ON THE PLAT OF GERMANTOWN, AS RECORDED IN PLAT 5, PAGE 31 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: \nCOMMENCING AT THE INTERSECTION OF THE NORTHERLY LINE OF SAID LOT 8 WITH THE  WESTERLY RIGHT-O",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14114L.doc",
@@ -6869,10 +6869,10 @@
     },
     {
       "fileName": "14149L.doc",
-      "status": "NO_COURSES",
-      "linearError": null,
-      "precisionRatio": "",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.014320597172859315,
+      "precisionRatio": "1:31,252",
+      "courses": 5,
       "error": null,
       "snippet": "﻿PART OF LOT 66, AS SHOWN ON MAP OF WINDERMERE UNIT NO. 5, AS RECORDED IN PLAT BOOK 39, PAGES 52 THROUGH 52E, OF THE PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGIN AT THE NORTHWEST CORNER OF LOT 66, SAID CORNER ALSO LYING ON THE EASTERLY RIGHT-OF-WAY LI",
       "usedAi": true
@@ -6910,7 +6910,7 @@
     {
       "fileName": "14182L + EASEMENT.doc",
       "status": "PASS",
-      "linearError": 0.007125977629704306,
+      "linearError": 0.0004231344216853179,
       "precisionRatio": "1:300,826",
       "courses": 13,
       "error": null,
@@ -7018,7 +7018,7 @@
     {
       "fileName": "14240L.doc",
       "status": "PASS",
-      "linearError": 0.0013368946814097244,
+      "linearError": 0.0007315236728895943,
       "precisionRatio": "1:634,812",
       "courses": 9,
       "error": null,
@@ -7028,12 +7028,12 @@
     {
       "fileName": "14241L.doc",
       "status": "PASS",
-      "linearError": 155.56993629782434,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 3,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING A PART OF THE F. BETHUNE GRANT, SECTION 38, TOWNSHIP 3 SOUTH, RANGE 26 EAST, DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE INTERSECTION OF THE EAST LINE OF SAID F. BETHUNE GRANT, WITH",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14244L.doc",
@@ -7203,13 +7203,13 @@
     },
     {
       "fileName": "14319L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.004185646707457201,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 27,
       "error": null,
       "snippet": "﻿A PORTION OF THE NORTHEAST 1/4 OF THE SOUTHEAST 1/4, SECTION 18, TOWNSHIP 5 SOUTH, RANGE 28 EAST, ST. JOHNS COUNTY, FLORIDA, ALL BEING MORE PARTICULARLY DESCCRIBED AS FOLLOWS:  FOR POINT OF REFERENCE, COMMENCE AT A CONCRETE  MONUMENT AT THE NORTHEAST CORNER OF SAID SECTION 18, AND RUN S.00°14’37”W.",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14321L.doc",
@@ -7532,12 +7532,12 @@
     {
       "fileName": "14456L.doc",
       "status": "PASS",
-      "linearError": 68.0583278473025,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 1,
+      "linearError": 0.00002891328776158381,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 5,
       "error": null,
       "snippet": "﻿A PART OF GOVERNMENT LOT 2, SECTION 7, TOWNSHIP 4 SOUTH, RANGE 28 EAST, DUVAL COUNTY, FLORIDA MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENCE COMMENCE AT REFERENCE POINT “V” AS ESTABLISHED BY THE DESCRIPTION OF BAYWOOD PARCEL “A” AS CONDITIONS AND RESTRICTIONS AS RECORDED IN OFFIC",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14470L.doc",
@@ -7632,7 +7632,7 @@
     {
       "fileName": "14506L.doc",
       "status": "PASS",
-      "linearError": 0.11142301699224268,
+      "linearError": 0.0027212787654848887,
       "precisionRatio": "1:15,750",
       "courses": 14,
       "error": null,
@@ -7661,13 +7661,13 @@
     },
     {
       "fileName": "14536L.doc",
-      "status": "FAIL",
-      "linearError": 317.7100175840239,
-      "precisionRatio": "1:6",
+      "status": "PASS",
+      "linearError": 0.0037534882042355115,
+      "precisionRatio": "1:499,001",
       "courses": 12,
       "error": null,
       "snippet": "﻿A TRACT OF LAND KNOWN AS LOT NO. 63, UNIT NO. 1 OF AN UNRECORDED SUBDIVISION KNOWN AS PIRATE’S WOOD, BEING A PORTION OF SECTION 43, TOWNSHIP 3 NORTH, RANGE 28 EAST, NASSAU COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE FOR A POINT OF REFERENCE AT REFERENCE POINT #2 OF PIRATE’S W",
-      "usedAi": false
+      "usedAi": true
     },
     {
       "fileName": "14539L-1.doc",
@@ -7762,7 +7762,7 @@
     {
       "fileName": "14606L.doc",
       "status": "PASS",
-      "linearError": 0.00028998125218963005,
+      "linearError": 0.0002757322769851869,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 18,
       "error": null,
@@ -7805,7 +7805,7 @@
       "courses": 4,
       "error": null,
       "snippet": "﻿A PART OF GOVERNMENT LOT 8, SECTION 31, TOWNSHIP 2 SOUTH, RANGE 29 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS;  FOR A POINT OF REFERENCE COMMENCE AT THE INTERSECTION OF THE SOUTHERLY RIGHT-OF-WAY LINE OF PLUMOSA DRIVE AND THE EASTERLY LINE OF SAID SECTION 31 AS SHOWN ON GIR",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14666L.doc",
@@ -7842,7 +7842,7 @@
     {
       "fileName": "14687L2.doc",
       "status": "PASS",
-      "linearError": 0.0036093967629489123,
+      "linearError": 0.00036998720878641053,
       "precisionRatio": "1:135,690",
       "courses": 9,
       "error": null,
@@ -7920,7 +7920,7 @@
     {
       "fileName": "14710L-REVISION.doc",
       "status": "PASS",
-      "linearError": 0.000790275309153835,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 12,
       "error": null,
@@ -7930,7 +7930,7 @@
     {
       "fileName": "14710L.doc",
       "status": "PASS",
-      "linearError": 0.000790275309153835,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 12,
       "error": null,
@@ -7984,7 +7984,7 @@
     {
       "fileName": "14734-A,B.doc",
       "status": "PASS",
-      "linearError": 0.00011513819445101957,
+      "linearError": 0.00005399605921163849,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 8,
       "error": null,
@@ -8024,12 +8024,12 @@
     {
       "fileName": "14746L2.doc",
       "status": "FAIL",
-      "linearError": 150.2500000000005,
+      "linearError": null,
       "precisionRatio": "1:1",
       "courses": 1,
       "error": null,
       "snippet": "﻿TOGETHER WITH\nTHAT CERTAIN TRACT OR PARCEL OF LAND BEING A PART OF THE SARAH FAULK GRANT, SECTION 26, TOWNSHIP 4 SOUTH, RANGE 26 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS COMMENCING AT THE INTERSECTION OF THE SOUTHERLY LINE OF SAID SARAH FAULK GRANT, SECTION 26, WITH THE WES",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14750L.doc",
@@ -8041,13 +8041,13 @@
     },
     {
       "fileName": "14765L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 6,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 8,
       "error": null,
       "snippet": "﻿LOT 1 AS SHOWN ON MAP OF SPRING PARK MANOR SECOND ADDITION TO UNIT ONE, AS RECORDED IN PLAT BOOK 21, PAGE 59 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, TOGETHER WITH A PORTION OF SECTION 30, TOWNSHIP 2 SOUTH, RANGE 27 EAST, OF SAID COUNTY AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOW",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14769BL.doc",
@@ -8072,7 +8072,7 @@
     {
       "fileName": "14770L.doc",
       "status": "PASS",
-      "linearError": 0.0778324008226102,
+      "linearError": 0.004192313325722512,
       "precisionRatio": "1:109,634",
       "courses": 14,
       "error": null,
@@ -8092,9 +8092,9 @@
     {
       "fileName": "14773L.doc",
       "status": "PASS",
-      "linearError": 0.0008507402612651385,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 5,
+      "linearError": 0.09914925973910181,
+      "precisionRatio": "1:8,879",
+      "courses": 4,
       "error": null,
       "snippet": "﻿A PART OF THE SOUTHEAST 1/4 OF SECTION 10 OF A SUBDIVISION OF THE JOHN BROWARD GRANT, SECTION 37, TOWNSHIP 1 NORTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS;\nBEGIN AT THE INTERSECTION WITH NORTH RIGHT-OF-WAY LINE OF FIELDS ROAD (60.00 FOOT RIGHT-OF-WAY AS E",
       "usedAi": false
@@ -8117,10 +8117,10 @@
     },
     {
       "fileName": "14779L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 7,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 13,
       "error": null,
       "snippet": "﻿LAND SITUATE, LYING AND BEING IN THE COUNTY, OF DUVAL, STATE OF FLORIDA, TO WIT: \nA PORTION OF THOSE LANDS DESCRIBED IN OFFICIAL RECORDS VOLUME 5580, PAGES 829 AND 830, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND ALSO PART OF THE W.J. NOLAN’S REPLAT, AS RECORDED IN PLAT BOOK 14, PAG",
       "usedAi": true
@@ -8221,9 +8221,9 @@
     {
       "fileName": "14823L.doc",
       "status": "PASS",
-      "linearError": 0.004753404248441668,
-      "precisionRatio": "1:260,119",
-      "courses": 7,
+      "linearError": 0.0005165279847722825,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 6,
       "error": null,
       "snippet": "﻿A FRACTIONAL PART OF GOVERNMENT LOTS 1 AND 2, SECTION 6, TOWNSHIP 2 SOUTH, RANGE 26 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS: COMMENCE AT THE SOUTHWEST CORNER OF SAID GOVERNMENT LOT 1, RUN THENCE N.85°45’00”E., 44.93 FEET; THENCE N.01°17’00”W., 59.35 FEET TO THE POINT OF ",
       "usedAi": false
@@ -8265,7 +8265,7 @@
     {
       "fileName": "14847L.doc",
       "status": "PASS",
-      "linearError": 0.003945242266313482,
+      "linearError": 0.0033177187889604186,
       "precisionRatio": "1:171,695",
       "courses": 9,
       "error": null,
@@ -8294,13 +8294,13 @@
     },
     {
       "fileName": "14871L.doc",
-      "status": "FAIL",
-      "linearError": 442.61490629474247,
-      "precisionRatio": "1:1",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.0016186373693491945,
+      "precisionRatio": "1:614,591",
+      "courses": 6,
       "error": null,
       "snippet": "﻿PARCEL NO. 40 OF DEERWOOD ACRES IN SECTION 5 AND 6, TOWNSHIP 5 SOUTH, RANGE 24 EAST\nDESCRIPTION:\nCOMMENCE AT THE SOUTHEAST CORNER OF SECTION 6, TOWNSHIP 5 SOUTH, RANGE 24 EAST AND RUN S.89°47’58”W. ALONG THE SOUTH LINE OF SAID SECTION 1437.84 FEET, THENCE RUN N.33°19’05”E. 608.27 FEET TO THE POINT ",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14881L.doc",
@@ -8343,7 +8343,7 @@
     {
       "fileName": "14919L.doc",
       "status": "PASS",
-      "linearError": 0.004915642593043305,
+      "linearError": 0.0037912460958575596,
       "precisionRatio": "1:776,835",
       "courses": 15,
       "error": null,
@@ -8352,18 +8352,18 @@
     },
     {
       "fileName": "14926L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.0003399207114021452,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 5,
       "error": null,
       "snippet": "﻿LOT 15, MIMOSA WOODS\nCOMMENCE AT THE SW CORNER OF SECTION 4, TOWNSHIP 5 SOUTH, RANGE 24 EAST, AND RUN N.02°59’06”E. ALONG THE WEST R/W OF A 60.00 FOOT ACCESS ROAD 114.21 FEET, THENCE RUN N.58°00’00”W. ALONG SAID R/W 364.15 FEET, THENCE RUN N.00°31’56”W. ALONG SAID R/W 887.91 FEET TO A POINT ON THE ",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "14943L.doc",
       "status": "PASS",
-      "linearError": 0.10329752237300151,
+      "linearError": 0.00043416920559983076,
       "precisionRatio": "1:6,405",
       "courses": 9,
       "error": null,
@@ -8500,23 +8500,23 @@
     },
     {
       "fileName": "15031L.doc",
-      "status": "FAIL",
-      "linearError": 120.00076901981555,
-      "precisionRatio": "1:7",
-      "courses": 4,
+      "status": "PASS",
+      "linearError": 0.000557462377973637,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 6,
       "error": null,
       "snippet": "﻿LOT 1, BLOCK 1, RIVER RANCH ESTATES, ACCORDING TO AN UNRECORDED PLAT THEREOF PREPARED BY LOUIS H. MCKEE,   REGISTERED SURVEYOR NO. 1221, DATED SEPTEMBER 11, 1967, SAID LOT 1 BEING A PORTION OF LOT 3, SUMMERLIN, A SUBDIVISION SITUATED IN CLAY COUNTY, FLORIDA, ACCORDING TO PLAT BOOK 5, PAGE 11 OF THE",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "15036L.doc",
       "status": "PASS",
-      "linearError": 0.0017394872476171363,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 4,
+      "linearError": 0.003606883464201663,
+      "precisionRatio": "1:309,347",
+      "courses": 8,
       "error": null,
       "snippet": "﻿PARCEL “4”:\nA PARCEL OF LAND LYING IN THE NE 1/4 OF SECTION 22, TOWNSHIP 5 SOUTH, RANGE 24 EAST, CLAY COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: COMMENCE AT A CONCRETE MONUMENT LOCATED ON THE SOUTHERLY BOUNDARY OF THE RIGHT-OF-WAY OF ANCHOR ROAD AT THE NE CORNER OF TRACT “A”",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "15043L.doc",
@@ -8537,9 +8537,9 @@
     {
       "fileName": "15054L.doc",
       "status": "PASS",
-      "linearError": 0.009093099975419539,
+      "linearError": 0.00014996234897274565,
       "precisionRatio": "1:65,169",
-      "courses": 13,
+      "courses": 12,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING A PART OF BLOCK 3, AS SHOWN ON THE PLAT OF THOMPSON REALTY COMPANY, INC. REPLAT, AS RECORDED IN PLAT BOOK 14, PAGE 95 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:\nCOMME",
       "usedAi": false
@@ -8547,9 +8547,9 @@
     {
       "fileName": "15054L2.doc",
       "status": "PASS",
-      "linearError": 0.009093099975419539,
+      "linearError": 0.00014996234897274565,
       "precisionRatio": "1:65,169",
-      "courses": 13,
+      "courses": 12,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND, SITUATE, LYING AND BEING A PART OF BLOCK 3, AS SHOWN ON THE PLAT OF THOMPSON REALTY COMPANY, INC. REPLAT, AS RECORDED IN PLAT BOOK 14, PAGE 95 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:\nCOMME",
       "usedAi": false
@@ -8577,7 +8577,7 @@
     {
       "fileName": "15088L.doc",
       "status": "PASS",
-      "linearError": 0.024492530584821526,
+      "linearError": null,
       "precisionRatio": "1:25,628",
       "courses": 8,
       "error": null,
@@ -8767,9 +8767,9 @@
     {
       "fileName": "15155-1.doc",
       "status": "PASS",
-      "linearError": 0.004796686779627635,
-      "precisionRatio": "1:226,654",
-      "courses": 5,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿PARCEL “A”\n\nA PART OF SECTION 24, TOWNSHIP 4, SOUTH, RANGE 25 EAST,  CLAY COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: \nFOR A POINT OF BEGINNING, COMMENCE AT THE INTERSECTION OF THE SOUTHWESTERLY LINE OF LOT 1, LAKE VILLAS AS RECORDED IN PLAT BOOK 1, PAGE 52, OF PUBLIC RECORDS ",
       "usedAi": false
@@ -8787,12 +8787,12 @@
     {
       "fileName": "15164L.doc",
       "status": "PASS",
-      "linearError": 115.62971456063372,
-      "precisionRatio": "1:∞ (Open-Ended)",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
       "courses": 4,
       "error": null,
       "snippet": "﻿PART OF THE SOUTHWEST 1/4, SECTION 13, TOWNSHIP 1 SOUTH, RANGE 25 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS: COMMENCE AT THE SOUTHWESTERLY INTERSECTION OF GARDEN STREET AND OLD KINGS ROAD AS NOW ESTABLISHED BY THE COUNTY ENGINEER’S OFFICE OF DUVAL COUNTY, FLORIDA, AND RUN ",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "15174L.doc",
@@ -8930,10 +8930,10 @@
     },
     {
       "fileName": "15228L1.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 3,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATE , LYING AND BEING A PART OF GOVERNMENT LOT 12, SECTION 7, TOWNSHIP 2 SOUTH, RANGE 28 EAST, DUVAL COUNTY, FLORIDA AND ALL BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS: BEGINNING AT THE INTERSECTION OF THE WESTERLY LINE OF SAID GOVERNMENT LOT 12, WI",
       "usedAi": true
@@ -8990,40 +8990,40 @@
     },
     {
       "fileName": "15298L.doc",
-      "status": "FAIL",
-      "linearError": 203.34285059121757,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿LOT 28, BLOCK 3, NASSAU PLANTATIONS, AN UNRECORDED SUBDIVISION SITUATE IN NASSAU COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:\nCOMMENCE AT THE NORTHWEST CORNER OF GOVERNMENT LOT 3, SECTION 10, TOWNSHIP 1 NORTH, RANGE 25 EAST, AND RUN N.89°58’11”E. ALONG THE NORTH LINE OF THE NORTHEAST 1/",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "15298L_dup (1).doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿PART OF TRACT 7 AND 8, DINSMORE FARMS, (UNRECORDED), SECTION 7, TOWNSHIP 1 SOUTH, RANGE 26 EAST, MORE PARTICULARLY DESCRIBED AS FOLLOWS: BEGIN AT THE INTERSECTION OF THE SOUTHERLY RIGHT-OF-WAY LINE OF DUNN’S AVENUE, A 100.00 FOOT  RIGHT-OF-WAY, AND THE EASTERLY RIGHT-OF-WAY LINE OF V.C. JOHNSON ROA",
       "usedAi": true
     },
     {
       "fileName": "15298L_dup.doc",
-      "status": "NO_COURSES",
+      "status": "PASS",
       "linearError": null,
-      "precisionRatio": "",
+      "precisionRatio": "1:∞ (Perfect)",
       "courses": 4,
       "error": null,
       "snippet": "﻿LOT 28, BLOCK 3, NASSAU PLANTATIONS, AN UNRECORDED SUBDIVISION SITUATE IN NASSAU COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:\nCOMMENCE AT THE NORTHWEST CORNER OF GOVERNMENT LOT 3, SECTION 10, TOWNSHIP 1 NORTH, RANGE 25 EAST, AND RUN N.89°58’11”E. ALONG THE NORTH LINE OF THE NORTHEAST 1/",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "15301L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿PART OF TRACT 7 AND 8, DINSMORE FARMS, (UNRECORDED), SECTION 7, TOWNSHIP 1 SOUTH, RANGE 26 EAST, MORE PARTICULARLY DESCRIBED AS FOLLOWS: BEGIN AT THE INTERSECTION OF THE SOUTHERLY RIGHT-OF-WAY LINE OF DUNN’S AVENUE, A 100.00 FOOT  RIGHT-OF-WAY, AND THE EASTERLY RIGHT-OF-WAY LINE OF V.C. JOHNSON ROA",
       "usedAi": true
@@ -9119,9 +9119,9 @@
     {
       "fileName": "15409L.doc",
       "status": "PASS",
-      "linearError": 0.0034596925339014494,
-      "precisionRatio": "1:556,954",
-      "courses": 5,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿BEING A PART OF THE EAST 1/2 OF SECTION 16, TOWNSHIP 1 SOUTH, RANGE 25 EAST, DUVAL COUNTY, FLORIDA AND MORE PARTICULARLY DESCRIBED AS FOLLOWS: COMMENCE AT THE INTERSECTION OF THE NORTH RIGHT-OF-WAY OF GARDEN STREET ROAD, AS NOW ESTABLISHED FOR A WIDTH OF 80.00 FEET, WITH THE EAST RIGHT-OF-WAY LINE ",
       "usedAi": false
@@ -9129,7 +9129,7 @@
     {
       "fileName": "15412L.doc",
       "status": "PASS",
-      "linearError": 0.2950545308316209,
+      "linearError": 0.003143003383657934,
       "precisionRatio": "1:757",
       "courses": 9,
       "error": null,
@@ -9187,9 +9187,9 @@
     {
       "fileName": "15455L.doc",
       "status": "PASS",
-      "linearError": 0.0008286815255118702,
-      "precisionRatio": "1:292,766",
-      "courses": 5,
+      "linearError": 0.029171318474949505,
+      "precisionRatio": "1:8,316",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nPARCEL 1:\n\nLot 6, Block 15, (Except the West 90 feet thereof), PLAT NO. I, SUBDIVISION \"A\",\nATLANTIC BEACH, according to plat thereof as recorded in Plat Book 5, page 69 of the\ncurrent public records of Duval County, Florida.\n\n\nPARCEL 2:\nThat certain parcel of land lying Easterly of Lot 6, Block 1",
       "usedAi": false
@@ -9197,7 +9197,7 @@
     {
       "fileName": "15495.DOC",
       "status": "PASS",
-      "linearError": 0.016891775206323394,
+      "linearError": 0.00045736051426466636,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 10,
       "error": null,
@@ -9251,7 +9251,7 @@
     {
       "fileName": "7516L.doc",
       "status": "PASS",
-      "linearError": 0.04100505176533849,
+      "linearError": 0.006043357624377448,
       "precisionRatio": "1:27,827",
       "courses": 13,
       "error": null,
@@ -9395,9 +9395,9 @@
     {
       "fileName": "8034L.doc",
       "status": "PASS",
-      "linearError": 0.000010065504981345638,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 5,
+      "linearError": 0.003667243105761331,
+      "precisionRatio": "1:121,432",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nTHAT CERTAIN TRACT OR PARCEL OF LAND, BEING A PART OF THE F. RICHARD GRANT, SECTION 27, TOWNSHIP 2 SOUTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA , BEING MORE PARTICULARLY DESCRIBED AS COMMENCING AT THE INTERSECTION OF THE NORTHERLY RIGHT-OF-WAY LINE OF BEACH BOULEVARD (A 200.00 FOOT RIGHT-OF-WAY) W",
       "usedAi": false
@@ -9531,7 +9531,7 @@
     {
       "fileName": "8181L.doc",
       "status": "PASS",
-      "linearError": 0.0070709748965548675,
+      "linearError": 0.0002771237577837556,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 15,
       "error": null,
@@ -9588,10 +9588,10 @@
     },
     {
       "fileName": "8205L2.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 0,
       "error": null,
       "snippet": "﻿PARCEL “B”: \nA PORTION OF LOTS 5 AND 6 SITUATE, LYING AND BEING IN SECTION 28, TOWNSHIP 2 NORTH, RANGE 25 EAST, NASSAU COUNTY, FLORIDA, BEING A PORTION OF THE EAST CALLAHAN SUBDIVISION AS RECORDED IN PLAT BOOK 1, PAGES 2 AND 35 OF THE PUBLIC RECORDS OF NASSAU COUNTY, FLORIDA, AND BEING FURTHER DESC",
       "usedAi": true
@@ -9609,22 +9609,22 @@
     {
       "fileName": "8207L.doc",
       "status": "PASS",
-      "linearError": 196.73460589439816,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": 0.007806738264031747,
+      "precisionRatio": "1:164,476",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nA PART OF THE NORTHEAST 1/4 OF SECTION 12, TOWNSHIP 4 SOUTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENCE COMMENCE AT  REFERENCE POINT “V” AS ESTABLISHED BY THE DESCRIPTION OF BAYWOOD PARCEL “A” AS DESCRIBED IN EXHIBIT C OF BAYWOOD DECLARAT",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8209L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nA PORTION OF GOVERNMENT LOT 13, SECTION 11 AND A PORTION OF GOVERNMENT LOT 3, SECTION 14, SITUATED IN TOWNSHIP 5 SOUTH, RANGE 24 EAST, CLAY COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE INTERSECTION OF THE WEST LINE OF GOVERNMENT LOT 3, OF SECTION 14, AFOREMENTION",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8214L.doc",
@@ -9687,12 +9687,12 @@
     {
       "fileName": "8235L.doc",
       "status": "PASS",
-      "linearError": 0.009999999999940508,
-      "precisionRatio": "1:54,036",
-      "courses": 5,
+      "linearError": 0.002152840787000679,
+      "precisionRatio": "1:407,048",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPARCEL NO. 4 OF TURKEY CREEK IN SECTION 5-T5S-R-24E:\nCOMMENCE AT THE SOUTHWEST CORNER OF THE NORTH HALF OF THE NORTH HALF OF SECTION 5, TOWNSHIP 5 SOUTH, RANGE 24 EAST AND RUN N.8941’29”E. ALONG THE SOUTH LINE OF SAID NORTH HALF OF NORTH HALF 1525.00 FEET TO THE NORTHEAST CORNER OF HOLLY OAKS (U",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8239L.doc",
@@ -9890,13 +9890,13 @@
     },
     {
       "fileName": "8343L.doc",
-      "status": "FAIL",
-      "linearError": 672.1900000000003,
-      "precisionRatio": "1:2",
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
       "courses": 4,
       "error": null,
       "snippet": "﻿\n\nA PART OF THE DAVID SCURRY GRANT, SECTION 37, TOWNSHIP 3 SOUTH, RANGE 27 EAST, DESCRIBED AS FOLLOWS:  COMMENCING AT THE INTERSECTION OF THE SOUTHERLY LINE OF PLOVER ROAD (COUNTY ROAD NO. 1460) AND THE SOUTHERLY LINE OF GOODBY LAKE ROAD (COUNTY ROAD NO. 76);  THENCE S.6739’35”E., ALONG SAID SOUTH",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8349L.doc",
@@ -9995,12 +9995,12 @@
     {
       "fileName": "8422L.doc",
       "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPARCEL NO. 3 OF HOLLY OAKS IN SECTIONS 5 AND 6, TOWNSHIP 5 SOUTH, RANGE 24 EAST.\nDESCRIPTION:\nCOMMENCE AT THE SOUTHEAST CORNER OF THE NORTHEAST 1/4 OF THE NORTHEAST 1/4 OF SECTION 6, TOWNSHIP 5 SOUTH, RANGE 24 EAST (BEING THE SOUTHWEST CORNER OF THE NORTH 1/2 OF THE NORTH 1/2 OF SECTION 5)  AND R",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8435L.doc",
@@ -10021,9 +10021,9 @@
     {
       "fileName": "8444L.doc",
       "status": "PASS",
-      "linearError": 8.566578896534997e-7,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 5,
+      "linearError": 0.0300008566577294,
+      "precisionRatio": "1:21,137",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPART OF LOT 11, LOVE GROVE FARMS, ACCORDING TO PLAT RECORDED IN PLAT BOOK 7, PAGE 3, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS  COMMENCING AT THE INTERSECTION OF THE NORTHWESTERLY RIGHT-OF-WAY LINE OF PARENTAL HOME ROAD AS NOW ESTABLISHED FOR A WIDTH O",
       "usedAi": false
@@ -10085,9 +10085,9 @@
     {
       "fileName": "8461L.doc",
       "status": "PASS",
-      "linearError": 0.0046314203621359885,
-      "precisionRatio": "1:157,248",
-      "courses": 5,
+      "linearError": 0.13536857963750715,
+      "precisionRatio": "1:5,379",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATE, LYING AND BEING IN THE COUNTY OF ST. JOHNS, STATE OF FLORIDA, TO WIT:  \nA PART OF THE FRANCIS P. FATIO GRANT, SECTION 44, TOWNSHIP 5 SOUTH, RANGE 26 EAST, ST. JOHNS COUNTY, FLORIDA, AND MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT AN I",
       "usedAi": false
@@ -10238,23 +10238,23 @@
     },
     {
       "fileName": "8581L.doc",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nPART OF TRACT 7 AND 8, DINSMORE FARMS (UNRECORDED), SECTION 7, TOWNSHIP 1 SOUTH, RANGE 26 EAST, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGIN AT THE INTERSECTION OF THE SOUTHERLY RIGHT-OF-WAY LINE OF DUNN’S AVENUE, A 100.00 FOOT RIGHT-OF-WAY, AND THE EASTERLY RIGHT-OF-WAY LINE OF V.C. JOHNSON ROA",
       "usedAi": true
     },
     {
       "fileName": "8589L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nPART OF LOT 4, RUTLEDGE SUBDIVISION OF LOT 20 PICKETT’S SUBDIVISION AS RECORDED IN PLAT BOOK 3, PAGE 8 OF THE PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, AND MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT A POINT WHERE THE NORTHEASTERLY LINE OF SAID LOT 4 INTERSECTS THE NORTHWESTERLY RIGHT-OF",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8601L.doc",
@@ -10285,12 +10285,12 @@
     {
       "fileName": "8622L.doc",
       "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "linearError": 0.004269064896266663,
+      "precisionRatio": "1:277,895",
+      "courses": 6,
       "error": null,
       "snippet": "﻿\n\nA PARCEL OF LAND SITUATED IN THE EAST 1/2 OF THE SOUTHEAST 1/4 OF SECTION 19, TOWNSHIP 5 SOUTH, RANGE 25 EAST, CLAY COUNTY, FLORIDA, SAI PARCEL BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE SOUTHEAST CORNER OF SAID SECTION 19AND RUN N.0030’07”W.,  ALONG THE EAST LINE OF SAID SEC",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8624L.doc",
@@ -10357,7 +10357,7 @@
     {
       "fileName": "8685L.doc",
       "status": "PASS",
-      "linearError": 0.00291014484332627,
+      "linearError": 0.000013002486799334631,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 17,
       "error": null,
@@ -10387,7 +10387,7 @@
       "status": "NO_COURSES",
       "linearError": null,
       "precisionRatio": "",
-      "courses": 2,
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nA PART OF LOT 6 OF THE SUBDIVISION OF THE ESTATE OF J.A. PICKETT AS SHOWN ON PLAT RECORDED IN PLAT BOOK 8, PAGES 44 AND 45 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCING AT THE MOST WESTERLY CORNER OF LOT 15, AS SHOWN ON PLAT OF LAKE FOR",
       "usedAi": true
@@ -10493,9 +10493,9 @@
     {
       "fileName": "8817L.doc",
       "status": "PASS",
-      "linearError": 0.027249983047684667,
+      "linearError": 0.00033946924265722885,
       "precisionRatio": "1:∞ (Perfect)",
-      "courses": 8,
+      "courses": 7,
       "error": null,
       "snippet": "﻿LOT 14, (WEST), PART OF THE SOUTHEAST QUARTER OF SECTION 1. TOWNSHIP 7 SOUTH, RANGE 27 EAST, EAST ST. JOHNS COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE INTERSECTION OF THE WEST LINE OF THE SOUTHEAST QUARTER OF SECTION 1, TOWNSHIP 7 SOUTH, RANGE 27 EAST, WITH THE NORTHE",
       "usedAi": false
@@ -10577,7 +10577,7 @@
     {
       "fileName": "8893L.doc",
       "status": "PASS",
-      "linearError": 0.12598415845656305,
+      "linearError": 1.2862197421537486e-12,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 10,
       "error": null,
@@ -10586,10 +10586,10 @@
     },
     {
       "fileName": "8900L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT PART OF GOVERNMENT LOT 2, SECTION 31, TOWNSHIP 2 SOUTH, RANGE 29 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS:  BEGINNING AT INTERSECTION OF THE EAST LINE OF SAN PABLO ROAD AND THE SOUTH LINE OF SAID GOVERNMENT LOT 2;  THENCE EAST A DISTANCE OF 500.00 FEET ALONG THE SOUTH LINE O",
       "usedAi": true
@@ -10616,13 +10616,13 @@
     },
     {
       "fileName": "8923L.doc",
-      "status": "FAIL",
-      "linearError": 319.2933874752152,
-      "precisionRatio": "1:2",
-      "courses": 3,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿A PORTION OF FARM 7, BLOCK 37, ORTEGA FARMS, ACCORDING TO THE MAP THEREOF RECORDED IN PLAT BOOK 3, PAGE 79 OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE INTERSECTION OF THE EASTERLY RIGHT-OF-WAY LINE OF SEABOARD AVENUE (A 60.00 FOOT",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "8942L.doc",
@@ -10711,7 +10711,7 @@
     {
       "fileName": "9012L.doc",
       "status": "PASS",
-      "linearError": 0.004575436347661643,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 7,
       "error": null,
@@ -10736,13 +10736,13 @@
     },
     {
       "fileName": "9048L.doc",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": 0.0036196006783515006,
+      "precisionRatio": "1:68,121",
+      "courses": 3,
       "error": null,
       "snippet": "﻿LOT 7, AND A PORTION OF LOT 8, BLOCK 18, OCEAN FOREST, UNIT THREE, AS RECORDED IN PLAT BOOK 29, PAGES 33, 33A AND 33B OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA;  SAID PORTION OF LOT 8, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGINNING AT THE NORTHERLY CORNER OF SAID LOT 8;  THEN",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9051L.doc",
@@ -10806,10 +10806,10 @@
     },
     {
       "fileName": "9081L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "",
+      "courses": 1,
       "error": null,
       "snippet": "﻿SOUTH 98.00 FEET, MORE OR LESS, OF UNNUMBERED LOT ABUTTING ON THE WEST LOT 11 OF DONNER’S SUBDIVISION, ACCORDING TO A PLAT THEREOF RECORDED IN PLAT BOOK 8, PAGE 4, OF THE CURRENT PUBLIC RECORDS OF PLATS IN SAID DUVAL COUNTY AND MORE PARTICULARLY DESCRIBED AS BEGINNING ON THE WEST LINE OF SAID LOT 1",
       "usedAi": true
@@ -10826,13 +10826,13 @@
     },
     {
       "fileName": "9083L.doc",
-      "status": "FAIL",
-      "linearError": 553.9379150891386,
-      "precisionRatio": "1:1",
-      "courses": 5,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT CERTAIN TRACT OR PARCEL OF LAND, BEING A PART OF THE NORTH 1/2 OF THE NORTHWEST 1/4 OF THE NORTHEAST 1/4 OF SECTION 18, TOWNSHIP 2 SOUTH, RANGE 26 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS COMMENCING AT THE INTERSECTION OF THE WESTERLY LINE OF THE NORTHWEST 1/4 OF THE NORTHEA",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9092L.doc",
@@ -10865,7 +10865,7 @@
     {
       "fileName": "9103L.doc",
       "status": "PASS",
-      "linearError": 0.001513053410314573,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 18,
       "error": null,
@@ -10875,7 +10875,7 @@
     {
       "fileName": "9126L.doc",
       "status": "PASS",
-      "linearError": 0.002460378487726618,
+      "linearError": null,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 12,
       "error": null,
@@ -10904,13 +10904,13 @@
     },
     {
       "fileName": "9135L.doc",
-      "status": "FAIL",
-      "linearError": 385.19704649982697,
-      "precisionRatio": "1:3",
-      "courses": 7,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATE, LYING AND BEING IN THE CITY OF JACKSONVILLE, COUNTY OF DUVAL, STATE OF FLORIDA, TO WIT:\nA PART OF THE SOUTHWEST 1/4 OF THE NORTHWEST 1/4 OF SECTION 29, TOWNSHIP 2 SOUTH, RANGE 25 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9139L.doc",
@@ -11110,41 +11110,41 @@
       "fileName": "9241L.doc",
       "status": "PASS",
       "linearError": 0.0009990758730908334,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 6,
+      "precisionRatio": "1:685,543",
+      "courses": 9,
       "error": null,
       "snippet": "﻿\n\nLOT 2:\nA PARCEL OF LAND BEING A PART OF SECTION 9, TOWNSHIP 5 SOUTH, RANGE 25 EAST, CLAY COUNTY, FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE FOR A POINT OF REFERENCE AT A CONCRETE MONUMENT AT THE SOUTHEAST CORNER OF THE NORTHEAST 1/4 OF SAID SECTION 9, THENCE N.0000’57”E",
       "usedAi": true
     },
     {
       "fileName": "9243L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.0020765287152607345,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 13,
       "error": null,
       "snippet": "﻿\n\nTHAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATED,  LYING AND BEING IN THE CITY OF JACKSONVILLE, COUNTY OF DUVAL, STATE OF FLORIDA, TO WIT:  THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATED, LYING AND BEING A PART OF THE CHARLES F. SIBBALD GRANT, SECTION 39, TOWNSHIP 1 SOUTH, RANGE 26 EAST",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9253L.doc",
-      "status": "FAIL",
-      "linearError": 74.29678638460317,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 10,
       "error": null,
       "snippet": "﻿\nBEING A PART OF GOVERNMENT LOT 1, FRACTIONAL SECTION 9, TOWNSHIP 2 SOUTH, RANGE 29 EAST, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR POINT OF REFERENCE, COMMENCE AT A POINT ON THE NORTHWEST CORNER OF LOT 80-A, AS SHOWN ON MAP OF NORTH ATLANTIC BEACH, UNIT 3, R-C-B-S CORPORATION, ACCORDING TO PLAT",
       "usedAi": true
     },
     {
       "fileName": "9254L.doc",
-      "status": "FAIL",
-      "linearError": 485.0458180970847,
-      "precisionRatio": "1:1",
-      "courses": 3,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nPARCEL NO. 14, OF GREEN ACRES IN SECTIONS 4 AND 5, TOWNSHIP 5 SOUTH, RANGE 24 EAST, CLAY COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:\nCOMMENCE AT THE NORTHEAST CORNER OF THE SOUTH HALF OF THE NORTHWEST 1/4 OF SECTION 4, TOWNSHIP 5 SOUTH, RANGE 24 EAST, AND RUN S.8941’09”W. ALONG THE N",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9257L.doc",
@@ -11166,20 +11166,20 @@
     },
     {
       "fileName": "9272L.doc",
-      "status": "FAIL",
-      "linearError": 81.8369778138148,
-      "precisionRatio": "1:3",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.022587900490680837,
+      "precisionRatio": "1:186,205",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nA PARCEL OF LAND SITUATED IN THE NE 1/4 OF THE SW 1/4 OF SECTION 27, TOWNSHIP 7 SOUTH, RANGE 24 EAST, CLAY COUNTY, FLORIDA, SAID PARCEL BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE NORTHEAST CORNER OF SAID NE 1/4 OF THE SW 1/4 AND RUN S.8925’07”W. ALONG THE NORTH LINE OF THE SAI",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9274L.doc",
-      "status": "FAIL",
-      "linearError": 33.046529762300395,
-      "precisionRatio": "1:28",
-      "courses": 6,
+      "status": "PASS",
+      "linearError": 0.004092523507092421,
+      "precisionRatio": "1:216,187",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPART OF SHEFFIELD VILLAGE,  AS RECORDED IN PLAT BOOK 5, PAGES 28 AND 29, OF THE PUBLIC RECORDS OF NASSAU COUNTY, FLORIDA BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE MOST NORTHERLY CORNER OF LOT 16, BLOCK 4, OF SAID SHEFFIELD VILLAGE;  THENCE ALONG THE SOUTHEASTERLY RIGHT-OF-WAY",
       "usedAi": true
@@ -11246,10 +11246,10 @@
     },
     {
       "fileName": "9306L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "",
+      "courses": 4,
       "error": null,
       "snippet": "﻿THAT CERTAIN PIECE, PARCEL OR TRACT OF LAND SITUATE, LYING AND BEING IN THE COUNTY OF DUVAL AND STATE OF FLORIDA, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  A PART OF LOT 2, BLOCK 21, EDGEWOOD, ACCORDING TO PLAT THEREOF RECORDED IN PLAT BOOK 2, PAGE 37 AND BEING MORE PARTICULARLY DESCRIBED ",
       "usedAi": true
@@ -11292,23 +11292,23 @@
     },
     {
       "fileName": "9363L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 6,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 8,
       "error": null,
       "snippet": "﻿PART OF GOVERNMENT LOT 1, SECTION 20, TOWNSHIP 4 SOUTH, RANGE 27 EAST LYING EAST OF ALADDIN ROAD (A 60.00 FOOT COUNTY ROAD AS NOW ESTABLISHED),   MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT AN IRON ON THE EASTERLY RIGHT-OF-WAY OF SAID ALADDIN ROAD WHERE IT INTERSECTS THE NORTHERLY LINE OF ",
       "usedAi": true
     },
     {
       "fileName": "9374L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.003603311175457963,
+      "precisionRatio": "1:25,865",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\nTHOSE CERTAIN PARTS AND PORTIONS OF LOTS 10 AND 11, BLOCK 71 OF THE MAIN STREET COMPANY’S S/D OF LOT 8 AND 10, BLOCK “M”, LONGBRANCH, PLAT BOOK 5, PAGE 11, PARTICULARLY DESCRIBED AS FOLLOWS:  BEGINNING AT A POINT OF THE SOUTH LINE OF LOT 11, BLOCK 71, AFORESAID, WHICH POINT IS 28.00 FEET EAST OF T",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9381L.doc",
@@ -11354,10 +11354,10 @@
     },
     {
       "fileName": "9401L2.doc",
-      "status": "PASS",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 0,
       "error": null,
       "snippet": "﻿PARCEL “B” AND “C”  OVERALL:\nA PART OF FARM LOT 26, BOWDEN FARMS AS RECORDED IN PLAT BOOK 6, PAGE 91, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF BEGINNING COMMENCE AT THE INTERSECTION OF THE SOUTHEASTERLY LINE OF FARM 26,",
       "usedAi": true
@@ -11440,10 +11440,10 @@
     },
     {
       "fileName": "9522L.doc",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\n\nPART OF BLOCK 4, OF AN UNRECORDED SUBDIVISION KNOWN AS WEST PABLO SITUATED IN LINE IN GOVERNMENT LOT 6, SECTION 33, TOWNSHIP 2 SOUTH, RANGE 29 EAST, AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  BEGIN AT THE SOUTHWEST CORNER OF BLOCK F, PABLO BEACH SOUTH, PLAT BOOK 3, PAGE 28, CURRENT PUBLIC",
       "usedAi": true
@@ -11505,7 +11505,7 @@
       "fileName": "9558L.doc",
       "status": "PASS",
       "linearError": 0.0017507069968004851,
-      "precisionRatio": "1:∞ (Perfect)",
+      "precisionRatio": "1:17",
       "courses": 9,
       "error": null,
       "snippet": "﻿THAT CERTAIN TRACT OR PARCEL OF LAND BEING A PORTION OF THE NORTH 1/2 OF SECTION 12 OF A SUBDIVISION OF THE JOHN BROWARD GRANT, SECTION 38, TOWNSHIP 1 NORTH, RANGE 26 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS COMMENCING AT THE INTERSECTION OF THE CENTERLINE OF INTERSTATE 95 ",
@@ -11567,7 +11567,7 @@
       "courses": 4,
       "error": null,
       "snippet": "﻿\nA PART OF THE SOUTHEAST 1/4 OF SECTION 10 OF THE SUBDIVISION OF THE JOHN BROWARD GRANT, (SECTION 39, DEED) (SECTION 37, ACTUAL), TOWNSHIP 1 NORTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT THE NORTH LINE OF FIELDS ROAD AND THE EAST INTERSECTIO",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9616L.doc",
@@ -11621,10 +11621,10 @@
     },
     {
       "fileName": "9679L.doc",
-      "status": "PASS",
-      "linearError": 0.18806749121125788,
-      "precisionRatio": "1:2,012",
-      "courses": 3,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "",
+      "courses": 7,
       "error": null,
       "snippet": "﻿\n\nPART OF TRACT C, ACCORDING TO ORTEGA COMPANY’S REPLAT OF PART OF ORTEGA FARMS SUBDIVISION, AS RECORDED IN PLAT BOOK 16, PAGE 3 AND 3A, CURRENT PUBLIC RECORDS, MORE PARTICULARLY DESCRIBED AS:  COMMENCING AT THE INTERSECTION OF THE CENTERLINE OF COUNTY ROAD NO. 415 (ALSO KNOWN AS ORTEGA FARMS BOULE",
       "usedAi": true
@@ -11678,12 +11678,12 @@
     {
       "fileName": "9767D.doc",
       "status": "FAIL",
-      "linearError": 469.2899849013353,
-      "precisionRatio": "1:1",
+      "linearError": null,
+      "precisionRatio": "1:2",
       "courses": 5,
       "error": null,
       "snippet": "﻿\n\nA PART OF FARM LOT 26, BOWDEN FARMS AS RECORDED IN PLAT BOOK 6, PAGE 91, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENCE COMMENCE AT THE SOUTHWESTERLY CORNER OF FARM LOT 26; THENCE N.5848’10”E. ALONG THE SOUTHEAST",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "9767E2.doc",
@@ -12119,7 +12119,7 @@
     {
       "fileName": "DUNN AVE.doc",
       "status": "PASS",
-      "linearError": 0.0070709748965548675,
+      "linearError": 0.0002771237577837556,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 15,
       "error": null,
@@ -12306,7 +12306,7 @@
     {
       "fileName": "L7882.doc",
       "status": "PASS",
-      "linearError": 0.007005714645893009,
+      "linearError": null,
       "precisionRatio": "1:53,636",
       "courses": 8,
       "error": null,
@@ -12333,11 +12333,11 @@
     },
     {
       "fileName": "L7924.doc",
-      "status": "NO_COURSES",
+      "status": "PASS",
       "linearError": null,
-      "precisionRatio": "",
-      "courses": 5,
-      "error": "AI err: Failed to parse LLM JSON output: Expected double-quoted property name in JSON at position 631. Raw: {\n  \"Units\": \"Feet\",\n  \"Tracts\": [\n    {\n      \"Name\": \"W.J. Lane Estate\",\n      \"POB\": { \"Northing\": 5000.00, \"Easting\": 5000.00 },\n      \"ReferencePointName\": \"Southeast corner of Section 12\",\n      \"CommencementSegments\": [\n        { \"Type\": \"Line\", \"Bearing\": \"N00°02'10\" },\n        { \"Type\": \"Li",
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
+      "error": null,
       "snippet": "﻿\n\nTHAT PART OF THE W.J. LANE ESTATE AS PER PLAT RECORDED IN PLAT BOOK 7, PAGE 28, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA  AND ALSO BEING A PART OF THAT CERTAIN TRACT DESCRIBED IN DEED BOOK 582, PAGE 398, OF THE PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND MORE PARTICULARLY DESCRIBED ",
       "usedAi": false
     },
@@ -12354,7 +12354,7 @@
     {
       "fileName": "L7931-2.doc",
       "status": "PASS",
-      "linearError": 0.0066969614882058355,
+      "linearError": null,
       "precisionRatio": "1:155,164",
       "courses": 8,
       "error": null,
@@ -12435,7 +12435,7 @@
     {
       "fileName": "L8149.doc",
       "status": "PASS",
-      "linearError": 0.0074991443871328944,
+      "linearError": 0.00011007562136496095,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 9,
       "error": null,
@@ -12454,13 +12454,13 @@
     },
     {
       "fileName": "LEE CYCLE L.doc",
-      "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "PASS",
+      "linearError": 0.25425721626103776,
+      "precisionRatio": "1:9,780",
+      "courses": 6,
       "error": null,
       "snippet": "﻿A PARCEL OF LAND SITUATED IN THE SOUTHWEST 1/4 OF THE NORTHWEST 1/4 AND IN THE NORTHWEST 1/4 OF THE SOUTHWEST 1/4 OF SECTION 19, TOWNSHIP 5 SOUTH, RANGE 25 EAST, CLAY COUNTY, FLORIDA; SAID PARCEL BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  COMMENCE AT AN IRON PIPE AT THE NORTHWEST CORNER OF SAID",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "LEGEND NEW.doc",
@@ -12603,19 +12603,19 @@
     {
       "fileName": "OLEANDER.doc",
       "status": "PASS",
-      "linearError": 120.74786125448938,
-      "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 5,
+      "linearError": 0.00004678148323063512,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "﻿\nA PART OF LOT 2, DIVISION 5 AND LOT 4, DIVISION 4, OF THE ANDREW DEWEES GRANT, SECTION 37, 2 SOUTH, RANGE 29 EAST AS RECORDED IN DEED BOOK AG, PAGES 212 AND 213 OF THE FORMER PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF REFERENCE COMMENCE AT THE ",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "PART OF LOT 17.doc",
       "status": "PASS",
-      "linearError": 0.00022796557835717463,
-      "precisionRatio": "1:∞ (Perfect)",
-      "courses": 6,
+      "linearError": 0.009694027773343463,
+      "precisionRatio": "1:167,762",
+      "courses": 5,
       "error": null,
       "snippet": "﻿\n\nPART OF LOT 17, OF H.H. SIMMONS SUBDIVISION OF THE FRANCES BAGLEY AND THE CHARLES F. SIBBALD GRANT AS RECORDED IN PLAT BOOK 3, PAGE 85, OF THE CURRENT PUBLIC RECORDS OF DUVAL COUNTY, FLORIDA AND BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS:  FOR A POINT OF BEGINNING COMMENCE AT THE INTERSECTION O",
       "usedAi": false
@@ -12671,7 +12671,7 @@
     {
       "fileName": "REGENCY_10082.2356 - Lis Pendens.txt",
       "status": "PASS",
-      "linearError": 0.005878321728880747,
+      "linearError": 0.0002459572500980451,
       "precisionRatio": "1:∞ (Perfect)",
       "courses": 25,
       "error": null,
@@ -12681,19 +12681,19 @@
     {
       "fileName": "REGENCY_10151.160 - Order of Taking.txt",
       "status": "NO_COURSES",
-      "linearError": 0.0017394872479228384,
-      "precisionRatio": "1:107,313",
-      "courses": 3,
+      "linearError": null,
+      "precisionRatio": "1:∞ (Open-Ended)",
+      "courses": 4,
       "error": null,
       "snippet": "SOURCE: 10151.160 - Order of Taking.pdf\r\nFOLDER: D:\\FILES\\training\\TrainPDF\\Regency-Title\r\n============================================================\r\n\r\n[VISION OCR PAGE 5]\r\n**Legal Description:**\r\n\r\nA part of Section 14, Township 2 South, Range 27 East, Duval County, Florida, being described as f",
       "usedAi": true
     },
     {
       "fileName": "REGENCY_16694.1303 - QCD (into Sellers).txt",
-      "status": "FAIL",
-      "linearError": 242.27068003582573,
-      "precisionRatio": "1:2",
-      "courses": 2,
+      "status": "NO_COURSES",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Open-Ended)",
+      "courses": 0,
       "error": null,
       "snippet": "SOURCE: 16694.1303 - QCD (into Sellers).pdf\r\nFOLDER: D:\\FILES\\training\\TrainPDF\\Regency-Title\r\n============================================================\r\n\r\n[VISION OCR PAGE 7]\r\nA part of Section 13, Township 2 South, Range 27 East, Duval County, Florida, more particularly described as follows: Co",
       "usedAi": true
@@ -12772,9 +12772,9 @@
     },
     {
       "fileName": "REGENCY_2614.157 - Regency Sq. Blvd W of SS Blvd.txt",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
+      "status": "PASS",
+      "linearError": 599.9999999999997,
+      "precisionRatio": "1:∞ (Open-Ended)",
       "courses": 1,
       "error": null,
       "snippet": "SOURCE: 2614.157 - Regency Sq. Blvd W of SS Blvd.pdf\r\nFOLDER: D:\\FILES\\training\\TrainPDF\\Regency-Title\r\n============================================================\r\n\r\n[VISION OCR PAGE 1]\r\nA strip of land 100 feet in width lying part in Section 13 and part in Section 14, Township 2 South, Range 27 E",
@@ -12810,19 +12810,19 @@
     },
     {
       "fileName": "REGENCY_3628.390 - WD (into Stein).txt",
-      "status": "FAIL",
-      "linearError": 93.24173948724764,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "status": "PASS",
+      "linearError": null,
+      "precisionRatio": "1:∞ (Perfect)",
+      "courses": 4,
       "error": null,
       "snippet": "SOURCE: 3628.390 - WD (into Stein).pdf\r\nFOLDER: D:\\FILES\\training\\TrainPDF\\Regency-Title\r\n============================================================\r\n\r\n[VISION OCR PAGE 1]\r\nFor a point of reference begin at the Northeast corner of Section 24, Township 2 South, Range 27 East; thence run South 89 de",
       "usedAi": true
     },
     {
       "fileName": "REGENCY_3955.550 - Deed of Dedication.txt",
-      "status": "NO_COURSES",
+      "status": "FAIL",
       "linearError": null,
-      "precisionRatio": "",
+      "precisionRatio": "1:1",
       "courses": 3,
       "error": null,
       "snippet": "SOURCE: 3955.550 - Deed of Dedication.pdf\r\nFOLDER: D:\\FILES\\training\\TrainPDF\\Regency-Title\r\n============================================================\r\n\r\n[VISION OCR PAGE 1]\r\nA part of Section 13, Township 2 South, Range 27 East, Duval County, Florida and being described as follows:\r\n\r\nCommence a",
@@ -12831,7 +12831,7 @@
     {
       "fileName": "REGENCY_3955.556 - Easement (Sub-surface Drainage).txt",
       "status": "PASS",
-      "linearError": 93.43000000000013,
+      "linearError": 299.9999999999997,
       "precisionRatio": "1:∞ (Open-Ended)",
       "courses": 1,
       "error": null,
@@ -12841,12 +12841,12 @@
     {
       "fileName": "REGENCY_3997.660 - WD (into Regency Utilities).txt",
       "status": "FAIL",
-      "linearError": 134.6192060893471,
-      "precisionRatio": "1:2",
+      "linearError": null,
+      "precisionRatio": "1:1",
       "courses": 2,
       "error": null,
       "snippet": "SOURCE: 3997.660 - WD (into Regency Utilities).pdf\r\nFOLDER: D:\\FILES\\training\\TrainPDF\\Regency-Title\r\n============================================================\r\n\r\n[VISION OCR PAGE 2]\r\nFROM THE POINT OF BEGINNING THENCE NORTH 00° 18' 50\" WEST, 690.0 FEET; THENCE SOUTH 89° 41' 10\" WEST, 1825.0 FEET",
-      "usedAi": true
+      "usedAi": false
     },
     {
       "fileName": "REGENCY_3997.662 - Deed (into Regency Utilities).txt",
@@ -12861,9 +12861,9 @@
     {
       "fileName": "REGENCY_4784.203 - SWD (into Stein).txt",
       "status": "FAIL",
-      "linearError": 93.42894657604944,
-      "precisionRatio": "1:1",
-      "courses": 1,
+      "linearError": null,
+      "precisionRatio": "1:5",
+      "courses": 11,
       "error": null,
       "snippet": "SOURCE: 4784.203 - SWD (into Stein).pdf\r\nFOLDER: D:\\FILES\\training\\TrainPDF\\Regency-Title\r\n============================================================\r\n\r\n[VISION OCR PAGE 1]\r\nBEING A PORTION OF SECTIONS 13 AND 24, TOWNSHIP 2 SOUTH, RANGE 27 EAST, DUVAL COUNTY, FLORIDA, MORE PARTICULARLY DESCRIBED A",
       "usedAi": true
@@ -13069,9 +13069,9 @@
     {
       "fileName": "TRACY EASMT B.doc",
       "status": "PASS",
-      "linearError": 222.31651594584446,
+      "linearError": 278.1834739322622,
       "precisionRatio": "1:∞ (Open-Ended)",
-      "courses": 3,
+      "courses": 2,
       "error": null,
       "snippet": "﻿\n\n\nA PART OF SECTION 21, TOWNSHIP 11 SOUTH, RANGE 27 EAST, PUTNAM COUNTY, FLORIDA, BEING MORE PARTICULARLY DESCRIBED AS FOLLOWS. SAID PART BEING A STRIP OF LAND 20 FEET IN WIDTH AND LYING 10 FEET EACH SIDE OF THE FOLLOWING DESCRIBED CENTERLINE; FOR A POINT OF REFERENCE COMMENCE AT THE INTERSECTION ",
       "usedAi": true

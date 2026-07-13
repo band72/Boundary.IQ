@@ -31,8 +31,6 @@ const { DEFAULT_LOCAL_MODEL } = await import('../config.js');
 // ── Config ────────────────────────────────────────────────────────────────────
 const DEED_DIR    = process.env.DEED_DIR || '/home/artwalk/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions';
 const EXTRACT_DIR = DEED_DIR.endsWith('_extracted') ? DEED_DIR : path.join(DEED_DIR, '_extracted');
-const REPORT_FILE = path.join(SERVER_DIR, '../deed_batch_report.json');
-const SUMMARY_FILE= path.join(SERVER_DIR, '../deed_batch_summary.md');
 const POB_N       = parseFloat(process.env.POB_N) || 5000;
 const POB_E       = parseFloat(process.env.POB_E) || 5000;
 const UNITS       = process.env.UNITS || 'Feet';
@@ -48,6 +46,10 @@ const failOnlyMode = args.includes('--fail-only');
 const LIMIT  = limitArg  ? parseInt(limitArg)  : Infinity;
 const OFFSET = offsetArg ? parseInt(offsetArg) : 0;
 const MODEL  = modelArg || DEFAULT_LOCAL_MODEL;
+
+const cleanModel = MODEL.replace(/[:.]/g, '_');
+const REPORT_FILE = path.join(SERVER_DIR, `../deed_batch_report_${cleanModel}.json`);
+const SUMMARY_FILE= path.join(SERVER_DIR, `../deed_batch_summary_${cleanModel}.md`);
 
 console.log(`📋 Boundary.IQ — Headless Deed Batch Runner (direct service call)`);
 console.log(`   Deed dir  : ${DEED_DIR}`);
@@ -256,9 +258,10 @@ for (let i = 0; i < filesToProcess.length; i++) {
     }
   }
 
-  let finalStatus = 'PASS';
+  let bestStatus = 'NO_COURSES';
+  let worstStatus = 'PASS';
+  let bestError = Infinity;
   let docCourses = 0;
-  let docError = 0;
   let usedAi = false;
   let docErrMsg = null;
   let lastPrecRatio = '';
@@ -327,21 +330,34 @@ for (let i = 0; i < filesToProcess.length; i++) {
     lastPrecRatio   = result?.traverse?.closure?.precisionRatio || lastPrecRatio;
 
     docCourses += courses;
-    docError = Math.max(docError, linErr || 0);
     if (errMsg) docErrMsg = (docErrMsg ? docErrMsg + ' | ' : '') + errMsg;
+    
+    // Track best status
+    if (status === 'PASS' && courses >= 3) {
+      bestStatus = 'PASS';
+      bestError = Math.min(bestError, linErr || 0);
+    } else if (status === 'PASS' && bestStatus !== 'PASS') {
+      bestStatus = 'PASS'; // Fallback if it's <3 courses but still passes
+      bestError = Math.min(bestError, linErr || 0);
+    } else if (status === 'NEAR_PASS' && bestStatus !== 'PASS') {
+      bestStatus = 'NEAR_PASS';
+    } else if (bestStatus === 'NO_COURSES' && status !== 'NO_COURSES') {
+      bestStatus = status; // ERROR or FAIL
+    }
 
-    // Aggregate worst status
+    // Aggregate worst status just for logging
     if (status !== 'PASS') {
-      if (finalStatus === 'PASS' || status === 'ERROR' || status === 'FAIL') {
-        finalStatus = status;
-      } else if (finalStatus === 'NO_COURSES' && status !== 'NO_COURSES') {
-        finalStatus = status;
+      if (worstStatus === 'PASS' || status === 'ERROR' || status === 'FAIL') {
+        worstStatus = status;
       }
     }
   }
 
   // If no courses were found across all parcels, it's a NO_COURSES
-  if (docCourses === 0 && finalStatus === 'PASS') finalStatus = 'NO_COURSES';
+  let finalStatus = bestStatus;
+  if (docCourses === 0) finalStatus = 'NO_COURSES';
+  
+  let docError = bestError === Infinity ? 0 : bestError;
 
   if      (finalStatus === 'PASS')      stats.pass++;
   else if (finalStatus === 'NEAR_PASS') stats.nearPass++;
@@ -369,6 +385,11 @@ for (let i = 0; i < filesToProcess.length; i++) {
 fs.writeFileSync(REPORT_FILE, JSON.stringify(
   { generatedAt: new Date().toISOString(), stats, results }, null, 2
 ));
+try {
+  fs.copyFileSync(REPORT_FILE, path.join(SERVER_DIR, '../deed_batch_report.json'));
+} catch (copyErr) {
+  console.warn(`Could not copy compat report file: ${copyErr.message}`);
+}
 
 // ── Write markdown summary ────────────────────────────────────────────────────
 const total    = results.filter(r => r.status !== 'SKIPPED').length;
@@ -409,6 +430,11 @@ for (const f of errors.slice(0, 30)) {
 }
 
 fs.writeFileSync(SUMMARY_FILE, md);
+try {
+  fs.copyFileSync(SUMMARY_FILE, path.join(SERVER_DIR, '../deed_batch_summary.md'));
+} catch (copyErr) {
+  console.warn(`Could not copy compat summary file: ${copyErr.message}`);
+}
 
 console.log(`\n${'─'.repeat(65)}`);
 console.log(`✓  PASS       : ${stats.pass}  (${passRate}%)`);
