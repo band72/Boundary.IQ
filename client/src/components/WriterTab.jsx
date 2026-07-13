@@ -173,9 +173,25 @@ export default function WriterTab() {
   const removeCourse = i => setCourses(c => c.filter((_, idx) => idx !== i));
   const update = (i, field, val) => setCourses(c => c.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
 
+  const areCoursesValid = (arr) => {
+    return arr.every(c => {
+      const type = (c.type || 'Line').toLowerCase();
+      if (type === 'line' || type === 'squiggle') {
+        if (!c.bearing || !validateBearing(c.bearing)) return false;
+        if (!c.distance || isNaN(parseFloat(c.distance))) return false;
+      } else if (type === 'curve') {
+        if (!c.radius || isNaN(parseFloat(c.radius))) return false;
+        if (!c.arcLength || isNaN(parseFloat(c.arcLength))) return false;
+      }
+      return true;
+    });
+  };
+
   // ── Generate ────────────────────────────────────────────────────────────────
-  const generate = async (customCourses, customPobN, customPobE) => {
-    setLoading(true); setError(''); setResult('');
+  const generate = async (customCourses, customPobN, customPobE, isAutoRun = false) => {
+    if (!isAutoRun) {
+      setLoading(true); setError(''); setResult('');
+    }
     let finalCourses = customCourses || courses;
     const finalPobN = customPobN !== undefined ? customPobN : pobN;
     const finalPobE = customPobE !== undefined ? customPobE : pobE;
@@ -221,10 +237,15 @@ export default function WriterTab() {
         body: JSON.stringify(body),
       });
       setResult(data.legalDescription ?? data.LegalDescription ?? JSON.stringify(data));
+      if (isAutoRun) setError('');
     } catch (e) {
-      setError(String(e.message));
+      if (!isAutoRun) {
+        setError(String(e.message));
+      }
     } finally {
-      setLoading(false);
+      if (!isAutoRun) {
+        setLoading(false);
+      }
     }
   };
 
@@ -243,8 +264,9 @@ export default function WriterTab() {
 
   useEffect(() => {
     if (!result) return;
+    if (!areCoursesValid(courses)) return;
     const handler = setTimeout(() => {
-      generate();
+      generate(undefined, undefined, undefined, true);
     }, 1000);
     return () => clearTimeout(handler);
   }, [courses, pobN, pobE, parcel, county, stateVal, units, basisBrg, areaAcres, perimeter, bearingDecimals]);
