@@ -1,20 +1,18 @@
 // ─── Folder Scan Route ──────────────────────────────────────────────────────
 import { Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import * as lockService from '../services/lockService.js';
-import crypto from 'crypto';
 import { createChildLogger } from '../logger.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { runRepairPipeline, extractNamedParcels, detectOpenEnded } from '../services/Scripting/repair.js';
-import { resolvePathCaseInsensitive } from '../services/pathUtils.js';
 import * as legalWriter from '../services/Scripting/legalWriter.js';
-import * as db from '../services/diagnosticsDb.js';
 import { isWordDocument } from '../services/docConversion.js';
-import * as output from '../services/output.js';
-import * as geminiVision from '../services/geminiVision.js';
+import {
+  safeParseJson, getCountyVal, getStateVal, validatePath, getPartFamily,
+  acquireLock, releaseLock, saveDeedLogWrapper, getOrCreateOutputFolder, updateProjectReferences
+} from '../services/folderScanService.js';
 // Module-level map: base deed name → last station {northing, easting} of Part A/B etc.
 // Enables multi-part deed chaining (Rec 4) without cross-request state or DB changes.
 const familyEndpoints = new Map();
@@ -39,17 +37,6 @@ import { ensureExtractedText, readWordDocWithFallback } from '../services/textEx
 const router = Router();
 router.use(requireAuth);
 
-function safeParseJson(value) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    console.warn('Failed to parse JSON string:', value, err.message);
-    return null;
-  }
-}
-
 // ── Per-user rate limiter for scan endpoints ───────────────────────────────
 const scanLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -63,134 +50,8 @@ const scanLimiter = rateLimit({
 
 const log = createChildLogger('folderScan');
 
-// Helper to resolve county and state for metadata/legalWriter with caching fallback
-function getCountyVal(ex, fallback) {
-  if (ex?.county && ex.county !== 'Unknown') return ex.county;
-  if (fallback) return fallback;
-  const raw = ex?.rawText || ex?.originalLegalDesc || ex?.originalLegalDescription || '';
-  if (raw) return geminiVision.inferCountyStateFromText(raw).county || 'Unknown';
-  return 'Unknown';
-}
-
-function getStateVal(ex, fallback) {
-  if (ex?.state && ex.state !== 'Unknown') return ex.state;
-  if (fallback) return fallback;
-  const raw = ex?.rawText || ex?.originalLegalDesc || ex?.originalLegalDescription || '';
-  if (raw) return geminiVision.inferCountyStateFromText(raw).state || 'Unknown';
-  return 'Unknown';
-}
-
-
 const MAX_FILE_SIZE = 51 * 1024 * 1024;
 const BATCH_SIZE = 5;
-
-
-// ── Allowed roots (path traversal protection) ────────────────────────────────
-function getAllowedRoots() {
-  const envRoots = process.env.BOUNDARY_SCAN_ROOTS;
-  if (envRoots) return envRoots.split(';').filter(Boolean).map(r => path.resolve(r.trim()));
-  return [os.homedir()];
-}
-
-/**
- * Normalize a client-supplied path for server-side validation.
- *
- * Two remapping strategies (applied in order):
- *   1. BOUNDARY_PATH_USER_MAP env var: "bando=/mnt/data;artwalk=/srv/data" style key-value pairs
- *      for explicit per-username redirects without touching source code.
- *   2. Generic /home/<any-username> → current user's home (covers dev→prod drift automatically).
- *
- * Then the resolved path is validated against the allowed roots.
- */
-function validatePath(p) {
-  if (!p) return null;
-  if (p.includes('..')) return null;
-
-  let normalized = p;
-
-  // Strategy 1: explicit env-driven user map (format: "username1=/new/path;username2=/other")
-  const userMapEnv = process.env.BOUNDARY_PATH_USER_MAP;
-  if (userMapEnv) {
-    for (const entry of userMapEnv.split(';').filter(Boolean)) {
-      const eqIdx = entry.indexOf('=');
-      if (eqIdx < 1) continue;
-      const fromUser = entry.slice(0, eqIdx).trim();
-      const toPath   = entry.slice(eqIdx + 1).trim();
-      const fromPrefix = `/home/${fromUser}`;
-      if (normalized.startsWith(fromPrefix)) {
-        normalized = toPath + normalized.slice(fromPrefix.length);
-        break;
-      }
-    }
-  }
-
-  // Strategy 2: remap any /home/<username> prefix to the current user's home directory.
-  // This lets paths stored/shared from a different developer machine resolve correctly
-  // without hardcoding specific usernames.
-  normalized = normalized.replace(/^\/home\/[^/]+/, os.homedir());
-
-  // Normalize backslashes (Windows paths from the client)
-  normalized = normalized.replace(/\\/g, '/');
-
-  // Translate to actual location under the extracted training folder if the directly requested ones don't exist
-  const resolvedCasePath = resolvePathCaseInsensitive(normalized);
-  if (fs.existsSync(resolvedCasePath)) {
-    normalized = resolvedCasePath;
-  } else {
-    const trainingPattern = /\/Downloads\/training-[^/]+\/training/i;
-    if (trainingPattern.test(normalized)) {
-      const candidate = resolvePathCaseInsensitive(normalized.replace(trainingPattern, '/Downloads/FILES/training'));
-      if (fs.existsSync(candidate)) normalized = candidate;
-    } else if (normalized.includes('/Downloads/TrainPDF')) {
-      const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/TrainPDF', '/Downloads/FILES/training/TrainPDF'));
-      if (fs.existsSync(candidate)) normalized = candidate;
-    } else if (normalized.includes('/Downloads/Legal Descriptions')) {
-      const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/Legal Descriptions', '/Downloads/FILES/training/Legal Descriptions'));
-      if (fs.existsSync(candidate)) normalized = candidate;
-    }
-
-    // Fallback standard structure
-    if (!fs.existsSync(normalized)) {
-      if (normalized.includes('/Downloads/TrainPDF')) {
-        const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/TrainPDF', '/Downloads/training-20260530T124201Z-3-001/training/TrainPDF'));
-        if (fs.existsSync(candidate)) normalized = candidate;
-      } else if (normalized.includes('/Downloads/Legal Descriptions')) {
-        const candidate = resolvePathCaseInsensitive(normalized.replace('/Downloads/Legal Descriptions', '/Downloads/training-20260530T124201Z-3-001/training/Legal Descriptions'));
-        if (fs.existsSync(candidate)) normalized = candidate;
-      }
-    }
-  }
-
-  const resolved = path.resolve(normalized);
-  const roots = getAllowedRoots();
-  for (const root of roots) {
-    if (resolved.startsWith(root)) return resolved;
-  }
-  return null;
-}
-
-
-
-/**
- * Rec 4 helper — Detect multi-part deed file families.
- * Matches: 12345L2.doc, 12345L-2.doc, 12345L-B.doc, 12345LB.doc, 12345L_2.pdf
- * Returns { base, part, partOrder } or null for single-part deeds.
- * partOrder: A/1 = 1, B/2 = 2, C/3 = 3
- */
-function _getPartFamily(fileName) {
-  const stem = path.parse(fileName).name;
-  // Pattern: base + optional separator + part indicator (A-D or 2-4)
-  const m = stem.match(/^(.+?)[-_ ]?([A-D]|[2-4])$/i);
-  if (!m) return null;
-  const base = m[1];
-  const part = m[2].toUpperCase();
-  const partOrder = /[A2]/.test(part) ? (['A','2'].includes(part) ? (/A/.test(part) ? 1 : 2) : 2) : 
-    ['B','3'].includes(part) ? (/B/.test(part) ? 2 : 3) :
-    ['C','4'].includes(part) ? (/C/.test(part) ? 3 : 4) : 1;
-  // partOrder mapping
-  const orderMap = { A: 1, '2': 2, B: 2, '3': 3, C: 3, '4': 4, D: 4 };
-  return { base, part, partOrder: orderMap[part] ?? 1 };
-}
 
 // GET /api/folderscan/scan
 router.get('/scan', scanLimiter, async (req, res) => {
@@ -241,12 +102,6 @@ router.get('/debug-skipped', async (req, res) => {
 // Ollama is single-threaded. Concurrent batch requests each queue 20+ LLM calls
 // that all block for up to 30 min. This lock ensures only ONE batch or retry run
 // is active at a time, returning 503 immediately if already busy.
-function acquireLock(type, path) {
-  return lockService.acquire(type, path);
-}
-function releaseLock() {
-  lockService.release();
-}
 
 // GET /api/folderscan/status  — is the server currently processing?
 router.get('/status', async (req, res) => {
@@ -266,105 +121,7 @@ router.post('/reset-lock', async (req, res) => {
   });
 });
 
-// Wrapper helper to inject Point of Reference parameters automatically into saveDeedLog
-async function saveDeedLogWrapper(req, batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed, extractionJson = null, traverseJson = null, agentTurnsJson = null, trustScore = null, solutionStepsJson = null, fileHash = null) {
-  const refName = req.query.refName || null;
-  const refN = req.query.refN != null ? parseFloat(req.query.refN) : null;
-  const refE = req.query.refE != null ? parseFloat(req.query.refE) : null;
-  const pobN = parseFloat(req.query.pobN) || 5000;
-  const pobE = parseFloat(req.query.pobE) || 5000;
 
-  await db.saveDeedLog(
-    batchId, fileName, parcelName, geoCallCount, linearError, precisionRatio, status, repairStageUsed,
-    extractionJson, traverseJson, agentTurnsJson, trustScore, solutionStepsJson,
-    refName, refN, refE, pobN, pobE, fileHash
-  );
-}
-
-// Helper to determine whether to create a new output folder or reuse an existing one passed in query params
-function getOrCreateOutputFolder(req, validPath) {
-  if (req.query.outputPath) {
-    const p = path.resolve(req.query.outputPath);
-    // SEC-7: validate against allowed roots to prevent path traversal
-    const safeOutput = validatePath(p);
-    if (!safeOutput) {
-      return null; // caller must check and return 403
-    }
-    if (!fs.existsSync(safeOutput)) {
-      fs.mkdirSync(safeOutput, { recursive: true });
-    }
-    return safeOutput;
-  }
-  return output.createOutputFolder(validPath);
-}
-
-// Consolidate reference point and commencement segments for all deeds in the project directory
-async function updateProjectReferences(folderPath, newResults) {
-  const filePath = path.join(folderPath, 'project_references.json');
-  let data = {
-    projectPath: folderPath,
-    lastUpdated: new Date().toISOString(),
-    references: []
-  };
-
-  if (fs.existsSync(filePath)) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      if (content.trim()) {
-        data = JSON.parse(content);
-        data.lastUpdated = new Date().toISOString();
-        if (!Array.isArray(data.references)) {
-          data.references = [];
-        }
-      }
-    } catch (err) {
-      console.warn(`Failed to read/parse project_references.json at ${filePath}:`, err.message);
-    }
-  }
-
-  for (const r of newResults) {
-    if (!r) continue;
-
-    const extractRefInfo = (fileName, extObj) => {
-      const refName = extObj?.ReferencePointName || extObj?.referencePointName || null;
-      const commSegs = extObj?.CommencementSegments || extObj?.commencementSegments || [];
-      if (refName || (commSegs && commSegs.length > 0)) {
-        // Remove existing entry for same fileName to avoid duplicates
-        data.references = data.references.filter(entry => entry.fileName !== fileName);
-        data.references.push({
-          fileName,
-          referencePointName: refName,
-          commencementSegments: commSegs
-        });
-      }
-    };
-
-    if (r.isMultiParcel && r.parcels) {
-      for (const pr of r.parcels) {
-        const ext = pr.extraction;
-        const refName = ext?.ReferencePointName || ext?.referencePointName || null;
-        const commSegs = ext?.CommencementSegments || ext?.commencementSegments || [];
-        if (refName || (commSegs && commSegs.length > 0)) {
-          data.references = data.references.filter(entry => entry.fileName !== pr.fileName);
-          data.references.push({
-            fileName: pr.fileName,
-            referencePointName: refName,
-            commencementSegments: commSegs
-          });
-        }
-      }
-    } else {
-      extractRefInfo(r.fileName, r.extraction);
-    }
-  }
-
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-    console.log(`Saved consolidated project references to ${filePath}`);
-  } catch (err) {
-    console.warn(`Failed to write project_references.json at ${filePath}:`, err.message);
-  }
-}
 
 // GET /api/folderscan/download-batch-zip
 router.get('/download-batch-zip', async (req, res) => {
@@ -1342,7 +1099,7 @@ router.post('/process-file', async (req, res) => {
     // If this file looks like "12345L2.doc" or "12345L-B.doc" and Part A already
     // passed in this server session, use Part A's last station as POB instead of
     // the default (5000, 5000), so Part B closes relative to where Part A ended.
-    const _partFamily = _getPartFamily(fileName);
+    const _partFamily = getPartFamily(fileName);
     let chainedPob = { northing: pobN, easting: pobE };
     if (_partFamily && _partFamily.partOrder > 1) {
       const parentEndpoint = familyEndpoints.get(_partFamily.base);

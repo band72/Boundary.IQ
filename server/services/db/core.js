@@ -197,6 +197,7 @@ export async function init() {
     isPostgres = true;
     console.log('Connecting to PostgreSQL database...');
     const config = pgConnectionString.parse(DATABASE_URL);
+    delete config.sslmode;
     config.ssl = { rejectUnauthorized: false };
     pool = new pg.Pool(config);
     // Test connection
