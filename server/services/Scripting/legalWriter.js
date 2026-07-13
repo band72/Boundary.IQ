@@ -98,7 +98,15 @@ export function write(req) {
 
   // ── Basis of bearings
   lines.push('');
-  lines.push(`Bearings are based on ${req.basisOfBearings || 'the deed of record'} and are ${req.bearingSystem || 'grid bearings'}.`);
+  const basis = req.basisOfBearings || 'the deed of record';
+  lines.push(`Bearings are based on ${basis} and are ${req.bearingSystem || 'grid bearings'}.`);
+  if (basis.toLowerCase().includes('magnetic')) {
+    lines.push(`Note: References to Magnetic North should be avoided in boundary reports except where comparison is necessitated by a Deed Call (61G17-6.002(2)(g), F.A.C.).`);
+  }
+
+  // ── Professional standard disclaimer
+  lines.push('');
+  lines.push(`DISCLAIMER: In accordance with professional mapping standards (e.g., Chapter 61G17-6.006, F.A.C.), if a sketch or map is attached to this description, such sketch or map is NOT A SURVEY.`);
 
   return lines.join('\n').trimEnd();
 }
