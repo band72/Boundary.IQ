@@ -596,11 +596,8 @@ export default function TraverseMap({
     return () => { active = false; };
   }, []);
 
-  // Reset zoom and panOffset whenever traverse data changes to center and fit the new boundary
-  useEffect(() => {
-    setZoom(1);
-    setPanOffset({ x: 0, y: 0 });
-  }, [stations, adjusted, courses, tracts]);
+  // Reset zoom and panOffset is handled by React component key remounting on major data/file changes.
+  // This allows current zoom/pan coordinates to be preserved during live typing and editing.
 
   const sensitivity = mapPanSensitivity !== undefined ? mapPanSensitivity : localSensitivity;
   const dragStart = useRef({ x: 0, y: 0 });
@@ -669,6 +666,7 @@ export default function TraverseMap({
       ctx.beginPath(); ctx.moveTo(x, PAD); ctx.lineTo(x, H - PAD); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
     }
+    ctx.restore();
 
     // Draw INACTIVE tracts in faded background color
     if (tracts && tracts.length > 1) {
