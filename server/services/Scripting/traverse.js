@@ -173,6 +173,27 @@ export function compute(req) {
     }
   }
 
+  // Second pass to resolve any curves at the beginning of the loop using the wrapped-around final azimuth
+  if (tempAz !== null) {
+    for (const course of resolved) {
+      if (course.type?.toLowerCase() === 'line') {
+        if (course.bearing) {
+          try { tempAz = bp.parse(course.bearing).azimuthDeg; } catch {}
+        }
+      } else if (course.type?.toLowerCase() === 'curve') {
+        resolveCurveProperties(course, tempAz);
+        if (course.delta) {
+          const deflectionSign = (course.curveDirection || course.direction || '').toLowerCase() === 'left' ? -1 : 1;
+          if (tempAz !== null) {
+            tempAz = (tempAz + deflectionSign * course.delta + 360) % 360;
+          } else if (course.chordBearing) {
+            try { tempAz = bp.parse(course.chordBearing).azimuthDeg; } catch {}
+          }
+        }
+      }
+    }
+  }
+
   // ── Inverse Gap Solver: auto-fix meander/unknown runs
   const courses = autoFixUnknownRuns(resolved, req.pointOfBeginning);
 
@@ -186,7 +207,7 @@ export function compute(req) {
   stations.push({ seq: seq++, course: 'POB', northing: pobN, easting: pobE, depDN: 0, depDE: 0 });
 
   let perimeter = 0;
-  let prevAzimuthDeg = null; // Track incoming azimuth for curve chord synthesis (Fix #7)
+  let prevAzimuthDeg = tempAz; // Track incoming azimuth for curve chord synthesis (Fix #7)
   const computedCenters = [];
 
   // Initialize prevAzimuthDeg and computedCenters from commencement segments if available
