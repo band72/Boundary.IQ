@@ -56,7 +56,9 @@ vi.mock('../services/docConversion.js', () => ({
 
 vi.mock('../services/lockService.js', () => {
   let locked = false;
+  const userLocks = new Map();
   return {
+    // Global lock (kept for backward compat)
     acquire: vi.fn((name, type) => {
       if (locked) return false;
       locked = true;
@@ -64,6 +66,18 @@ vi.mock('../services/lockService.js', () => {
     }),
     release: vi.fn(() => { locked = false; }),
     status: vi.fn(() => ({ type: 'test', elapsedSec: 1 })),
+    // Per-user lock
+    acquirePerUser: vi.fn((userId) => {
+      const key = String(userId);
+      if (userLocks.has(key)) return false;
+      userLocks.set(key, { startTime: Date.now() });
+      return true;
+    }),
+    releasePerUser: vi.fn((userId) => { userLocks.delete(String(userId)); }),
+    statusPerUser: vi.fn((userId) => {
+      const info = userLocks.get(String(userId));
+      return info ? Math.round((Date.now() - info.startTime) / 1000) : null;
+    }),
     FifoSemaphore: class {
       constructor(n) { this.n = n; }
       async acquire() {}
@@ -291,17 +305,17 @@ describe('POST /api/batchdeed/process — daily credit limit', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Concurrent lock
+// 6. Concurrent lock (per-user)
 // ─────────────────────────────────────────────────────────────────────────────
 describe('POST /api/batchdeed/process — concurrent lock', () => {
-  it('returns 503 when another batch is already processing', async () => {
-    const { acquire } = await import('../services/lockService.js');
-    // Force the lock to be already held
-    acquire.mockReturnValueOnce(false);
+  it('returns 503 when the same user already has a batch running', async () => {
+    const { acquirePerUser } = await import('../services/lockService.js');
+    // Force the per-user lock to be already held
+    acquirePerUser.mockReturnValueOnce(false);
 
     const res = await postBatch(proToken, [createTestFile('deed.pdf', 100)]);
     expect(res.status).toBe(503);
     const text = await res.text();
-    expect(text).toContain('already processing');
+    expect(text).toContain('already have a batch running');
   });
 });

@@ -42,6 +42,42 @@ export function reset() {
   return { wasLocked, previousInfo };
 }
 
+// ── Per-user locks ────────────────────────────────────────────────────────────
+// Allows multiple users to run batches concurrently while preventing a single
+// user from submitting two batches at the same time.
+
+const _userLocks = new Map(); // userId (string) → { startTime: number }
+
+/**
+ * Attempt to acquire a per-user batch lock.
+ * @param {string|number} userId
+ * @returns {boolean} true if lock was acquired, false if user already has one active.
+ */
+export function acquirePerUser(userId) {
+  const key = String(userId);
+  if (_userLocks.has(key)) return false;
+  _userLocks.set(key, { startTime: Date.now() });
+  return true;
+}
+
+/**
+ * Release the per-user batch lock.
+ * @param {string|number} userId
+ */
+export function releasePerUser(userId) {
+  _userLocks.delete(String(userId));
+}
+
+/**
+ * Return elapsed seconds for a user's active batch, or null if not active.
+ * @param {string|number} userId
+ */
+export function statusPerUser(userId) {
+  const info = _userLocks.get(String(userId));
+  if (!info) return null;
+  return Math.round((Date.now() - info.startTime) / 1000);
+}
+
 export class FifoSemaphore {
   constructor(max) {
     this.max = max;

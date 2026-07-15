@@ -7,7 +7,7 @@ import { query, now } from './core.js';
 
 export async function createSession(userId, { ipAddress = null, userAgent = null } = {}) {
   const token = crypto.randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString().replace('T', ' ').slice(0, 19);
+  const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString().replace('T', ' ').slice(0, 19);
   await query(
     'INSERT INTO Sessions (Token, UserId, ExpiresAt, IpAddress, UserAgent, CreatedAt) VALUES (?, ?, ?, ?, ?, ?)',
     [token, userId, expiresAt, ipAddress, userAgent, now()]

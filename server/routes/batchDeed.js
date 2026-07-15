@@ -87,10 +87,9 @@ function parsePrecisionRatio(precisionStr) {
   return 0;
 }
 
-// NOTE: This endpoint uses a process-global mutex (lockService) intentionally.
-// Batch processing is CPU/memory intensive and running two batches concurrently
-// on the same server risks OOM and LLM timeout collisions. Multi-user queuing
-// would require a proper job queue (e.g. BullMQ) — tracked as a future enhancement.
+// NOTE: Per-user mutex — each user can only run one batch at a time.
+// Multiple users can process concurrently. For local Ollama deployments,
+// the global lock (lockService.acquire) is still available if needed.
 router.post('/process', upload.array('images', 20), async (req, res) => {
   let keepAlive = null;
   let hasLock = false;
@@ -99,10 +98,10 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     const store = userSettingsStore.getStore();
     if (store) store.aiRequestType = 'batch-deed';
 
-    if (!lockService.acquire('batchdeed-process', 'upload')) {
-      const info = lockService.status();
+    if (!lockService.acquirePerUser(req.user.id)) {
+      const elapsedSec = lockService.statusPerUser(req.user.id);
       return res.status(503).json({
-        error: `Server is already processing (${info.type || 'unknown'} — ${info.elapsedSec || 0}s elapsed). Please wait for it to finish.`
+        error: `You already have a batch running (${elapsedSec || 0}s elapsed). Please wait for it to finish before submitting another.`
       });
     }
     hasLock = true;
@@ -444,7 +443,7 @@ router.post('/process', upload.array('images', 20), async (req, res) => {
     }
   } finally {
     if (hasLock) {
-      lockService.release();
+      lockService.releasePerUser(req.user.id);
     }
     // Clean up any remaining files that were uploaded but not deleted yet
     if (files && files.length > 0) {

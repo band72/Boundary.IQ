@@ -67,7 +67,9 @@ describe('Cryptographic License Keys Test Suite', () => {
     expect(key).toContain('-----BEGIN PRIVATE KEY-----');
   });
 
-  it('should create and retrieve a signed license key for a user via DB service', async () => {
+  it('should create a signed license key via DB service and return rawKey to caller only', async () => {
+    // Security model: rawKey is returned to the caller at creation time only.
+    // The DB stores only the SHA-256 hash — RawKey column is intentionally NOT populated.
     const { rawKey, plan } = await createSignedLicenseKeyForUser({
       plan: 'pro',
       userId: targetUserId
@@ -77,23 +79,27 @@ describe('Cryptographic License Keys Test Suite', () => {
     expect(rawKey).toContain('BIQ-PRO-');
     expect(plan).toBe('pro');
 
+    // The DB record should have plan metadata, but NOT the raw key
     const activeKey = await getActiveLicenseKeyForUser(targetUserId);
     expect(activeKey).toBeDefined();
-    expect(activeKey.RawKey).toBe(rawKey);
     expect(activeKey.Plan).toBe('pro');
+    // RawKey should NOT be returned (security fix: key is one-time-display only)
+    expect(activeKey.RawKey).toBeUndefined();
   });
 
-  it('should fetch active license key via API endpoint', async () => {
+  it('should fetch active license key metadata via API endpoint (no raw key)', async () => {
     const res = await fetch(`${baseUrl}/auth/users/${targetUserId}/license`, {
       headers: adminHeaders
     });
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.license).toBeDefined();
-    expect(data.license.RawKey).toContain('BIQ-PRO-');
+    expect(data.license.Plan).toBe('pro');
+    // Security fix: raw key must NOT be exposed via the GET endpoint
+    expect(data.license.RawKey).toBeUndefined();
   });
 
-  it('should generate and sign a new license key via API endpoint', async () => {
+  it('should generate and sign a new license key via API endpoint (key returned once)', async () => {
     // First upgrade the target user's plan to enterprise so they have a valid plan for generation
     // (Free plan throws 400 as per safety logic)
     const upgradeRes = await fetch(`${baseUrl}/auth/users/${targetUserId}/plan`, {
@@ -103,7 +109,7 @@ describe('Cryptographic License Keys Test Suite', () => {
     });
     expect(upgradeRes.status).toBe(200);
 
-    // Generate license
+    // Generate license — key is returned in the response (one-time display)
     const genRes = await fetch(`${baseUrl}/auth/users/${targetUserId}/license/generate`, {
       method: 'POST',
       headers: adminHeaders
@@ -113,12 +119,13 @@ describe('Cryptographic License Keys Test Suite', () => {
     expect(genData.success).toBe(true);
     expect(genData.licenseKey).toContain('BIQ-ENTERPRISE-');
 
-    // Retrieve again to verify it has updated to the new Enterprise key
+    // Retrieve metadata again — plan updated, but raw key must NOT be re-exposed
     const fetchRes = await fetch(`${baseUrl}/auth/users/${targetUserId}/license`, {
       headers: adminHeaders
     });
     const fetchData = await fetchRes.json();
-    expect(fetchData.license.RawKey).toBe(genData.licenseKey);
     expect(fetchData.license.Plan).toBe('enterprise');
+    // Security fix: raw key is not stored or re-served after initial generation
+    expect(fetchData.license.RawKey).toBeUndefined();
   });
 });

@@ -141,6 +141,7 @@ function saveEnvVar(key, val) {
     path.resolve(process.cwd(), '.env'),
     path.resolve(process.cwd(), 'server', '.env'),
   ];
+  let written = false;
   for (const envPath of paths) {
     if (!fs.existsSync(envPath)) continue;
     let envContent = '';
@@ -169,23 +170,36 @@ function saveEnvVar(key, val) {
     try {
       fs.writeFileSync(envTmpPath, newLines.join('\n') + '\n', 'utf8');
       fs.renameSync(envTmpPath, envPath);
+      written = true;
     } catch (e) {
-      // Ignored
+      // Read-only filesystem (e.g. Cloud Run) — log clearly so operators know to set the env var manually
+      console.warn(`[LicenseKeys] Could not persist ${key} to ${envPath}: ${e.message}`);
     }
   }
+  return written;
 }
 
 export function getOrCreateLicensePrivateKey() {
   let keyBase64 = process.env.LICENSE_PRIVATE_KEY;
   if (!keyBase64) {
-    // Generate recommended key pair (RSA 2048)
+    // Generate a new RSA-2048 key pair for this process lifetime.
+    // IMPORTANT: If this warning appears in production, set LICENSE_PRIVATE_KEY in your
+    // environment variables (.env or Cloud Run secret) so the key survives restarts.
+    // Keys generated here are lost when the process exits unless written to .env successfully.
     const { privateKey } = crypto.generateKeyPairSync('rsa', {
       modulusLength: 2048,
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
     });
     keyBase64 = Buffer.from(privateKey).toString('base64');
     process.env.LICENSE_PRIVATE_KEY = keyBase64;
-    saveEnvVar('LICENSE_PRIVATE_KEY', keyBase64);
+    const persisted = saveEnvVar('LICENSE_PRIVATE_KEY', keyBase64);
+    if (!persisted) {
+      console.warn(
+        '[LicenseKeys] ⚠ LICENSE_PRIVATE_KEY was auto-generated but could NOT be persisted to .env\n' +
+        '  (filesystem may be read-only — e.g. Cloud Run). Add LICENSE_PRIVATE_KEY to your environment\n' +
+        '  secrets to ensure signed license keys survive server restarts.'
+      );
+    }
   }
   return Buffer.from(keyBase64, 'base64').toString('utf8');
 }
@@ -194,6 +208,9 @@ export function getOrCreateLicensePrivateKey() {
 
 /**
  * Create a signed license key for a specific user and plan.
+ * The rawKey is returned to the caller for one-time display but is NOT stored
+ * in the database — only the SHA-256 hash is persisted to prevent key leakage
+ * from a database breach.
  */
 export async function createSignedLicenseKeyForUser({ plan, userId, createdByUserId = null } = {}) {
   if (!VALID_PLANS.includes(plan)) throw new Error(`Invalid plan: ${plan}`);
@@ -215,9 +232,10 @@ export async function createSignedLicenseKeyForUser({ plan, userId, createdByUse
   const rawKey = `BIQ-${plan.toUpperCase()}-${payloadB64}.${signature}`;
   const keyHash = hashKey(rawKey);
 
+  // Store only the hash — rawKey is returned to the caller for one-time display only.
   await query(`
-    INSERT INTO LicenseKeys (KeyHash, Plan, CreatedByUserId, RedeemedByUserId, RedeemedAt, Note, CreatedAt, RawKey)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO LicenseKeys (KeyHash, Plan, CreatedByUserId, RedeemedByUserId, RedeemedAt, Note, CreatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `, [
     keyHash,
     plan,
@@ -226,18 +244,18 @@ export async function createSignedLicenseKeyForUser({ plan, userId, createdByUse
     now(),
     `Generated for user ID ${userId} (${plan})`,
     now(),
-    rawKey
   ]);
 
   return { rawKey, plan };
 }
 
 /**
- * Retrieve the active license key for a specific user.
+ * Retrieve the active license key metadata for a specific user.
+ * Note: the raw key is never returned here — it is shown only once at generation time.
  */
 export async function getActiveLicenseKeyForUser(userId) {
   const res = await query(`
-    SELECT RawKey, Plan, RedeemedAt, ExpiresAt
+    SELECT Plan, RedeemedAt, ExpiresAt, Note
     FROM LicenseKeys
     WHERE RedeemedByUserId = ?
     ORDER BY CreatedAt DESC, RedeemedAt DESC LIMIT 1

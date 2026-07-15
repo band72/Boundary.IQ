@@ -36,7 +36,10 @@ const log = createChildLogger('auth');
 const router = Router();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const getIp = (req) => req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+// req.ip is resolved by Express via 'trust proxy 1' (set in index.js), which
+// already extracts the correct client IP from x-forwarded-for safely.
+// Manual header parsing is skipped to prevent client-side IP spoofing.
+const getIp = (req) => req.ip || req.socket?.remoteAddress || null;
 const getUA = (req) => req.headers['user-agent'] || null;
 
 // Lazily-constructed OAuth2Client
@@ -300,10 +303,16 @@ router.post('/logout', asyncHandler(async (req, res) => {
   return res.json({ success: true, message: 'Logged out successfully' });
 }));
 
-// ── GET /api/auth/me ───────────────────────────────────────────────────────────
+// Accept token from Authorization header or cookie (consistent with requireAuth middleware)
 router.get('/me', asyncHandler(async (req, res) => {
+  let token = null;
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (req.headers.cookie) {
+    const cookies = parseCookies(req.headers.cookie);
+    token = cookies.boundaryiq_auth_token;
+  }
   if (!token) return res.status(401).json({ error: 'Authorization token not found' });
 
   const sessionUser = await getSession(token);

@@ -23,7 +23,8 @@ router.get('/recent-batches', async (req, res) => {
 router.get('/batch-stats/:batchId', async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      const row = db.getDb().prepare('SELECT UserId FROM BatchRuns WHERE BatchId = ?').get(req.params.batchId);
+      const ownerRes = await db.query('SELECT UserId FROM BatchRuns WHERE BatchId = ?', [req.params.batchId]);
+      const row = ownerRes.rows[0];
       if (row && row.UserId !== req.user.id) {
         return res.status(403).json({ error: 'Access forbidden to this batch run.' });
       }
